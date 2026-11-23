@@ -25,10 +25,10 @@ export function sortMembers(members) {
  *  shown as they came, which is still more useful than a blank. */
 export function platformLabel(platform) {
   const value = platform ?? '';
-  if (value === 'android' || value.startsWith('savevault-android')) return 'Android';
-  if (value === 'savevault-windows') return 'Windows';
-  if (value === 'savevault-darwin') return 'macOS';
-  if (value === 'savevault-linux') return 'Linux';
+  if (value === 'android' || value.startsWith('savevault-android') || value.startsWith('opensave-android')) return 'Android';
+  if (value === 'savevault-windows' || value === 'opensave-windows') return 'Windows';
+  if (value === 'savevault-darwin' || value === 'opensave-darwin') return 'macOS';
+  if (value === 'savevault-linux' || value === 'opensave-linux') return 'Linux';
   return value;
 }
 

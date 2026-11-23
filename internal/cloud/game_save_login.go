@@ -24,6 +24,9 @@ var ErrGameSaveLoginRejected = errors.New("account or password is incorrect")
 // account login endpoint (/v1/login, SaveVault 1.9.1).
 var ErrGameSaveLoginUnsupported = errors.New("the service does not support account login")
 
+// ErrGameSaveLoginRateLimited means the service paused login attempts (HTTP 429).
+var ErrGameSaveLoginRateLimited = errors.New("too many failed login attempts, try again later")
+
 // LoginGameSave trades a user name and password for the tenant's bearer token.
 // The password is used once here and never stored; the caller keeps the token
 // exactly where the pairing flow keeps a device token.
@@ -70,6 +73,8 @@ func LoginGameSave(ctx context.Context, server, username, password string) (stri
 		return "", ErrGameSaveLoginRejected
 	case http.StatusNotFound:
 		return "", ErrGameSaveLoginUnsupported
+	case http.StatusTooManyRequests:
+		return "", ErrGameSaveLoginRateLimited
 	default:
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 512))
 		return "", fmt.Errorf("game-save login failed (%s): %s", response.Status,
@@ -83,8 +88,14 @@ func LoginGameSave(ctx context.Context, server, username, password string) (stri
 	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
 		return "", fmt.Errorf("cannot read the login response: %w", err)
 	}
-	if strings.TrimSpace(result.Token) == "" {
+	tok := strings.TrimSpace(result.Token)
+	if tok == "" {
 		return "", errors.New("the service returned no token")
 	}
-	return strings.TrimSpace(result.Token), nil
+	for _, r := range tok {
+		if r < 0x21 || r > 0x7e {
+			return "", errors.New("the service returned an invalid token")
+		}
+	}
+	return tok, nil
 }

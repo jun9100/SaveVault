@@ -74,6 +74,9 @@ func ZipPathCapturing(sourcePath, outPath string) (skipped []string, captured []
 		if path == sourcePath {
 			return nil
 		}
+		if walkInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil
+		}
 		rel, err := filepath.Rel(sourcePath, path)
 		if err != nil {
 			return err
@@ -312,6 +315,27 @@ func UnzipTo(zipPath, targetPath string) error {
 		return fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
 	}
 	budget := &extractBudget{remaining: maxArchiveExtractBytes}
+	if isFile {
+		// Single-file save mode: permit at most one non-directory entry and
+		// extract it strictly to filepath.Base(targetPath) so a crafted archive
+		// can never overwrite arbitrary sibling files in destDir.
+		var fileEntries []*zip.File
+		for _, entry := range r.File {
+			if entry.FileInfo().IsDir() {
+				return fmt.Errorf("single-file save archive contains unexpected directory %q", entry.Name)
+			}
+			fileEntries = append(fileEntries, entry)
+		}
+		if len(fileEntries) > 1 {
+			return fmt.Errorf("single-file save archive contains %d entries, want at most 1", len(fileEntries))
+		}
+		if len(fileEntries) == 1 {
+			if err := extractEntryAsLimited(fileEntries[0], destDir, filepath.Base(targetPath), budget); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, entry := range r.File {
 		if err := extractEntryAsLimited(entry, destDir, entry.Name, budget); err != nil {
 			return err

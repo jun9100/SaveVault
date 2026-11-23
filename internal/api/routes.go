@@ -307,6 +307,11 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {
 		return err
 	}
+	if cfg.Provider != previousProvider || credentialsChanged {
+		if err := s.Daemon.ResetCloudAccountState(); err != nil && s.Daemon.Log != nil {
+			s.Daemon.Log.Log("warn", "could not clear previous cloud sync state: "+err.Error())
+		}
+	}
 	// A new address or key may be a fresh device token, so an old refusal no
 	// longer describes this configuration. The provider switch counts even
 	// when the address and key happen to match a previous game-save setup.

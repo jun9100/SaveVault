@@ -181,8 +181,15 @@ func extractSingleFile(zipPath, entryName, destRel, savePath string) error {
 			return err
 		}
 		defer dst.Close()
-		_, err = io.Copy(dst, src)
-		return err
+		const maxSingleFileRestoreBytes = 4 << 30
+		n, err := io.Copy(dst, io.LimitReader(src, maxSingleFileRestoreBytes+1))
+		if err != nil {
+			return err
+		}
+		if n > maxSingleFileRestoreBytes {
+			return fmt.Errorf("file %q exceeds maximum restore size", entryName)
+		}
+		return nil
 	}
 	return fmt.Errorf("file %q not found in snapshot", entryName)
 }
@@ -593,10 +600,17 @@ func decompressBackup(sourcePath string) (string, func(), error) {
 		return "", nil, err
 	}
 	tmpPath := tmp.Name()
-	if _, err := io.Copy(tmp, brotli.NewReader(src)); err != nil {
+	const maxDecompressedBackupBytes = 8 << 30
+	n, err := io.Copy(tmp, io.LimitReader(brotli.NewReader(src), maxDecompressedBackupBytes+1))
+	if err != nil {
 		tmp.Close()
 		os.Remove(tmpPath)
 		return "", nil, fmt.Errorf("decompress backup: %w", err)
+	}
+	if n > maxDecompressedBackupBytes {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return "", nil, fmt.Errorf("decompress backup: archive exceeds maximum size")
 	}
 	tmp.Close()
 	return tmpPath, func() { os.Remove(tmpPath) }, nil
@@ -1000,6 +1014,13 @@ func extractZipEntryToFile(f *zip.File, destPath string) error {
 	}
 	defer dst.Close()
 
-	_, err = io.Copy(dst, src)
-	return err
+	const maxZipEntryExtractBytes = 4 << 30
+	n, err := io.Copy(dst, io.LimitReader(src, maxZipEntryExtractBytes+1))
+	if err != nil {
+		return err
+	}
+	if n > maxZipEntryExtractBytes {
+		return fmt.Errorf("backup entry %q exceeds maximum size", f.Name)
+	}
+	return nil
 }

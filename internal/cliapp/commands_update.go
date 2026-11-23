@@ -181,7 +181,7 @@ func downloadCLIAsset(url, name, dest string) error {
 		if err := selfupdate.VerifyDownload(url, archivePath); err != nil {
 			return err
 		}
-		if err := selfupdate.ExtractFromTarGz(archivePath, "savevault", dest); err != nil {
+		if err := selfupdate.ExtractFromTarGz(archivePath, "savevault-cli", dest); err != nil {
 			return fmt.Errorf("unpack failed: %w", err)
 		}
 		return nil
@@ -224,7 +224,7 @@ func pickCLIAsset(rel *releaseInfo) (url, name string) {
 		lower := strings.ToLower(a.Name)
 		switch runtime.GOOS {
 		case "windows":
-			if lower == "savevault.exe" {
+			if lower == "savevault-cli.exe" {
 				return a.URL, a.Name
 			}
 		case "linux":

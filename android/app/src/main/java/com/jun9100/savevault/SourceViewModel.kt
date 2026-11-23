@@ -146,8 +146,13 @@ data class GameSaveAuthUi(
  */
 internal object PairingInput {
     private const val LINK_PREFIX = "savevault://"
+    private const val LEGACY_LINK_PREFIX = "opensave://"
 
-    fun isLink(text: String): Boolean = text.trim().startsWith(LINK_PREFIX, ignoreCase = true)
+    fun isLink(text: String): Boolean {
+        val trimmed = text.trim()
+        return trimmed.startsWith(LINK_PREFIX, ignoreCase = true) ||
+            trimmed.startsWith(LEGACY_LINK_PREFIX, ignoreCase = true)
+    }
 
     fun resolve(serviceUrl: String, codeOrLink: String): Result<PairingLink> {
         val text = codeOrLink.trim()
@@ -985,19 +990,22 @@ class SourceViewModel(
             val result = rootStorage.checkRootAccess()
             if (result.isSuccess) onboarding.setRootConfirmed(true)
             val rootAvailable = result.isSuccess
-            state.value = state.value.copy(
-                rootAvailable = rootAvailable,
-                rootChecked = true,
-                allFilesGranted = rootStorage.hasAllFilesAccess(),
-                messages = if (!rootAvailable && state.value.storageMode == StorageMode.ROOT) {
-                    state.value.messages.withError(
-                        SaveVaultPage.SETTINGS,
-                        "Root 不可用：${result.exceptionOrNull()?.message ?: "su 未返回 uid 0"}",
-                    )
-                } else {
-                    state.value.messages
-                },
-            )
+            val allFilesGranted = rootStorage.hasAllFilesAccess()
+            updateState {
+                copy(
+                    rootAvailable = rootAvailable,
+                    rootChecked = true,
+                    allFilesGranted = allFilesGranted,
+                    messages = if (!rootAvailable && storageMode == StorageMode.ROOT) {
+                        messages.withError(
+                            SaveVaultPage.SETTINGS,
+                            "Root 不可用：${result.exceptionOrNull()?.message ?: "su 未返回 uid 0"}",
+                        )
+                    } else {
+                        messages
+                    },
+                )
+            }
         }
     }
 
@@ -1084,7 +1092,7 @@ class SourceViewModel(
                 runCatching { gameSaveClient(config).testConnection().getOrThrow() }
             }
             result.onSuccess {
-                storeGameSave(config, "SaveVault 云端连接成功，配置已保存", credentialsChanged = true)
+                storeGameSave(config, "SaveVault 云端连接成功，配置已保存", credentialsChanged = true, clearUsername = true)
             }.onFailure { error ->
                 state.value = state.value.finished(SaveVaultPage.SETTINGS).copy(
                     gameSaveEditor = null,
@@ -1101,7 +1109,12 @@ class SourceViewModel(
         updateState { copy(gameSaveTestFailure = null) }
         viewModelScope.launch {
             state.value = state.value.started(SaveVaultPage.SETTINGS, "正在加密保存 SaveVault 云端配置")
-            storeGameSave(failure.config, "SaveVault 云端配置已保存（连接测试未通过）", credentialsChanged = true)
+            storeGameSave(
+                failure.config,
+                "SaveVault 云端配置已保存（连接测试未通过）",
+                credentialsChanged = true,
+                clearUsername = true,
+            )
         }
     }
 
@@ -1198,7 +1211,7 @@ class SourceViewModel(
                     syncKey = paired.token,
                 )
                 state.value = state.value.copy(pendingPairing = null)
-                storeGameSave(config, "已用设备令牌连接：${paired.name}", credentialsChanged = true)
+                storeGameSave(config, "已用设备令牌连接：${paired.name}", credentialsChanged = true, clearUsername = true)
                 log(ActivityKind.UPLOAD, ActivityLevel.SUCCESS, "已配对 SaveVault 云端", "设备名称：${paired.name}")
             }.onFailure { error ->
                 val finished = state.value.finished(SaveVaultPage.SETTINGS)
@@ -1267,6 +1280,7 @@ class SourceViewModel(
         }
         viewModelScope.launch {
             state.value = state.value.started(SaveVaultPage.SETTINGS, "正在保存自动上传设置")
+            if (!enabled) runCatching { SaveWatchService.stop(app) }
             storeGameSave(saved.copy(enabled = enabled), if (enabled) "新快照会自动上传" else "已关闭自动上传")
         }
     }
@@ -1276,31 +1290,69 @@ class SourceViewModel(
         success: String,
         /** New credentials were saved: drop the old verdict and restore the periodic work. */
         credentialsChanged: Boolean = false,
+        /** Non-account-login credential saves clear any previously remembered username. */
+        clearUsername: Boolean = false,
     ) {
+        val normalizedUrl = runCatching { GameSaveClient.normalizeServiceUrl(config.serviceUrl) }
+            .getOrElse { config.serviceUrl.trim() }
+        val previousUrl = state.value.gameSaveUrl
         val previousToken = state.value.gameSaveSyncKey
-        val accountChanged = credentialsChanged && previousToken.isNotBlank() && previousToken != config.syncKey
-        val result = withContext(Dispatchers.IO) { runCatching { gameSaveStore.save(config) } }
+        val accountChanged = credentialsChanged &&
+            (previousUrl != normalizedUrl || previousToken != config.syncKey || previousToken.isBlank())
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                gameSaveStore.save(config)
+                if (clearUsername) gameSaveStore.saveUsername("")
+            }
+        }
         result.onSuccess {
             if (credentialsChanged) {
                 // New credentials make a revocation or a shared-key warning stale.
                 withContext(Dispatchers.IO) { runCatching { GameSaveAuthGuard.credentialsReplaced(app) } }
             }
-            if (accountChanged) {
-                // Heads, verdicts and tombstones belong to the account that saw
-                // them; carrying them into another vault makes every game look
-                // like its remote version vanished.
-                withContext(Dispatchers.IO) { runCatching { GameSaveAccountState.reset(app) } }
+            val refreshedSnapshots = if (accountChanged) {
+                // Heads, verdicts, tombstones, pending retries and uploaded flags belong to the
+                // account that saw them; carrying them into another vault makes backups skip or
+                // refuse to publish.
+                cloudPullRequested = false
+                withContext(Dispatchers.IO) {
+                    runCatching { GameSaveAccountState.reset(app) }
+                    snapshotRepository.list()
+                }
+            } else {
+                null
             }
-            state.value = state.value.finished(SaveVaultPage.SETTINGS, action = success).copy(
-                gameSaveEnabled = config.enabled,
-                gameSaveUrl = GameSaveClient.normalizeServiceUrl(config.serviceUrl),
-                gameSaveSyncKey = config.syncKey,
-                gameSaveSaved = config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank(),
-                gameSaveEditor = null,
-            )
+            updateState {
+                val base = finished(SaveVaultPage.SETTINGS, action = success).copy(
+                    gameSaveEnabled = config.enabled,
+                    gameSaveUrl = normalizedUrl,
+                    gameSaveSyncKey = config.syncKey,
+                    gameSaveSaved = normalizedUrl.isNotBlank() && config.syncKey.isNotBlank(),
+                    gameSaveEditor = null,
+                    gameSaveUsername = if (clearUsername) "" else gameSaveUsername,
+                )
+                if (accountChanged) {
+                    base.copy(
+                        snapshots = refreshedSnapshots ?: base.snapshots,
+                        remoteSnapshots = emptyList(),
+                        cloudUpdates = emptyList(),
+                        rememberedCloudVerdicts = emptyMap(),
+                        otherDeviceSaves = emptyMap(),
+                        lockedArchives = emptyMap(),
+                        scopeTombstones = emptyMap(),
+                        dismissedTombstones = emptySet(),
+                        syncDismissed = emptySet(),
+                        pendingRestore = null,
+                        pendingKeepLocal = null,
+                        pendingOtherDeviceRestore = null,
+                    )
+                } else {
+                    base
+                }
+            }
             if (credentialsChanged) refreshGameSaveAuth()
         }.onFailure { error ->
-            state.value = state.value.finished(SaveVaultPage.SETTINGS, error = "保存 SaveVault 云端配置失败：${error.message}")
+            updateState { finished(SaveVaultPage.SETTINGS, error = "保存 SaveVault 云端配置失败：${error.message}") }
         }
     }
 
@@ -2054,7 +2106,7 @@ class SourceViewModel(
                             ?: CloudPull.pspIdOf(game.identityId)
                             ?: return@forEach
                         roots.forEach { root ->
-                            val relative = CloudPull.relativePath(root.family, id) ?: return@forEach
+                            val relative = CloudPull.relativePath(root, id) ?: return@forEach
                             val adjusted = userAdjusted(root, relative)
                             if (operations.pathExists("${root.path}/$relative") ||
                                 operations.pathExists("${root.path}/$adjusted")
@@ -2086,11 +2138,16 @@ class SourceViewModel(
                     var restored = 0
                     val failures = mutableListOf<String>()
                     candidates.forEachIndexed { index, candidate ->
-                        state.value = state.value.started(
-                            SaveVaultPage.SETTINGS,
-                            "正在下发 ${candidate.game.displayName}（${index + 1}/${candidates.size}）",
-                        )
-                        val scope = client.getScope(candidate.game.scopeType, candidate.game.scopeGameId).getOrThrow()
+                        updateState {
+                            started(
+                                SaveVaultPage.SETTINGS,
+                                "正在下发 ${candidate.game.displayName}（${index + 1}/${candidates.size}）",
+                            )
+                        }
+                        val scope = runCatching {
+                            client.getScope(candidate.game.scopeType, candidate.game.scopeGameId).getOrThrow()
+                        }.onFailure { failures += "${candidate.game.displayName}：${it.message}" }
+                            .getOrNull() ?: return@forEachIndexed
                         val head = scope.head ?: return@forEachIndexed
                         val member = GameSaveCloudGameMember(
                             type = candidate.game.scopeType.id,
@@ -2104,7 +2161,9 @@ class SourceViewModel(
                         val archive = runCatching { operations.downloadOtherDeviceHead(member, config) }
                             .onFailure { failures += "${candidate.game.displayName}：${it.message}" }
                             .getOrNull() ?: return@forEachIndexed
-                        operations.restoreCloudPullLocked(candidate, archive)
+                        StorageOperationLock.withLock {
+                            operations.restoreCloudPullLocked(candidate, archive)
+                        }
                             .onSuccess { restored += 1 }
                             .onFailure { failures += "${candidate.game.displayName}：${it.message}" }
                     }
@@ -3190,6 +3249,7 @@ class SourceViewModel(
         /** Emulators whose game list (with titles) lives in their shared preferences. */
         val SWITCH_EMULATOR_PACKAGES = listOf(
             "dev.eden.eden_emulator",
+            "dev.eden.eden_emulator.nightly",
             "dev.eglantine.eglantine",
             "dev.eden.nx2",
             "org.yuzu.yuzu_emu",

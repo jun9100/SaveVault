@@ -49,6 +49,10 @@ class SaveSourceDetectorTest {
                 parentFile.mkdirs()
                 writeText("marker copy")
             }
+            File(root, "nand/user/save/account/profile/0100152000022000/.opensave-locations/0100152000022000/rp0219.dat").apply {
+                parentFile.mkdirs()
+                writeText("legacy marker copy")
+            }
 
             val detected = SaveSourceDetector.detect(root)
             val locations = detected.filter { it.titleId == "0100152000022000" }

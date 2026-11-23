@@ -142,6 +142,9 @@ func New(opts Options) (*Daemon, error) {
 		s.Close()
 		return fail(fmt.Errorf("initialize settings: %w", err))
 	}
+	if err := s.MigrateLegacyHomePaths(paths.HomeDir); err != nil {
+		log.Log("warn", "could not rewrite legacy ~/.opensave database paths: "+err.Error())
+	}
 	if err := normalizeGameSaveCloudURL(s); err != nil {
 		// A saved cloud target must never stop the desktop app from opening.
 		// The provider still validates it on use, while a later settings save
@@ -765,6 +768,13 @@ func isDuplicateGameID(err error) bool {
 // the same save every few seconds.
 var ErrOverlapsTrackedGame = errors.New("overlaps a tracked game")
 
+func isSafeGameID(id string) bool {
+	if id == "" || id == "." || id == ".." || len(id) > 128 {
+		return false
+	}
+	return !strings.ContainsAny(id, `/\:`+"\x00")
+}
+
 // TrackGame adds a new game, takes its initial snapshot (when the save
 // location already has content), and starts watching it.
 func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
@@ -780,6 +790,9 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	// the games.id UNIQUE constraint. An attempt to track the exact same
 	// folder again is a clear duplicate, not a new location.
 	derivedID := game.ID == ""
+	if !derivedID && !isSafeGameID(game.ID) {
+		return store.Game{}, fmt.Errorf("invalid game id %q", game.ID)
+	}
 	if derivedID {
 		if existing, err := d.Store.FindGameBySavePath(abs); err == nil {
 			return store.Game{}, fmt.Errorf("this folder is already tracked (as %q)", existing.Name)

@@ -5,6 +5,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -72,6 +73,9 @@ class SnapshotEngine {
         val children = directory.listFiles()?.sortedBy { it.name } ?: return
         val rootPath = root.canonicalPath + File.separator
         for (child in children) {
+            require(!Files.isSymbolicLink(child.toPath())) {
+                "Refusing a symbolic link in the workspace: ${child.name}"
+            }
             require(child.canonicalPath.startsWith(rootPath)) {
                 "Refusing a linked file outside the workspace: ${child.name}"
             }

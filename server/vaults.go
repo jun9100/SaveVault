@@ -4,8 +4,13 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Vaults are independent tenants: one directory, one set of tokens, one store
@@ -64,6 +70,7 @@ type vaultRegistry struct {
 	mu        sync.Mutex
 	vaults    map[string]*server
 	handlerMu sync.Mutex
+	handlers  map[*server]http.Handler
 
 	usersMu sync.Mutex
 	users   userState
@@ -78,6 +85,10 @@ type vaultRegistry struct {
 }
 
 func newVaultRegistry(root, token string, maxObjectBytes int64, options serverOptions) (*vaultRegistry, error) {
+	if options.adminToken != "" && options.adminToken == token {
+		slog.Error("administrator dashboard disabled: GAME_SAVE_ADMIN_TOKEN must differ from GAME_SAVE_TOKEN")
+		options.adminToken = ""
+	}
 	if err := migrateLegacyVaultLayout(root); err != nil {
 		return nil, err
 	}
@@ -87,6 +98,7 @@ func newVaultRegistry(root, token string, maxObjectBytes int64, options serverOp
 		maxObjectBytes: maxObjectBytes,
 		options:        options,
 		vaults:         map[string]*server{},
+		handlers:       map[*server]http.Handler{},
 		userLogins:     loginLimiter{failures: make(map[string]loginFailures)},
 		loginVerifySem: make(chan struct{}, 4),
 		byToken:        map[string]string{},
@@ -148,6 +160,10 @@ func (r *vaultRegistry) Vault(id string) (*server, error) {
 // Each vault gets a separate server, so its state, locks, tokens and object
 // store are private by construction.
 func (r *vaultRegistry) vaultWithToken(id, token string) (*server, error) {
+	return r.vaultWithTokenAndQuota(id, token, 0)
+}
+
+func (r *vaultRegistry) vaultWithTokenAndQuota(id, token string, quotaBytes int64) (*server, error) {
 	if id == "" || strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
 		return nil, fmt.Errorf("invalid vault id %q", id)
 	}
@@ -157,6 +173,7 @@ func (r *vaultRegistry) vaultWithToken(id, token string) (*server, error) {
 		return existing, nil
 	}
 	options := r.options
+	options.quotaBytes = quotaBytes
 	vault, err := newServerWithOptions(filepath.Join(r.root, "vaults", id), token, r.maxObjectBytes, options)
 	if err != nil {
 		return nil, fmt.Errorf("create vault %q: %w", id, err)
@@ -170,64 +187,194 @@ func (r *vaultRegistry) vaultWithToken(id, token string) (*server, error) {
 
 // vaultForRequest resolves which vault a request belongs to. The credential is
 // the tenant boundary: a token registered to another vault never reaches the
-// default one.
-func (r *vaultRegistry) vaultForRequest(request *http.Request) (string, *server) {
+// default one, and lookups never recreate a deleted vault.
+func (r *vaultRegistry) vaultForRequest(request *http.Request) (string, *server, bool) {
 	defaultVault, err := r.Vault(defaultVaultID)
 	if err != nil {
-		return "", nil
+		return "", nil, false
 	}
-	// Administrative requests carry no tenant token, so the operator names an
-	// existing vault explicitly — but only after authenticating as admin, so an
-	// unauthenticated header can never create arbitrary vault directories.
-	if strings.HasPrefix(request.URL.Path, "/admin/") {
+	// Administrative and metrics requests carry no tenant token, so the operator
+	// names an existing vault explicitly — but only after authenticating as
+	// admin, so an unauthenticated header can never probe or create vaults.
+	// Never fall through to bearer-token routing for /admin/ or /metrics.
+	if strings.HasPrefix(request.URL.Path, "/admin/") || request.URL.Path == "/metrics" {
 		if id := strings.TrimSpace(request.Header.Get("X-Game-Save-Vault")); id != "" && id != defaultVaultID {
-			if defaultVault.adminToken != "" && defaultVault.adminAuthenticated(request) {
+			if defaultVault.adminToken != "" && defaultVault.adminAuthenticatedPeek(request) {
 				r.mu.Lock()
 				vault, ok := r.vaults[id]
 				r.mu.Unlock()
 				if ok {
-					return id, vault
+					return id, vault, true
 				}
-				return "", nil
+				return id, nil, true
 			}
-			return defaultVaultID, defaultVault
+			return defaultVaultID, defaultVault, true
 		}
+		return defaultVaultID, defaultVault, true
 	}
 	if token := bearerToken(request); token != "" {
+		if strings.HasPrefix(token, deviceTokenPrefix) {
+			if tokenID, _, valid := parseDeviceToken(token); valid {
+				r.mu.Lock()
+				type entry struct {
+					id    string
+					vault *server
+				}
+				snapshot := make([]entry, 0, len(r.vaults))
+				for id, v := range r.vaults {
+					snapshot = append(snapshot, entry{id: id, vault: v})
+				}
+				r.mu.Unlock()
+				for _, item := range snapshot {
+					if item.vault.hasDeviceTokenID(tokenID) {
+						return item.id, item.vault, false
+					}
+				}
+			}
+			return defaultVaultID, defaultVault, false
+		}
 		r.mu.Lock()
 		id, ok := r.byToken[token]
-		r.mu.Unlock()
+		var vault *server
 		if ok {
-			if vault, err := r.Vault(id); err == nil {
-				return id, vault
-			}
+			vault = r.vaults[id]
+		}
+		r.mu.Unlock()
+		if ok && vault != nil {
+			return id, vault, false
+		}
+	}
+	return defaultVaultID, defaultVault, false
+}
+
+func (r *vaultRegistry) handlerFor(vault *server) http.Handler {
+	r.handlerMu.Lock()
+	defer r.handlerMu.Unlock()
+	if r.handlers == nil {
+		r.handlers = map[*server]http.Handler{}
+	}
+	handler, ok := r.handlers[vault]
+	if !ok {
+		handler = vault.handler()
+		r.handlers[vault] = handler
+	}
+	return handler
+}
+
+func (r *vaultRegistry) evictHandler(vault *server) {
+	if vault == nil {
+		return
+	}
+	r.handlerMu.Lock()
+	delete(r.handlers, vault)
+	r.handlerMu.Unlock()
+}
+
+func (r *vaultRegistry) vaultForPairingClaim(request *http.Request) (string, *server) {
+	defaultVault, err := r.Vault(defaultVaultID)
+	if err != nil {
+		return "", nil
+	}
+	if request.Body == nil {
+		return defaultVaultID, defaultVault
+	}
+	raw, err := io.ReadAll(io.LimitReader(request.Body, 4*1024+1))
+	_ = request.Body.Close()
+	request.Body = io.NopCloser(bytes.NewReader(raw))
+	if err != nil || len(raw) > 4*1024 {
+		return defaultVaultID, defaultVault
+	}
+	var peek struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(raw, &peek); err != nil {
+		return defaultVaultID, defaultVault
+	}
+	normalized, valid := normalizePairingCode(peek.Code)
+	if !valid {
+		return defaultVaultID, defaultVault
+	}
+	digest := sha256.Sum256([]byte(normalized))
+	now := time.Now()
+	r.mu.Lock()
+	type entry struct {
+		id    string
+		vault *server
+	}
+	snapshot := make([]entry, 0, len(r.vaults))
+	for id, v := range r.vaults {
+		snapshot = append(snapshot, entry{id: id, vault: v})
+	}
+	r.mu.Unlock()
+	for _, item := range snapshot {
+		if item.vault.hasPairingCodeHash(digest, now) {
+			return item.id, item.vault
 		}
 	}
 	return defaultVaultID, defaultVault
 }
 
 func (r *vaultRegistry) handler() http.Handler {
-	r.handlerMu.Lock()
-	handlers := map[string]http.Handler{}
-	r.handlerMu.Unlock()
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		id, vault := r.vaultForRequest(request)
+		if request.Method == http.MethodPost && request.URL.Path == "/v1/pair/claim" {
+			id, vault := r.vaultForPairingClaim(request)
+			if vault == nil {
+				http.Error(w, "vault unavailable", http.StatusInternalServerError)
+				return
+			}
+			if id != defaultVaultID {
+				if reason := r.vaultAccessError(id, time.Now().UTC()); reason != "" {
+					vault.withCommonHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						writeErrorCode(w, http.StatusUnauthorized, "unauthorized", reason)
+					})).ServeHTTP(w, request)
+					return
+				}
+			}
+			r.handlerFor(vault).ServeHTTP(w, request)
+			return
+		}
+		id, vault, isAdminPath := r.vaultForRequest(request)
 		if vault == nil {
+			if isAdminPath && id != "" {
+				writeError(w, http.StatusNotFound, "vault not found")
+				return
+			}
 			http.Error(w, "vault unavailable", http.StatusInternalServerError)
 			return
 		}
-		r.handlerMu.Lock()
-		handler, ok := handlers[id]
-		if !ok {
-			handler = vault.handler()
-			handlers[id] = handler
-		}
-		r.handlerMu.Unlock()
 		if r.serveTenantRoutes(w, request, vault) {
 			return
 		}
-		handler.ServeHTTP(w, request)
+		if !isAdminPath && id != defaultVaultID {
+			if reason := r.vaultAccessError(id, time.Now().UTC()); reason != "" {
+				vault.withCommonHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					writeErrorCode(w, http.StatusUnauthorized, "unauthorized", reason)
+				})).ServeHTTP(w, request)
+				return
+			}
+		}
+		r.handlerFor(vault).ServeHTTP(w, request)
 	})
+}
+
+// maintenanceLoop runs scheduled retention and garbage collection across every
+// currently registered vault. Iterating dynamically ensures newly created
+// tenants are maintained and deleted tenants are never touched again.
+func (r *vaultRegistry) maintenanceLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			for _, vault := range r.all() {
+				if _, err := vault.runMaintenance(false); err != nil {
+					slog.Warn("scheduled maintenance", "error", err)
+				}
+			}
+		}
+	}
 }
 
 // serveTenantRoutes handles the two endpoints that are not scoped to a single
@@ -235,7 +382,7 @@ func (r *vaultRegistry) handler() http.Handler {
 // user list that manages tenants. It reports whether it wrote the response.
 func (r *vaultRegistry) serveTenantRoutes(w http.ResponseWriter, request *http.Request, vault *server) bool {
 	if request.Method == http.MethodPost && request.URL.Path == "/v1/login" {
-		r.handleLogin(w, request)
+		vault.withCommonHeaders(http.HandlerFunc(r.handleLogin)).ServeHTTP(w, request)
 		return true
 	}
 	if !strings.HasPrefix(request.URL.Path, "/admin/api/users") {
@@ -248,11 +395,13 @@ func (r *vaultRegistry) serveTenantRoutes(w http.ResponseWriter, request *http.R
 	users.HandleFunc("POST /admin/api/users/{username}/password", r.handleUserPassword)
 
 	write := request.Method != http.MethodGet
+	var h http.HandlerFunc
 	if write {
-		vault.requireAdminWrite(users.ServeHTTP)(w, request)
+		h = vault.requireAdminWrite(users.ServeHTTP)
 	} else {
-		vault.requireAdmin(users.ServeHTTP)(w, request)
+		h = vault.requireAdmin(users.ServeHTTP)
 	}
+	vault.withCommonHeaders(h).ServeHTTP(w, request)
 	return true
 }
 

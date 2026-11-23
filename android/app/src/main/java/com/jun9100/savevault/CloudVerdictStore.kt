@@ -17,7 +17,7 @@ data class CloudVerdict(
 
 /** Display-only memory of cloud checks; restores always re-check the cloud first. */
 class CloudVerdictStore(context: Context) {
-    private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     fun load(): Map<String, CloudVerdict> = decode(preferences.getString(VERDICTS_KEY, null))
 
@@ -25,6 +25,10 @@ class CloudVerdictStore(context: Context) {
     fun update(removedKeys: Set<String> = emptySet(), verdicts: Map<String, CloudVerdict> = emptyMap()) = synchronized(LOCK) {
         val next = load() - removedKeys + verdicts
         preferences.edit().putString(VERDICTS_KEY, encode(next)).commit()
+    }
+
+    fun clearAll() = synchronized(LOCK) {
+        preferences.edit().clear().commit()
     }
 
     companion object {

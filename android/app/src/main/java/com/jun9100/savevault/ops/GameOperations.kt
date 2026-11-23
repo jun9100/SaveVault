@@ -642,11 +642,11 @@ internal class GameOperations(
                 val portable = File(workingRoot, "portable-switch-save")
                 require(extractedRoot.renameTo(portable)) { "无法准备 Switch 存档恢复目录" }
                 require(extractedRoot.mkdirs()) { "无法创建 Switch 存档恢复目录" }
-                val archivePath = "desktop-switch-save"
+                val archivePath = "location-0000"
                 require(portable.renameTo(File(extractedRoot, archivePath))) { "无法准备 Switch 存档内容" }
                 GameSnapshotManifest(
                     gameKey = requestedGame.gameKey,
-                    gameName = requestedGame.presentation.primaryName,
+                    gameName = currentGame.presentation.primaryName,
                     locations = listOf(
                         GameSnapshotLocation(
                             kind = save.kind,
@@ -659,11 +659,12 @@ internal class GameOperations(
             }
             require(manifest.matches(currentGame)) { "游戏快照路径与当前扫描清单不匹配；请重新扫描并检查游戏身份" }
             require(manifest.gameKey == requestedGame.gameKey) { "游戏快照身份与所选游戏不匹配" }
+            val normalizedManifest = manifest.copy(gameName = currentGame.presentation.primaryName)
             val manifestFile = File(extractedRoot, GameSnapshotManifest.FILE_NAME)
             if (existingManifestFile != null && existingManifestFile != manifestFile) {
                 existingManifestFile.delete()
             }
-            manifest.write(manifestFile)
+            normalizedManifest.write(manifestFile)
             val restoredFingerprint = AutoBackupPolicy.fingerprint(extractedRoot)
             val restoredManifestHash = restoredFingerprint.manifestHash
 
@@ -671,15 +672,15 @@ internal class GameOperations(
                 source = source,
                 sourceId = sourceId,
                 requestedGame = requestedGame,
-                manifest = manifest,
+                manifest = normalizedManifest,
                 safetyRoot = safetyRoot,
                 comment = "恢复前安全快照",
             )
 
             withContext(NonCancellable) {
                 when (source) {
-                    is SourceSelection.Saf -> storage.restoreGameLocations(source.uri, manifest.locations, extractedRoot, safetyRoot)
-                    is SourceSelection.Root -> rootStorage.restoreGameLocations(source.path, manifest.locations, extractedRoot)
+                    is SourceSelection.Saf -> storage.restoreGameLocations(source.uri, normalizedManifest.locations, extractedRoot, safetyRoot)
+                    is SourceSelection.Root -> rootStorage.restoreGameLocations(source.path, normalizedManifest.locations, extractedRoot)
                 }.getOrThrow()
                 val identity = GameCloudNaming.identity(source, sourceId, requestedGame)
                 request.nativeHead?.let { native ->
@@ -699,7 +700,7 @@ internal class GameOperations(
                     ).getOrThrow()
                 }
                 request.remote?.let { remote ->
-                    recordRestoredCloudSnapshot(source, sourceId, currentGame, manifest, remote, archive, restoredFingerprint)
+                    recordRestoredCloudSnapshot(source, sourceId, currentGame, normalizedManifest, remote, archive, restoredFingerprint)
                 }
             }
         } finally {

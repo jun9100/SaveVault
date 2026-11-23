@@ -167,4 +167,18 @@ class CloudPullTest {
         assertEquals("A", candidates[1].game.displayName)
         assertEquals("B", candidates[2].game.displayName)
     }
+
+    @Test
+    fun `psp savedata root does not double the SAVEDATA prefix`() {
+        val savedataRoot = LocalSaveRoot(
+            label = "PPSSPP SAVEDATA",
+            path = "/storage/emulated/0/PSP/SAVEDATA",
+            family = SaveRootFamily.PPSSPP,
+        )
+        val game = CloudPullGame(GameSaveTypes.PPSSPP, "scope:ppsspp-ULUS10041", "psp:ULUS10041", "Lumines")
+        val candidates = CloudPull.candidates(listOf(savedataRoot), listOf(game)) { _, _ -> false }
+
+        assertEquals(1, candidates.size)
+        assertEquals("ULUS10041", candidates.single().relativePath)
+    }
 }

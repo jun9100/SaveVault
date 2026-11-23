@@ -75,14 +75,16 @@ export function gridColumns(view) {
 }
 
 const VIEW_KEY = 'savevault.libraryView';
+const LEGACY_VIEW_KEY = 'opensave.libraryView';
 // The order was stored on its own before the rest of the view existed.
 const OLD_SORT_KEY = 'savevault.librarySort';
+const LEGACY_SORT_KEY = 'opensave.librarySort';
 
 export function loadView(storage = globalThis.localStorage) {
   try {
-    const saved = storage?.getItem(VIEW_KEY);
+    const saved = storage?.getItem(VIEW_KEY) ?? storage?.getItem(LEGACY_VIEW_KEY);
     if (saved) return sanitizeView(JSON.parse(saved));
-    const oldSort = storage?.getItem(OLD_SORT_KEY);
+    const oldSort = storage?.getItem(OLD_SORT_KEY) ?? storage?.getItem(LEGACY_SORT_KEY);
     return sanitizeView({ ...DEFAULT_VIEW, sort: oldSort });
   } catch {
     return { ...DEFAULT_VIEW };

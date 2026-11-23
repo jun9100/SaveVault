@@ -76,12 +76,18 @@ func SetAutostart(enabled bool) error {
 	return os.WriteFile(path, []byte(fmt.Sprintf(desktopEntry, launch)), 0o644)
 }
 
-// AutostartEnabled reports whether the .desktop file exists.
+// AutostartEnabled reports whether the .desktop file exists (including a
+// legacy opensave.desktop entry from earlier releases).
 func AutostartEnabled() bool {
-	path, err := autostartFilePath()
-	if err != nil {
-		return false
+	if path, err := autostartFilePath(); err == nil {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	if legacy, err := legacyAutostartFilePath(); err == nil {
+		if _, err := os.Stat(legacy); err == nil {
+			return true
+		}
+	}
+	return false
 }

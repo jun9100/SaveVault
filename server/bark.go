@@ -168,6 +168,9 @@ func parseBarkEvents(value string) (map[string]struct{}, error) {
 		if item == "" {
 			continue
 		}
+		if item == "opensave_meta" {
+			item = eventSaveVaultMeta
+		}
 		if _, ok := barkEventKinds[item]; !ok {
 			return nil, fmt.Errorf("GAME_SAVE_BARK_EVENTS contains unsupported event %q", item)
 		}

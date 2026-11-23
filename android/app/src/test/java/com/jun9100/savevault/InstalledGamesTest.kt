@@ -69,6 +69,13 @@ class InstalledGamesTest {
                 "content://com.android.externalstorage.documents/tree/primary%3AHades+",
             ),
         )
+        // 多字节 UTF-8 字符后紧跟 %xx 转义时，必须按字节索引解析，不能越界或错位。
+        assertEquals(
+            "/storage/emulated/0/游戏/switch 存档",
+            InstalledGames.pathOfTreeUri(
+                "content://com.android.externalstorage.documents/tree/primary%3A游戏%2Fswitch%20存档",
+            ),
+        )
         assertNull(InstalledGames.pathOfTreeUri("/storage/emulated/0/switch1-games"))
         assertNull(InstalledGames.pathOfTreeUri("content://x/tree/no-colon"))
     }

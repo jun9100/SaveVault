@@ -189,9 +189,10 @@ function pausedUntil(p?: SyncPause): string {
 // Game Mode behaviour, and must be readable before the daemon is reachable.
 
 const AUTO_SYNC_KEY = "savevault:autoSyncOnGameEvents";
+const LEGACY_AUTO_SYNC_KEY = "opensave:autoSyncOnGameEvents";
 
 function autoSyncEnabled(): boolean {
-  return localStorage.getItem(AUTO_SYNC_KEY) !== "false"; // default on
+  return (localStorage.getItem(AUTO_SYNC_KEY) ?? localStorage.getItem(LEGACY_AUTO_SYNC_KEY)) !== "false"; // default on
 }
 function setAutoSyncEnabled(on: boolean) {
   localStorage.setItem(AUTO_SYNC_KEY, on ? "true" : "false");

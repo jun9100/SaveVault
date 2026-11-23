@@ -46,10 +46,11 @@ export function sanitizeNotify(raw) {
 }
 
 const KEY = 'savevault.notifications';
+const LEGACY_KEY = 'opensave.notifications';
 
 export function loadNotify(storage = globalThis.localStorage) {
   try {
-    const saved = storage?.getItem(KEY);
+    const saved = storage?.getItem(KEY) ?? storage?.getItem(LEGACY_KEY);
     return saved ? sanitizeNotify(JSON.parse(saved)) : { ...DEFAULT_NOTIFY };
   } catch {
     return { ...DEFAULT_NOTIFY };

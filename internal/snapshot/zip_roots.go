@@ -25,6 +25,22 @@ import (
 // game's configuration files scattered through its saves.
 const RootPrefix = ".savevault-locations/"
 
+const legacyRootPrefix = ".opensave-locations/"
+
+func splitRootEntry(entry string) (prefix, name string, ok bool) {
+	for _, p := range []string{RootPrefix, legacyRootPrefix} {
+		if strings.HasPrefix(entry, p) {
+			rest := strings.TrimPrefix(entry, p)
+			name, _, _ = strings.Cut(rest, "/")
+			if name != "" {
+				return p, name, true
+			}
+			return "", "", false
+		}
+	}
+	return "", "", false
+}
+
 // ZipRoots archives a game's primary save location plus any extra ones.
 //
 // extra maps location name to this device's path for it; only mapped
@@ -128,6 +144,9 @@ func archiveInto(w *zip.Writer, sourcePath, prefix, root string) (skipped []stri
 		if path == sourcePath {
 			return nil
 		}
+		if walkInfo.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil
+		}
 		rel, err := filepath.Rel(sourcePath, path)
 		if err != nil {
 			return err
@@ -175,15 +194,8 @@ func ArchivedRoots(zipPath string) ([]string, error) {
 // whether it belongs to one at all. Entries outside the prefix are the
 // primary location's, as they always were.
 func rootOfEntry(entry string) (string, bool) {
-	if !strings.HasPrefix(entry, RootPrefix) {
-		return "", false
-	}
-	rest := strings.TrimPrefix(entry, RootPrefix)
-	name, _, _ := strings.Cut(rest, "/")
-	if name == "" {
-		return "", false
-	}
-	return name, true
+	_, name, ok := splitRootEntry(entry)
+	return name, ok
 }
 
 // UnzipRoots restores an archive, sending each location's files to that
@@ -253,7 +265,7 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 	cleared := map[string]bool{}
 	missing := map[string]bool{}
 	for _, f := range r.File {
-		name, isRoot := rootOfEntry(f.Name)
+		prefix, name, isRoot := splitRootEntry(f.Name)
 		target := primary
 		entry := f.Name
 		if !isRoot && primaryIsFile {
@@ -278,7 +290,7 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 				}
 				cleared[name] = true
 			}
-			entry = strings.TrimPrefix(f.Name, RootPrefix+name+"/")
+			entry = strings.TrimPrefix(f.Name, prefix+name+"/")
 			if entry == "" {
 				// The location's own folder marker.
 				if err := os.MkdirAll(target, 0o777); err != nil {
@@ -309,9 +321,9 @@ func RootOfArchiveEntry(entry string) (string, bool) { return rootOfEntry(entry)
 // path relative to that location's own folder. Entries outside the prefix are
 // returned unchanged, since they are already relative to the save folder.
 func ArchiveEntryRelPath(entry string) string {
-	name, ok := rootOfEntry(entry)
+	prefix, name, ok := splitRootEntry(entry)
 	if !ok {
 		return entry
 	}
-	return strings.TrimPrefix(entry, RootPrefix+name+"/")
+	return strings.TrimPrefix(entry, prefix+name+"/")
 }

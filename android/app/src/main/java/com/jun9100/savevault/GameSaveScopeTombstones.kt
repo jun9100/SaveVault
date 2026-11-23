@@ -144,6 +144,13 @@ internal class ScopeTombstoneStore(context: Context) : ScopeTombstoneRepository 
         }
     }
 
+    fun clearAll() {
+        synchronized(LOCK) {
+            preferences.edit().clear().commit()
+            changes.update { it + 1 }
+        }
+    }
+
     private fun update(identity: GameCloudIdentity, change: (ScopeTombstone) -> ScopeTombstone) {
         synchronized(LOCK) {
             val key = key(identity)

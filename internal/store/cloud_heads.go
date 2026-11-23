@@ -26,6 +26,28 @@ type CloudHead struct {
 	Dismissed  string `db:"dismissed"`
 }
 
+// ResetCloudSyncState clears per-account/per-provider cloud sync metadata so
+// switching cloud accounts, servers, or providers never inherits stale heads,
+// tombstones, or queued uploads from the previous account.
+func (s *Store) ResetCloudSyncState() error {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`DELETE FROM cloud_heads`,
+		`DELETE FROM cloud_scope_gone`,
+		`DELETE FROM cloud_upload_retry`,
+		`UPDATE untracked_games SET cloud_scope_gone = 0`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // GetCloudHead returns the game's record, and false when it has none yet.
 func (s *Store) GetCloudHead(gameID string) (CloudHead, bool, error) {
 	var h CloudHead

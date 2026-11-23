@@ -1,10 +1,16 @@
 package com.jun9100.savevault
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.NetworkType
@@ -43,7 +49,7 @@ class AutoBackupScheduler(context: Context) {
      * Used by the save watcher and by a scan that saw a newer save file.
      */
     fun requestImmediateBackup(reason: String) {
-        if (!isEnabled() || credentialsBlocked()) return
+        if ((!isEnabled() && !SaveWatchPolicy.shouldUpload(appContext)) || credentialsBlocked()) return
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.UNMETERED)
             .build()
@@ -53,7 +59,7 @@ class AutoBackupScheduler(context: Context) {
             .addTag(IMMEDIATE_TAG)
             .build()
         WorkManager.getInstance(appContext)
-            .enqueueUniqueWork(IMMEDIATE_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+            .enqueueUniqueWork(IMMEDIATE_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     fun ensureScheduled() {
@@ -238,6 +244,9 @@ class AutoBackupWorker(
     appContext: Context,
     workerParameters: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParameters) {
+    override suspend fun getForegroundInfo(): ForegroundInfo =
+        AutoBackupNotifications.foregroundInfo(applicationContext)
+
     override suspend fun doWork(): Result {
         if (AutoBackupPolicy.shouldYield(BatchCenter.isRunning)) {
             record(AutoBackupPolicy.skippedEntry("有批量任务正在运行"))
@@ -599,7 +608,20 @@ class AutoBackupWorker(
                 return publishCurrentHead(config, cloudIdentity, existing, repository.fileFor(existing))
                     .also { if (it == GameBackupOutcome.Uploaded) repository.markUploaded(existing.id) }
             }
-            val pending = existing
+            if (nativeDecision != null && nativeDecision.candidate != null &&
+                existing?.uploaded == true && !existing.notCloudHead
+            ) {
+                return GameBackupOutcome.Skipped
+            }
+            val pending = if (nativeDecision != null && existing != null &&
+                GameSaveNativeProtocol.localSnapshotId(existing.remoteName) == null
+            ) {
+                // Restored cloud snapshots keep a foreign "--dev-" name, which cannot be re-published
+                // under our device's local snapshot naming; mint a fresh local snapshot archive instead.
+                null
+            } else {
+                existing
+            }
             val record = pending ?: createSnapshot(
                 sourceId = sourceId,
                 game = game,
@@ -839,5 +861,32 @@ class AutoBackupWorker(
         const val SNAPSHOT_DIRECTORY = "snapshots"
         const val AUTO_GAME_WORKSPACE_DIRECTORY = "auto-game-workspace"
         const val MAX_RETRIES = 3
+    }
+}
+
+internal object AutoBackupNotifications {
+    private const val CHANNEL_ID = "savevault_auto_backup"
+    private const val NOTIFICATION_ID = 4714
+
+    fun foregroundInfo(context: Context): ForegroundInfo {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager?.getNotificationChannel(CHANNEL_ID) == null) {
+            manager?.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "自动备份", NotificationManager.IMPORTANCE_LOW),
+            )
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_savevault)
+            .setContentTitle("SaveVault")
+            .setContentText("正在检查并上传存档更新")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
     }
 }

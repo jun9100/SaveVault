@@ -36,15 +36,18 @@
       ? !!server.trim() && !!username.trim() && !!password
       : !!server.trim() && (!!code.trim() || isPairLink(server));
 
-  /** The account flow has no code to preview, so the host is derived here and
-   *  still shown on the confirmation step before anything is sent. */
-  function accountHost(address) {
+  /** The account flow has no code to preview, so the normalized URL and host
+   *  are derived here and shown on the confirmation step before anything is sent. */
+  function accountTarget(address) {
     const raw = String(address || '').trim();
-    if (!raw) return '';
+    if (!raw) return null;
     try {
-      return new URL(/^[a-z]+:\/\//i.test(raw) ? raw : `http://${raw}`).host;
+      const normalized = /^[a-z]+:\/\//i.test(raw) ? raw : `http://${raw}`;
+      const u = new URL(normalized);
+      if ((u.protocol !== 'http:' && u.protocol !== 'https:') || !u.host) return null;
+      return { server: normalized.replace(/\/+$/, ''), host: u.host };
     } catch {
-      return '';
+      return null;
     }
   }
 
@@ -60,9 +63,9 @@
     error = '';
     try {
       if (mode === 'account') {
-        const host = accountHost(server);
-        if (!host) throw new Error($t('cloud.pair.serverHint'));
-        preview = { server: server.trim(), host, username: username.trim() };
+        const target = accountTarget(server);
+        if (!target) throw new Error($t('cloud.pair.serverHint'));
+        preview = { server: target.server, host: target.host, username: username.trim() };
       } else {
         preview = await previewPairing({ server, code, link: mode === 'link' ? link : '' });
       }

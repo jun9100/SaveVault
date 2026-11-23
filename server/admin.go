@@ -338,7 +338,7 @@ func (s *server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		case eventUpload:
 			// Eden uploads are counted from persisted snapshots above. SaveVault
 			// uploads only exist in the shared event stream, so count those here.
-			if !strings.HasPrefix(item.Scope, "savevault:") {
+			if !strings.HasPrefix(item.Scope, "savevault:") && !strings.HasPrefix(item.Scope, "opensave:") {
 				continue
 			}
 			if index := dayIndex(item.Time); index >= 0 {

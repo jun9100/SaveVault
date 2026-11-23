@@ -172,8 +172,18 @@ class SafStorage(private val context: Context) {
                     ?: return@runCatching null
                 context.contentResolver
                     .openInputStream(DocumentsContract.buildDocumentUriUsingTree(uri, file.documentId))
-                    ?.use { it.readBytes() }
-                    ?.takeIf { it.size <= maxBytes }
+                    ?.use { input ->
+                        val output = java.io.ByteArrayOutputStream(minOf(maxBytes, 8192))
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            if (output.size() + read > maxBytes) return@use null
+                            output.write(buffer, 0, read)
+                        }
+                        output.toByteArray()
+                    }
             }.getOrNull()
         }
 

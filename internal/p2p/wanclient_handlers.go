@@ -119,6 +119,13 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 		// Unseal before anything reads the payload. Every branch below uses
 		// msg.Data, so decrypting in place here keeps them all unchanged
 		// rather than leaving one of them reading ciphertext.
+		// If the claimed peer has a pinned key, require authenticated SealedData
+		// so another member of the relay room cannot spoof sync-complete/lineage.
+		if peer, pErr := w.engine.Store.GetPeer(msg.From); pErr == nil && peer.PublicKey != "" && len(msg.SealedData) == 0 {
+			w.engine.Log("warn", fmt.Sprintf(
+				"discarded unsealed sync-event from %s (peer has a pinned key)", msg.From))
+			return
+		}
 		if len(msg.SealedData) > 0 {
 			plain, err := w.engine.openFromPeer(msg.From, msg.SealedData)
 			if err != nil {
@@ -217,27 +224,37 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 // trackPresence flips paired peers online (routing them via relay) and
 // refreshes discovered timestamps.
 func (w *WanClient) trackPresence(msg RelayMessage) {
-	if msg.AppVersion != "" {
-		w.engine.recordPeerBuild(msg.From, msg.AppVersion, msg.BuildTimeMs)
-	}
 	peer, err := w.engine.Store.GetPeer(msg.From)
 	if err == nil {
-		wasOffline := peer.Status != "online"
-		changed := wasOffline || peer.Address != "relay"
-		peer.Status = "online"
-		peer.Address = "relay"
-		peer.LastSeenMs = time.Now().UnixMilli()
-		if msg.Port > 0 {
-			peer.Port = msg.Port
+		// Presence frames are unauthenticated room broadcasts. If this peer is
+		// already actively online over a direct LAN IP (seen recently), do not
+		// let an unauthenticated relay frame hijack its route to "relay".
+		nowMs := time.Now().UnixMilli()
+		recentlyOnlineOnLAN := peer.Status == "online" && peer.Address != "" && peer.Address != "relay" &&
+			nowMs-peer.LastSeenMs < 15_000
+		if !recentlyOnlineOnLAN {
+			if msg.AppVersion != "" {
+				w.engine.recordPeerBuild(msg.From, msg.AppVersion, msg.BuildTimeMs)
+			}
+			wasOffline := peer.Status != "online"
+			changed := wasOffline || peer.Address != "relay"
+			peer.Status = "online"
+			peer.Address = "relay"
+			peer.LastSeenMs = nowMs
+			if msg.Port > 0 {
+				peer.Port = msg.Port
+			}
+			_ = w.engine.Store.UpdatePeer(peer)
+			if wasOffline {
+				w.engine.Log("info", fmt.Sprintf("peer %q came online via WAN; auto-syncing", peer.Name))
+				w.engine.GoSync(func(ctx context.Context) { w.engine.SyncAllGames(ctx) })
+			}
+			if changed {
+				w.engine.notifyPeerUpdate()
+			}
 		}
-		_ = w.engine.Store.UpdatePeer(peer)
-		if wasOffline {
-			w.engine.Log("info", fmt.Sprintf("peer %q came online via WAN; auto-syncing", peer.Name))
-			w.engine.GoSync(func(ctx context.Context) { w.engine.SyncAllGames(ctx) })
-		}
-		if changed {
-			w.engine.notifyPeerUpdate()
-		}
+	} else if msg.AppVersion != "" {
+		w.engine.recordPeerBuild(msg.From, msg.AppVersion, msg.BuildTimeMs)
 	}
 
 	w.mu.Lock()
@@ -732,7 +749,7 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage, fromP
 
 	if peer, pErr := w.engine.Store.GetPeer(fromPeerID); pErr == nil {
 		w.engine.refreshLineageAfterDeletion(gameID, syncengine.Peer{
-			ID: peer.ID, Name: peer.Name, Address: peer.Address, Port: peer.Port,
+			ID: peer.ID, Name: peer.Name, Address: peer.Address, Port: peer.Port, IsWan: true,
 		})
 	}
 	return 200, map[string]any{"success": true}

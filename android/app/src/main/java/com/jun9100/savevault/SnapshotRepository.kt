@@ -74,6 +74,13 @@ class SnapshotRepository(private val root: File) {
         writeRecords(records)
     }
 
+    /** Clears cloud upload markers when switching to a different SaveVault account/server. */
+    fun clearUploadedFlags() = synchronized(lock) {
+        val records = readRecords()
+        if (records.none { it.uploaded || it.notCloudHead }) return@synchronized
+        writeRecords(records.map { record -> record.copy(uploaded = false, notCloudHead = false) })
+    }
+
     /** Remembers what the save locations looked like when [id] was captured or last matched. */
     fun setSaveSignature(id: String, signature: String) = synchronized(lock) {
         val records = readRecords()

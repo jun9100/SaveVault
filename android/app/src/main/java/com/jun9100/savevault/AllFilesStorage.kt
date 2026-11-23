@@ -339,8 +339,12 @@ class AllFilesStorage(
 
             data class Operation(val target: File, val prepared: File, val backup: File, val staged: File)
 
+            val rootFile = File(root)
+            require(!Files.isSymbolicLink(rootFile.toPath())) { "恢复根目录包含符号链接：${rootFile.path}" }
             val operations = locations.mapIndexed { index, location ->
-                val target = AllFilesPathPolicy.requireInside(root, location.relativePath)
+                val relative = GameSnapshotManifest.safeRelativePath(location.relativePath)
+                requireNoSymlinkSegments(rootFile, relative)
+                val target = AllFilesPathPolicy.requireInside(root, relative)
                 // 云端下发到一台还没有这款游戏存档的设备时，目标目录由这里建出来。
                 require(createMissing || target.isDirectory) { "恢复目标不存在：${target.path}" }
                 val archivePath = PathPolicy.requireSafeDocumentName(location.archivePath)
@@ -422,6 +426,7 @@ class AllFilesStorage(
             checkAllFilesAccess().getOrThrow()
             val path = AllFilesPathPolicy.canonicalize(rawPath)
             val target = File(path)
+            require(!Files.isSymbolicLink(target.toPath())) { "目标目录包含符号链接：${target.path}" }
             require(target.isDirectory) { "目录不存在或不可读：$path" }
             val workspace = workspaceDirectory()
             val report = WorkspaceReport.build(workspace)
@@ -444,6 +449,14 @@ class AllFilesStorage(
                 throw error
             }
             report
+        }
+    }
+
+    private fun requireNoSymlinkSegments(root: File, relativePath: String) {
+        var cursor = root
+        for (segment in relativePath.split('/').filter(String::isNotEmpty)) {
+            cursor = File(cursor, segment)
+            require(!Files.isSymbolicLink(cursor.toPath())) { "恢复路径包含符号链接：${cursor.path}" }
         }
     }
 

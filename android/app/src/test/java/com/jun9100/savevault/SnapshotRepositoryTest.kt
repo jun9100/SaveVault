@@ -66,6 +66,12 @@ class SnapshotRepositoryTest {
             repository.markUploaded("snap_1", asCloudHead = false)
             repository.markUploaded("snap_1", uploaded = false, asCloudHead = false)
             assertFalse(repository.list().single().notCloudHead)
+
+            repository.markUploaded("snap_1", asCloudHead = false)
+            repository.clearUploadedFlags()
+            val cleared = SnapshotRepository(File(root.absolutePath)).list().single()
+            assertFalse(cleared.uploaded)
+            assertFalse(cleared.notCloudHead)
         } finally {
             root.deleteRecursively()
         }

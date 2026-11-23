@@ -65,6 +65,9 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 				continue
 			}
 			gameID, archiveName := parts[0], file.Name()
+			if !validSaveVaultGameID(gameID) || !validSnapshotID(parts[2]) || !validSaveVaultName(archiveName) {
+				continue
+			}
 			match := snapshotStamp.FindStringSubmatch(parts[2])
 			if match == nil {
 				continue
@@ -87,13 +90,6 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 	}
 
 	report.Scanned = len(newest)
-	if dryRun {
-		for _, item := range newest {
-			report.Details = append(report.Details, item.kind+"/"+item.gameID+" -> "+item.snapshot)
-		}
-		sort.Strings(report.Details)
-		return report, nil
-	}
 
 	s.saveVaultMu.Lock()
 	defer s.saveVaultMu.Unlock()
@@ -104,6 +100,11 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 			if snapshot, ok := stored.Snapshots[stored.Head]; ok && s.saveVaultArchiveExistsLocked(item.kind, snapshot.Archive) {
 				continue
 			}
+		}
+		report.Rebuilt++
+		report.Details = append(report.Details, item.kind+"/"+item.gameID+" -> "+item.snapshot)
+		if dryRun {
+			continue
 		}
 		scope := stored
 		if scope.Snapshots == nil {
@@ -124,10 +125,9 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 		}
 		scope.Head = item.snapshot
 		next.Scopes[key] = scope
-		report.Rebuilt++
-		report.Details = append(report.Details, item.kind+"/"+item.gameID+" -> "+item.snapshot)
 	}
-	if report.Rebuilt == 0 {
+	sort.Strings(report.Details)
+	if dryRun || report.Rebuilt == 0 {
 		return report, nil
 	}
 	if err := s.persistSaveVaultState(next); err != nil {

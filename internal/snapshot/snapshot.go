@@ -786,8 +786,7 @@ func (m *Manager) Restore(gameID, snapshotID string) (store.Snapshot, error) {
 		}
 		safetyComment := fmt.Sprintf("Pre-rollback safety restore point (before restoring %s)", snapshotID)
 		if _, err := m.CreateBeforeReplacing(gameID, safetyComment); err != nil {
-			// Non-fatal, same as JS: warn and continue the restore.
-			fmt.Fprintf(os.Stderr, "[snapshot] safety snapshot before restore failed: %v\n", err)
+			return store.Snapshot{}, fmt.Errorf("could not back up the current save before restoring, so nothing was changed: %w", err)
 		}
 	}
 
@@ -982,6 +981,24 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 	// that quietly is not one, and nothing on screen would say so. Switching
 	// to a branch that HAS a snapshot re-clears each location on the way in
 	// anyway, so this only ever adds correctness.
+	// Check that the incoming branch's snapshot archive can be opened BEFORE
+	// clearing the live save folder, so a corrupt/missing archive never leaves
+	// the user with an empty save folder.
+	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
+	if err != nil {
+		return err
+	}
+	var targetArchive string
+	var targetDone func()
+	if len(targetSnaps) > 0 {
+		archive, done, openErr := OpenArchive(targetSnaps[0].ZipPath)
+		if openErr != nil {
+			return fmt.Errorf("cannot open target branch %q snapshot before switching: %w", targetBranch, openErr)
+		}
+		targetArchive, targetDone = archive, done
+		defer targetDone()
+	}
+
 	switchPaths, pathsErr := m.Store.GameRootPaths(gameID)
 	if pathsErr != nil {
 		return fmt.Errorf("read the game's save locations: %w", pathsErr)
@@ -1002,31 +1019,15 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 	// A branch with no snapshots is one deliberately started empty (see
 	// CreateBranch): there is nothing to restore, and the cleared folder is
 	// the point.
-	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
-	if err != nil {
-		return err
-	}
-	if len(targetSnaps) > 0 {
-		latest := targetSnaps[0] // ListSnapshots returns newest first
-		switchRoots, rootsErr := m.Store.GameRootPaths(gameID)
-		if rootsErr != nil {
-			switchRoots = nil
-		}
-		archive, done, err := OpenArchive(latest.ZipPath)
-		if err == nil {
-			_, err = UnzipRoots(archive, game.SavePath, switchRoots)
-			done()
-		}
-		if err != nil {
-			// Same as JS: a failed restore of the incoming branch is logged
-			// but the switch itself stands (branch pointer already moved).
-			fmt.Fprintf(os.Stderr, "[snapshot] failed to restore branch snapshot: %v\n", err)
+	if targetArchive != "" {
+		if _, err := UnzipRoots(targetArchive, game.SavePath, switchPaths); err != nil {
+			return fmt.Errorf("restore branch %q snapshot: %w", targetBranch, err)
 		}
 		// The registry half comes with the files. Restoring one without the
 		// other pairs this branch's files with the registry state of the branch
 		// being left — a save the game never had, and one nothing in the
 		// listing would show as wrong.
-		if dir := switchRoots[winreg.LocationName]; dir != "" {
+		if dir := switchPaths[winreg.LocationName]; dir != "" {
 			allowedKeys, _ := m.Store.GameRegistryKeys(game.ID)
 			for _, w := range RestoreRegistryCaptureAllowed(game.Name, dir, allowedKeys) {
 				if m.Log != nil {

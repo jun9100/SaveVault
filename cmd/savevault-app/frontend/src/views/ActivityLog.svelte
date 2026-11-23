@@ -15,9 +15,10 @@
   // Timeline: what happened to the saves, game by game. Log: every line the
   // app wrote, for when something needs looking into.
   const VIEW_KEY = 'savevault.activityView';
+  const LEGACY_VIEW_KEY = 'opensave.activityView';
   let view = 'timeline';
   try {
-    view = localStorage.getItem(VIEW_KEY) === 'log' ? 'log' : 'timeline';
+    view = (localStorage.getItem(VIEW_KEY) ?? localStorage.getItem(LEGACY_VIEW_KEY)) === 'log' ? 'log' : 'timeline';
   } catch {}
   $: try {
     localStorage.setItem(VIEW_KEY, view);
@@ -25,9 +26,10 @@
 
   // Remembered on this device only; nothing depends on them.
   const MODE_KEY = 'savevault.activityMode';
+  const LEGACY_MODE_KEY = 'opensave.activityMode';
   let technical = false;
   try {
-    technical = localStorage.getItem(MODE_KEY) === 'technical';
+    technical = (localStorage.getItem(MODE_KEY) ?? localStorage.getItem(LEGACY_MODE_KEY)) === 'technical';
   } catch {}
   $: try {
     localStorage.setItem(MODE_KEY, technical ? 'technical' : 'feed');

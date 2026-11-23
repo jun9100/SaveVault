@@ -73,7 +73,8 @@ func FormatPairingCode(code string) string {
 func ParsePairLink(raw string) (server, code string, err error) {
 	parsed, parseErr := url.Parse(strings.TrimSpace(raw))
 	if parseErr != nil || parsed == nil ||
-		!strings.EqualFold(parsed.Scheme, "savevault") || !strings.EqualFold(parsed.Host, "pair") {
+		(!strings.EqualFold(parsed.Scheme, "savevault") && !strings.EqualFold(parsed.Scheme, "opensave")) ||
+		!strings.EqualFold(parsed.Host, "pair") {
 		return "", "", ErrNotPairingLink
 	}
 	if parsed.Path != "" && parsed.Path != "/" {

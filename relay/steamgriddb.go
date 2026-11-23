@@ -180,6 +180,20 @@ func (s *Server) handleCoverLookup(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if len(name) > 200 || len(appID) > 32 {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{
+			"error": "query parameters exceed maximum length",
+		})
+		return
+	}
+	for _, r := range appID {
+		if r < '0' || r > '9' {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{
+				"error": "appId must be numeric",
+			})
+			return
+		}
+	}
 
 	key := strings.ToLower(name) + "|" + appID
 	if cached, ok, fresh := steamGridLookupCached(key); fresh {

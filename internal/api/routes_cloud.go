@@ -386,6 +386,7 @@ func (s *Server) handleAuthDisconnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	_ = s.Daemon.ResetCloudAccountState()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
@@ -502,6 +503,7 @@ func (s *Server) handleCloudRestore(w http.ResponseWriter, r *http.Request) {
 		// them safe while current clients carry the listed namespace explicitly.
 		body.ID = cloud.SaveTypeScope(game.SaveType)
 	}
+	nativeHead := ""
 	if cfg.Provider == cloud.GameSaveProvider {
 		status, statusErr := s.Daemon.GameSaveStatus(gameID)
 		if statusErr != nil {
@@ -528,6 +530,7 @@ func (s *Server) handleCloudRestore(w http.ResponseWriter, r *http.Request) {
 					"only the authoritative native game-save cloud head can be restored normally")
 				return
 			}
+			nativeHead = status.CloudHead
 		} else if status.State != "legacy" {
 			// Native support may fall back only after a route-level 404. An
 			// authorization, integrity, or network error must not revive the
@@ -568,6 +571,9 @@ func (s *Server) handleCloudRestore(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.Daemon.Snapshots.RestoreKeeping(gameID, snapID, ignore.Parse(game.SyncIgnore)); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("downloaded but restore failed: %v", err))
 		return
+	}
+	if err := s.Daemon.NoteCloudRestore(game, snapID, body.FileName, destPath, nativeHead); err != nil && s.Daemon.Log != nil {
+		s.Daemon.Log.Log("warn", fmt.Sprintf("cloud: restored %q but could not update local cloud head: %v", game.Name, err))
 	}
 	s.Daemon.ForgetCloudOffers(gameID)
 	s.BroadcastGamesUpdate()

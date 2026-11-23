@@ -75,6 +75,7 @@ internal fun SettingsPage(
         state.saveSignatures,
         state.cloudUpdates,
         state.rememberedCloudVerdicts,
+        state.scopeTombstones,
         state.gameSaveEnabled,
         state.syncDismissed,
     ) { SyncInbox.fromState(state).size }

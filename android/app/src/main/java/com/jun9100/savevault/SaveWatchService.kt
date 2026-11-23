@@ -15,6 +15,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import com.jun9100.savevault.ops.ready
+import java.io.File
+import java.nio.file.Files
 
 /**
  * Watches the save directories the library already knows about and asks for a
@@ -29,14 +32,17 @@ class SaveWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val observers = mutableListOf<FileObserver>()
     private var watched = listOf<String>()
+    @Volatile
+    private var destroyed = false
 
     private val flush = Runnable {
-        if (!SaveWatchPolicy.shouldUpload(applicationContext)) return@Runnable
+        if (destroyed || !SaveWatchPolicy.shouldUpload(applicationContext)) return@Runnable
         AutoBackupScheduler(applicationContext).requestImmediateBackup(REASON_WATCH)
     }
 
     override fun onCreate() {
         super.onCreate()
+        destroyed = false
         startForegroundWithNotification()
     }
 
@@ -47,11 +53,27 @@ class SaveWatchService : Service() {
                 return START_NOT_STICKY
             }
             else -> {
-                val dirs = intent?.getStringArrayListExtra(EXTRA_DIRS).orEmpty()
-                if (dirs != watched) {
+                if (!SaveWatchPolicy.shouldUpload(applicationContext)) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                val dirs = if (intent == null) {
+                    SaveWatchPolicy.watchedDirectories(applicationContext)
+                } else {
+                    intent.getStringArrayListExtra(EXTRA_DIRS).orEmpty().also {
+                        SaveWatchPolicy.saveWatchedDirectories(applicationContext, it)
+                    }
+                }
+                val watchTargets = resolveWatchTargets(dirs)
+                if (watchTargets.isEmpty()) {
                     stopObservers()
-                    watched = dirs
-                    startObservers(dirs)
+                    watched = emptyList()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                if (watchTargets != watched) {
+                    stopObservers()
+                    startObservers(watchTargets)
                 }
                 startForegroundWithNotification()
             }
@@ -60,6 +82,7 @@ class SaveWatchService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         stopObservers()
         handler.removeCallbacks(flush)
         super.onDestroy()
@@ -67,18 +90,43 @@ class SaveWatchService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun resolveWatchTargets(dirs: List<String>): List<String> {
+        val resolved = LinkedHashSet<String>()
+        for (dir in dirs) {
+            if (resolved.size >= MAX_OBSERVERS) break
+            val root = File(dir)
+            if (!root.isDirectory || !root.canRead() || Files.isSymbolicLink(root.toPath())) continue
+            resolved += root.path
+            // FileObserver is non-recursive: also watch immediate readable subdirectories so
+            // nested slot folders inside a save root trigger immediate uploads.
+            root.listFiles()?.forEach { child ->
+                if (resolved.size >= MAX_OBSERVERS) return@forEach
+                if (child.isDirectory && child.canRead() && !Files.isSymbolicLink(child.toPath())) {
+                    resolved += child.path
+                }
+            }
+        }
+        return resolved.toList()
+    }
+
     private fun startObservers(dirs: List<String>) {
+        val active = mutableListOf<String>()
         for (dir in dirs) {
             val observer = object : FileObserver(dir, EVENTS) {
                 override fun onEvent(event: Int, path: String?) {
+                    if (destroyed || (event and EVENTS) == 0) return
                     // Any write, rename or delete inside a save directory means
                     // the game is saving; debounce so a burst becomes one upload.
                     handler.removeCallbacks(flush)
                     handler.postDelayed(flush, DEBOUNCE_MILLIS)
                 }
             }
-            runCatching { observer.startWatching() }.onSuccess { observers += observer }
+            runCatching { observer.startWatching() }.onSuccess {
+                observers += observer
+                active += dir
+            }
         }
+        watched = active
     }
 
     private fun stopObservers() {
@@ -114,6 +162,7 @@ class SaveWatchService : Service() {
         private const val CHANNEL_ID = "savevault_save_watch"
         private const val NOTIFICATION_ID = 4713
         private const val DEBOUNCE_MILLIS = 15_000L
+        private const val MAX_OBSERVERS = 128
         private const val REASON_WATCH = "watch"
         const val ACTION_STOP = "com.jun9100.savevault.STOP_SAVE_WATCH"
         const val EXTRA_DIRS = "com.jun9100.savevault.SAVE_WATCH_DIRS"
@@ -123,15 +172,15 @@ class SaveWatchService : Service() {
             FileObserver.MOVED_FROM
 
         fun start(context: Context, directories: Collection<String>) {
+            val unique = directories.distinct()
+            SaveWatchPolicy.saveWatchedDirectories(context.applicationContext, unique)
             val intent = Intent(context, SaveWatchService::class.java)
-                .putStringArrayListExtra(EXTRA_DIRS, ArrayList(directories))
+                .putStringArrayListExtra(EXTRA_DIRS, ArrayList(unique))
             context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, SaveWatchService::class.java).setAction(ACTION_STOP),
-            )
+            context.stopService(Intent(context, SaveWatchService::class.java))
         }
     }
 }
@@ -140,21 +189,37 @@ class SaveWatchService : Service() {
 internal object SaveWatchPolicy {
     private const val PREFERENCES = "savevault_automation"
     private const val WATCH_KEY = "save_watch_enabled"
-    private const val BACKUP_KEY = "auto_backup_enabled"
+    private const val WATCHED_DIRS_KEY = "save_watch_dirs"
 
-    fun isEnabled(context: Context): Boolean = context
+    fun isEnabled(context: Context): Boolean = context.applicationContext
         .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         .getBoolean(WATCH_KEY, false)
 
     fun setEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit().putBoolean(WATCH_KEY, enabled).apply()
     }
 
-    /** A watch event only turns into an upload when both switches are on. */
+    fun watchedDirectories(context: Context): List<String> = context.applicationContext
+        .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        .getStringSet(WATCHED_DIRS_KEY, emptySet())
+        .orEmpty()
+        .sorted()
+
+    fun saveWatchedDirectories(context: Context, directories: Collection<String>) {
+        val editor = context.applicationContext
+            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+        val unique = directories.filter(String::isNotBlank).toSet()
+        if (unique.isEmpty()) editor.remove(WATCHED_DIRS_KEY) else editor.putStringSet(WATCHED_DIRS_KEY, unique)
+        editor.apply()
+    }
+
+    /** A watch event turns into an upload whenever watch is on and cloud upload is ready. */
     fun shouldUpload(context: Context): Boolean {
-        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        val app = context.applicationContext
+        val preferences = app.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
         return preferences.getBoolean(WATCH_KEY, false) &&
-            preferences.getBoolean(BACKUP_KEY, false)
+            GameSaveConfigStore(app).load().ready
     }
 }

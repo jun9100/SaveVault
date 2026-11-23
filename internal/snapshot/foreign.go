@@ -32,7 +32,8 @@ const (
 	ForeignPCRoot = "pc-root"
 	// ForeignManifestName marks an Android-format archive. Its absence means
 	// the archive is PC format.
-	ForeignManifestName = "savevault-game.json"
+	ForeignManifestName       = "savevault-game.json"
+	legacyForeignManifestName = "opensave-game.json"
 )
 
 // ForeignLocation is one location inside an archive, as the plan presents it.
@@ -98,6 +99,9 @@ func InspectForeignArchive(zipPath string) (ForeignArchive, error) {
 	}
 	defer r.Close()
 
+	if len(r.File) > maxArchiveEntries {
+		return ForeignArchive{}, fmt.Errorf("%w: zip archive contains too many entries (%d > %d)", ErrForeignArchive, len(r.File), maxArchiveEntries)
+	}
 	for _, f := range r.File {
 		if unsafeForeignEntry(f.Name) {
 			return ForeignArchive{}, fmt.Errorf("save archive entry %q escapes the destination", f.Name)
@@ -106,9 +110,11 @@ func InspectForeignArchive(zipPath string) (ForeignArchive, error) {
 
 	var manifest *zip.File
 	for _, f := range r.File {
-		if f.Name == ForeignManifestName {
+		if f.Name == ForeignManifestName || f.Name == legacyForeignManifestName {
 			manifest = f
-			break
+			if f.Name == ForeignManifestName {
+				break
+			}
 		}
 	}
 	if manifest != nil {
@@ -117,15 +123,23 @@ func InspectForeignArchive(zipPath string) (ForeignArchive, error) {
 	return inspectPCArchive(r.File), nil
 }
 
+func isExtraRootEntry(name string) bool {
+	for _, prefix := range []string{RootPrefix, legacyRootPrefix} {
+		if name == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func inspectPCArchive(files []*zip.File) ForeignArchive {
 	root := ForeignLocation{ID: ForeignPCRoot}
 	ignored := 0
-	prefixDir := strings.TrimSuffix(RootPrefix, "/")
 	for _, f := range files {
 		// Extra locations belong to the device that wrote the archive. Their
 		// names are not portable, so a cross-device restore leaves them out
 		// entirely and only reports that they were there.
-		if f.Name == prefixDir || strings.HasPrefix(f.Name, RootPrefix) {
+		if isExtraRootEntry(f.Name) {
 			ignored++
 			continue
 		}
@@ -485,6 +499,10 @@ func (m *Manager) restoreForeignLocation(target, archiveLocation string, files [
 	if err := clearSavePathGuarded(target); err != nil {
 		return fmt.Errorf("clear %s: %w", target, err)
 	}
+	if len(files) > maxArchiveEntries {
+		return fmt.Errorf("zip archive contains too many entries (%d > %d)", len(files), maxArchiveEntries)
+	}
+	budget := &extractBudget{remaining: maxArchiveExtractBytes}
 	for _, f := range files {
 		rel := f.Name
 		if archiveLocation != ForeignPCRoot {
@@ -498,7 +516,7 @@ func (m *Manager) restoreForeignLocation(target, archiveLocation string, files [
 			}
 			continue
 		}
-		if err := extractEntryAs(f, target, rel); err != nil {
+		if err := extractEntryAsLimited(f, target, rel, budget); err != nil {
 			return err
 		}
 	}

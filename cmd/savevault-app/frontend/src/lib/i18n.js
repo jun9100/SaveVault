@@ -25,6 +25,7 @@ export const LOCALES = { en: 'English', 'zh-CN': '简体中文' };
 const CATALOGS = { en, 'zh-CN': zhCN };
 const FALLBACK = 'en';
 const KEY = 'savevault.locale';
+const LEGACY_KEY = 'opensave.locale';
 
 /** A locale id if valid, otherwise null. */
 export function sanitizeLocale(raw) {
@@ -34,7 +35,7 @@ export function sanitizeLocale(raw) {
 /** The saved choice, or 'system' when the user has never picked one. */
 export function loadLocale(storage = globalThis.localStorage) {
   try {
-    return sanitizeLocale(storage?.getItem(KEY)) ?? SYSTEM_LOCALE;
+    return sanitizeLocale(storage?.getItem(KEY) ?? storage?.getItem(LEGACY_KEY)) ?? SYSTEM_LOCALE;
   } catch {
     return SYSTEM_LOCALE;
   }
@@ -43,8 +44,10 @@ export function loadLocale(storage = globalThis.localStorage) {
 /** Persist an explicit pick; 'system' clears it, following the OS again. */
 export function saveLocale(l, storage = globalThis.localStorage) {
   try {
-    if (l === SYSTEM_LOCALE) storage?.removeItem(KEY);
-    else storage?.setItem(KEY, l);
+    if (l === SYSTEM_LOCALE) {
+      storage?.removeItem(KEY);
+      storage?.removeItem(LEGACY_KEY);
+    } else storage?.setItem(KEY, l);
   } catch {
     // Storage refused: the choice lasts until restart.
   }

@@ -852,6 +852,31 @@ func (d *Daemon) pullFromCloud(game store.Game, fileName, deviceName string) err
 	return nil
 }
 
+// ResetCloudAccountState clears all local per-account cloud sync state when
+// switching cloud accounts, servers, or providers, or disconnecting.
+func (d *Daemon) ResetCloudAccountState() error {
+	d.cloudRd.heads.Lock()
+	err := d.Store.ResetCloudSyncState()
+	d.cloudRd.heads.Unlock()
+	d.cloudRd.offersMu.Lock()
+	d.cloudRd.offers = nil
+	d.cloudRd.offersMu.Unlock()
+	d.cloudRd.cacheMu.Lock()
+	d.cloudRd.cache = nil
+	d.cloudRd.cacheMu.Unlock()
+	return err
+}
+
+// NoteCloudRestore records a manual cloud restore as the local baseline so the
+// watcher and native game-save CAS upload path recognize the restored head
+// instead of treating it as a brand-new local edit or stale conflict.
+func (d *Daemon) NoteCloudRestore(game store.Game, snapshotID, fileName, zipPath, nativeHead string) error {
+	if hash, err := d.currentContentHash(game); err == nil {
+		_ = d.Store.SetLastManifestHash(game.ID, hash)
+	}
+	return d.noteCloudPullForCloud(game, snapshotID, fileName, zipPath, nativeHead)
+}
+
 // noteCloudPullForCloud makes a remotely restored snapshot the local head.
 // It runs after the guarded RestoreKeeping call, so it is the only transition
 // allowed to describe a cloud-originated restore to the upload path.

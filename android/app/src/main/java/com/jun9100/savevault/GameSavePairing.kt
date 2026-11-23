@@ -66,7 +66,11 @@ internal object PairingLinks {
         require(raw.isNotEmpty()) { "配对链接为空" }
         require(raw.length <= MAX_LENGTH) { "配对链接过长" }
         val uri = runCatching { URI(raw) }.getOrElse { throw IllegalArgumentException("配对链接格式无效") }
-        require(uri.scheme.equals(SCHEME, ignoreCase = true) && uri.rawAuthority.equals(HOST, ignoreCase = true)) {
+        val scheme = uri.scheme.orEmpty()
+        require(
+            (scheme.equals(SCHEME, ignoreCase = true) || scheme.equals(LEGACY_SCHEME, ignoreCase = true)) &&
+                uri.rawAuthority.equals(HOST, ignoreCase = true),
+        ) {
             "只支持 savevault://pair 配对链接"
         }
         require(uri.rawPath.isNullOrEmpty() || uri.rawPath == "/") { "配对链接不能包含路径" }
@@ -99,6 +103,7 @@ internal object PairingLinks {
         }.getOrElse { throw IllegalArgumentException("配对链接参数 $name 编码无效") }
 
     private const val SCHEME = "savevault"
+    private const val LEGACY_SCHEME = "opensave"
     private const val HOST = "pair"
     private const val MAX_LENGTH = 4096
     private val FIELDS = setOf("v", "server", "code")

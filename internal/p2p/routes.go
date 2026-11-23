@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -502,7 +503,28 @@ func (e *Engine) backfillCover(game store.Game, q manifestGameQuery) store.Game 
 // peerID identifies the device asking. It is only needed when this device is
 // set to ask before tracking, to record who is waiting; empty is tolerated
 // (an unidentified caller simply produces an offer with no named device).
+func isSafePeerGameID(id string) bool {
+	if id == "" || id == "." || id == ".." || len(id) > 128 {
+		return false
+	}
+	return !strings.ContainsAny(id, `/\:`+"\x00")
+}
+
+func (e *Engine) peerForLANRequest(r *http.Request) (syncengine.Peer, bool) {
+	if id := lanPeerID(r); id != "" {
+		if p, err := e.Store.GetPeer(id); err == nil {
+			return syncengine.Peer{
+				ID: p.ID, Name: p.Name, Address: p.Address, Port: p.Port, IsWan: p.Address == "relay",
+			}, true
+		}
+	}
+	return e.peerByAddress(clientIP(r))
+}
+
 func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery, peerID string) (store.Game, error) {
+	if !isSafePeerGameID(gameID) {
+		return store.Game{}, fmt.Errorf("invalid game id")
+	}
 	if game, err := e.Store.GetGame(gameID); err == nil {
 		return e.backfillCover(game, q), nil
 	}
@@ -676,7 +698,7 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 
 	var askingPeer string
-	if peer, ok := e.peerByAddress(clientIP(r)); ok {
+	if peer, ok := e.peerForLANRequest(r); ok {
 		askingPeer = peer.ID
 	}
 	game, err := e.ensureManifestGame(gameID, manifestQueryFromURL(r.URL.Query()), askingPeer)
@@ -844,7 +866,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		}
 		e.Log("info", fmt.Sprintf("peer-requested deletion applied: %s", body.RelPath))
 		asker := "another device"
-		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+		if peer, ok := e.peerForLANRequest(r); ok {
 			asker = peer.Name
 		}
 		e.Sync.NoteEmptiedByPeer(gameID, asker, deleting)
@@ -856,7 +878,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		// edit here reads as a two-way divergence and prompts on a save the
 		// peer never touched. Re-derive it now rather than waiting for some
 		// later sync to happen along and put it right.
-		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+		if peer, ok := e.peerForLANRequest(r); ok {
 			e.refreshLineageAfterDeletion(gameID, peer)
 		}
 	}
@@ -931,14 +953,14 @@ func (e *Engine) handleSyncEvent(w http.ResponseWriter, r *http.Request) {
 		if e.Sync.Progress.OnSyncComplete != nil {
 			e.Sync.Progress.OnSyncComplete(gameID, ev)
 		}
-		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+		if peer, ok := e.peerForLANRequest(r); ok {
 			e.peerFinishedPulling(gameID, peer, body.Data)
 		}
 	case "in-sync":
 		// The peer verified both sides hold identical content; confirm on
 		// our side (hash re-check) before recording lineage + last-synced.
 		claimedHash, _ := body.Data["manifestHash"].(string)
-		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+		if peer, ok := e.peerForLANRequest(r); ok {
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()

@@ -19,6 +19,7 @@ export function setupSteps({ games = 0, peers = 0, cloud = false, skipped = [] }
 }
 
 const KEY = 'savevault.setup';
+const LEGACY_KEY = 'opensave.setup';
 
 // `seen` is whether this device has decided yet whether the guide is for it.
 // It is decided once, the first time the library loads: a library that
@@ -26,7 +27,7 @@ const KEY = 'savevault.setup';
 // and an update should not greet them with a first-run checklist.
 export function loadSetup(storage = globalThis.localStorage) {
   try {
-    const v = JSON.parse(storage?.getItem(KEY) ?? 'null');
+    const v = JSON.parse(storage?.getItem(KEY) ?? storage?.getItem(LEGACY_KEY) ?? 'null');
     return {
       seen: !!v?.seen,
       dismissed: !!v?.dismissed,

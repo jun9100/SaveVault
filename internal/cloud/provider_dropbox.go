@@ -125,10 +125,27 @@ func (p dropbox) list() ([]CloudFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	files, missing, err := p.listFolder(token, "/SaveVault", false)
+	if err != nil {
+		return nil, err
+	}
+	if missing {
+		// Smooth upgrade: read pre-rebrand backups from /OpenSave if /SaveVault
+		// has not been created yet.
+		legacyFiles, legacyMissing, legacyErr := p.listFolder(token, "/OpenSave", true)
+		if legacyErr == nil && !legacyMissing {
+			return legacyFiles, nil
+		}
+		return []CloudFile{}, nil
+	}
+	return files, nil
+}
+
+func (p dropbox) listFolder(token, folder string, tagLegacyID bool) ([]CloudFile, bool, error) {
 	// Following the cursor while Dropbox says there is more: one call is one
 	// page, and a page is not the folder.
 	endpoint := "/2/files/list_folder"
-	body, _ := json.Marshal(map[string]string{"path": "/SaveVault"})
+	body, _ := json.Marshal(map[string]string{"path": folder})
 	var files []CloudFile
 	for page := 0; page < maxListPages; page++ {
 		req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxAPI+endpoint, bytes.NewReader(body))
@@ -147,31 +164,35 @@ func (p dropbox) list() ([]CloudFile, error) {
 		}
 		missing, err := p.listPage(req, &out)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if missing && page == 0 {
-			return []CloudFile{}, nil // /SaveVault folder doesn't exist yet
+			return []CloudFile{}, true, nil
 		}
 		if missing {
 			// Mid-listing, a conflict is a cursor Dropbox has reset, not an
 			// empty folder.
-			return nil, fmt.Errorf("Dropbox: the listing was reset part-way through; try again")
+			return nil, false, fmt.Errorf("Dropbox: the listing was reset part-way through; try again")
 		}
 		for _, e := range out.Entries {
 			if e.Tag == "file" && strings.HasSuffix(e.Name, ".zip") {
-				files = append(files, CloudFile{Name: e.Name, SizeBytes: e.Size, CreatedTime: e.ClientModified})
+				cf := CloudFile{Name: e.Name, SizeBytes: e.Size, CreatedTime: e.ClientModified}
+				if tagLegacyID {
+					cf.ID = folder + "/" + e.Name
+				}
+				files = append(files, cf)
 			}
 		}
 		if !out.HasMore {
-			return files, nil
+			return files, false, nil
 		}
 		if out.Cursor == "" {
-			return nil, errListTooLong("Dropbox")
+			return nil, false, errListTooLong("Dropbox")
 		}
 		endpoint = "/2/files/list_folder/continue"
 		body, _ = json.Marshal(map[string]string{"cursor": out.Cursor})
 	}
-	return nil, errListTooLong("Dropbox")
+	return nil, false, errListTooLong("Dropbox")
 }
 
 // listPage runs one list_folder or list_folder/continue call. missing
@@ -198,11 +219,23 @@ func (p dropbox) download(fileName, localPath string) error {
 	if err != nil {
 		return err
 	}
-	args, _ := json.Marshal(map[string]string{"path": "/SaveVault/" + fileName})
-	req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxContent+"/2/files/download", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Dropbox-API-Arg", string(args))
-	if err := p.s.fetchToFile(req, localPath); err != nil {
+	path := "/SaveVault/" + fileName
+	if strings.HasPrefix(fileName, "/OpenSave/") || strings.HasPrefix(fileName, "/SaveVault/") {
+		path = fileName
+	}
+	tryDownload := func(target string) error {
+		args, _ := json.Marshal(map[string]string{"path": target})
+		req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxContent+"/2/files/download", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Dropbox-API-Arg", string(args))
+		return p.s.fetchToFile(req, localPath)
+	}
+	if err := tryDownload(path); err != nil {
+		if path == "/SaveVault/"+fileName && strings.Contains(err.Error(), "HTTP 409") {
+			if legacyErr := tryDownload("/OpenSave/" + fileName); legacyErr == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("Dropbox: %w", err)
 	}
 	return nil
@@ -213,7 +246,11 @@ func (p dropbox) remove(f CloudFile) error {
 	if err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]string{"path": "/SaveVault/" + f.Name})
+	path := "/SaveVault/" + f.Name
+	if strings.HasPrefix(f.ID, "/OpenSave/") {
+		path = f.ID
+	}
+	body, _ := json.Marshal(map[string]string{"path": path})
 	req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxAPI+"/2/files/delete_v2", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")

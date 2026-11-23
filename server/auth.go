@@ -120,14 +120,42 @@ func (s *server) adminTokenMatches(candidate string) bool {
 
 // adminAuthenticated accepts either the dashboard session cookie or HTTP Basic Auth whose
 // password is the administrator token (useful for scripts and Prometheus).
+// Basic Auth attempts share the per-IP rate limiter with /admin/api/login.
 func (s *server) adminAuthenticated(r *http.Request) bool {
-	if cookie, err := r.Cookie(sessionCookie); err == nil && s.validSession(cookie.Value, time.Now()) {
-		return true
+	ok, _ := s.adminAuthenticatedWithLimit(r, true)
+	return ok
+}
+
+// adminAuthenticatedPeek checks session cookie or Basic Auth without recording
+// a failed attempt, used during routing before requireAdmin enforces limits.
+func (s *server) adminAuthenticatedPeek(r *http.Request) bool {
+	ok, _ := s.adminAuthenticatedWithLimit(r, false)
+	return ok
+}
+
+func (s *server) adminAuthenticatedWithLimit(r *http.Request, recordFailure bool) (bool, bool) {
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
 	}
-	if _, password, ok := r.BasicAuth(); ok && s.adminTokenMatches(password) {
-		return true
+	if cookie, err := r.Cookie(sessionCookie); err == nil && s.validSession(cookie.Value, now) {
+		return true, false
 	}
-	return false
+	if _, password, ok := r.BasicAuth(); ok {
+		address := remoteHost(r)
+		if s.logins.blocked(address, now) {
+			return false, true
+		}
+		if s.adminTokenMatches(password) {
+			s.logins.reset(address)
+			return true, false
+		}
+		if recordFailure {
+			s.logins.fail(address, now)
+		}
+		return false, false
+	}
+	return false, false
 }
 
 func (s *server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
@@ -136,7 +164,12 @@ func (s *server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		if !s.adminAuthenticated(r) {
+		ok, blocked := s.adminAuthenticatedWithLimit(r, true)
+		if blocked {
+			writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
+			return
+		}
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "administrator authentication required")
 			return
 		}
@@ -225,5 +258,10 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": s.adminAuthenticated(r), "version": version})
+	authenticated, blocked := s.adminAuthenticatedWithLimit(r, true)
+	if blocked {
+		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": authenticated, "version": version})
 }

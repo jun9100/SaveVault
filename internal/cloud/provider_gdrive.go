@@ -229,21 +229,36 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 		return s.driveFolderID, nil
 	}
 
-	query := "name = 'SaveVault' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
-	listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
-	req, _ := http.NewRequest(http.MethodGet, listURL, nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	var out struct {
-		Files []struct {
-			ID string `json:"id"`
-		} `json:"files"`
+	findFolder := func(name string) (string, error) {
+		query := "name = '" + name + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
+		listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
+		req, _ := http.NewRequest(http.MethodGet, listURL, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		var out struct {
+			Files []struct {
+				ID string `json:"id"`
+			} `json:"files"`
+		}
+		if err := s.doJSON(req, &out); err != nil {
+			return "", googleDriveErr(err)
+		}
+		if len(out.Files) > 0 {
+			return out.Files[0].ID, nil
+		}
+		return "", nil
 	}
-	if err := s.doJSON(req, &out); err != nil {
-		return "", googleDriveErr(err)
+
+	if id, err := findFolder("SaveVault"); err != nil {
+		return "", err
+	} else if id != "" {
+		s.driveFolderID = id
+		return id, nil
 	}
-	if len(out.Files) > 0 {
-		s.driveFolderID = out.Files[0].ID
-		return s.driveFolderID, nil
+	// Smooth upgrade: reuse an existing legacy "OpenSave" folder if present so
+	// pre-rebrand backups remain visible without manual folder moves.
+	if id, err := findFolder("OpenSave"); err == nil && id != "" {
+		s.driveFolderID = id
+		return id, nil
 	}
 
 	meta, _ := json.Marshal(map[string]any{

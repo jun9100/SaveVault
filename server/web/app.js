@@ -666,7 +666,7 @@ function todayUploadSummary(items) {
   for (const item of items || []) {
     if (item.kind !== "upload" || localDayKey(item.time) !== today) continue;
     uploads++;
-    const saveVault = /^savevault:([^/]+)\/(.+)$/.exec(item.scope || "");
+    const saveVault = /^(?:savevault|opensave):([^/]+)\/(.+)$/.exec(item.scope || "");
     const gameKey = saveVault ? saveVaultGameKeyForScope(saveVault[1], saveVault[2]) : "";
     if (gameKey || item.scope) games.add(gameKey || item.scope);
     if (item.device) devices.add(item.device);
@@ -744,7 +744,7 @@ const eventIcons = {
   tombstone_cleared: "trash", snapshot_lock: "lock", snapshot_unlock: "lock", retention: "broom",
   prune: "broom", prune_scope: "broom", device_new: "devices", device_removed: "devices",
   device_paired: "shield", device_token_created: "shield", device_token_revoked: "shield",
-  verify: "shield", settings: "tools", savevault_meta: "edit",
+  verify: "shield", settings: "tools", savevault_meta: "edit", opensave_meta: "edit",
 };
 
 // Token events store "<id> <name>"; the name is optional and may contain spaces.
@@ -835,7 +835,8 @@ function describeEvent(item) {
     case "device_token_revoked": return [`吊销了设备令牌 ${tokenEventSubject(item)}`,
       item.device ? `设备 ${deviceName(item.device)} 的访问已立即失效` : "该令牌的访问已立即失效", item.detail || ""];
     case "verify": return ["完成完整性校验", (item.detail || "").replace(/checked (\d+) objects, (\d+) problems/, "检查 $1 个对象，发现 $2 个问题"), ""];
-    case "savevault_meta": {
+    case "savevault_meta":
+    case "opensave_meta": {
       const detail = String(item.detail || "");
       const cleared = /^(.*) custom-cover cleared$/.exec(detail);
       const split = detail.lastIndexOf(" ");
@@ -860,7 +861,7 @@ function describeEvent(item) {
         return [coverMatch[1] === "on" ? "上游封面抓取已开启" : "上游封面抓取已关闭",
           coverMatch[1] === "on" ? "服务端会从 Steam、Nintendo 和 tinfoil 缓存封面" : "服务端不会再发起新的上游封面请求", detail];
       }
-      if (/^savevault_retention=/.test(detail.trim())) {
+      if (/^(?:savevault|opensave)_retention=/.test(detail.trim())) {
         return ["更新了 SaveVault 自动保留设置", "新的自动保留规则会在下一次维护任务执行时生效", detail];
       }
       return ["更新了保留策略", detail.replace(/retention: keep (\d+) snapshots, (\d+) days/, "保留 $1 个快照 / $2 天（0 表示不限）"), ""];
@@ -871,7 +872,7 @@ function describeEvent(item) {
 
 function eventRow(item, { withDate = false } = {}) {
   const [text, detail, technical] = describeEvent(item);
-  const saveVault = /^savevault:([^/]+)\/(.+)$/.exec(item.scope || "");
+  const saveVault = /^(?:savevault|opensave):([^/]+)\/(.+)$/.exec(item.scope || "");
   const link = saveVault
     ? `href="#/savevault/${encodeURIComponent(saveVault[1])}/${encodeURIComponent(saveVault[2])}"`
     : item.scope && scopeByID(item.scope) ? `href="#/saves/${encodeURIComponent(item.scope)}"` : "";
@@ -2456,7 +2457,7 @@ const activityKinds = [
 function matchesActivity(item) {
   switch (store.activityFilter) {
     case "all": return true;
-    case "maintenance": return ["prune", "prune_scope", "verify", "settings", "savevault_meta", "delete_snapshot", "delete_scope",
+    case "maintenance": return ["prune", "prune_scope", "verify", "settings", "savevault_meta", "opensave_meta", "delete_snapshot", "delete_scope",
       "restore_scope", "retire_scope", "unretire_scope", "tombstone_cleared", "snapshot_lock", "snapshot_unlock", "retention"].includes(item.kind);
     case "device": return item.kind.startsWith("device");
     default: return item.kind === store.activityFilter;
@@ -2975,7 +2976,7 @@ async function render() {
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  const titles = { overview: "概览", saves: "存档", scope: "存档", savevault: "SaveVault", savevaultScope: "SaveVault 存档", devices: "设备", tokens: "令牌", activity: "活动", maintenance: "维护" };
+  const titles = { overview: "概览", saves: "存档", scope: "存档", savevault: "SaveVault", savevaultScope: "SaveVault 存档", devices: "设备", users: "用户", tokens: "令牌", activity: "活动", maintenance: "维护" };
   document.title = `${titles[route.name]} · SaveVault 云端`;
   switch (route.name) {
     case "saves": return renderSaves();

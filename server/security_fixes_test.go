@@ -273,4 +273,185 @@ func TestLegacyOpenSaveCompat(t *testing.T) {
 	if name, ok := saveVaultEventScopeName("opensave:pc/game1"); !ok || !strings.Contains(name, "game1") {
 		t.Fatalf("saveVaultEventScopeName legacy = %q, %v", name, ok)
 	}
+	// Legacy Bark opensave_meta alias remains accepted.
+	if events, err := parseBarkEvents("conflict,opensave_meta"); err != nil {
+		t.Fatalf("parseBarkEvents(opensave_meta): %v", err)
+	} else if _, ok := events[eventSaveVaultMeta]; !ok {
+		t.Fatalf("expected opensave_meta mapped to %q, got %v", eventSaveVaultMeta, events)
+	}
+}
+
+func TestMultiTenantDeviceTokensPairingQuotaExpiryRecreateAndRateLimit(t *testing.T) {
+	root := t.TempDir()
+	registry, err := newVaultRegistry(root, "default-token", 8<<20, serverOptions{adminToken: "admin-secret"})
+	if err != nil {
+		t.Fatalf("newVaultRegistry: %v", err)
+	}
+	t.Cleanup(registry.Close)
+	handler := registry.handler()
+
+	// Negative quota rejected.
+	if _, err := registry.CreateUser("negquota", "s3cret-pass", "", -1, time.Time{}); err == nil {
+		t.Fatal("negative quota must be rejected")
+	}
+
+	// 1. Delete + recreate user works immediately (no stale handler cache 401).
+	alice1, err := registry.CreateUser("alice", "s3cret-pass", "", 64, time.Time{})
+	if err != nil {
+		t.Fatalf("create alice1: %v", err)
+	}
+	req1 := httptest.NewRequest(http.MethodGet, "/v1/auth/whoami", nil)
+	req1.Header.Set("Authorization", "Bearer "+alice1.Token)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("alice1 whoami = %d", rec1.Code)
+	}
+	if err := registry.DeleteUser("alice"); err != nil {
+		t.Fatalf("delete alice1: %v", err)
+	}
+	// Old token must fail now.
+	reqOld := httptest.NewRequest(http.MethodGet, "/v1/auth/whoami", nil)
+	reqOld.Header.Set("Authorization", "Bearer "+alice1.Token)
+	recOld := httptest.NewRecorder()
+	handler.ServeHTTP(recOld, reqOld)
+	if recOld.Code != http.StatusUnauthorized {
+		t.Fatalf("deleted user token status = %d, want 401", recOld.Code)
+	}
+	alice2, err := registry.CreateUser("alice", "s3cret-pass", "", 64, time.Time{})
+	if err != nil {
+		t.Fatalf("recreate alice2: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/auth/whoami", nil)
+	req2.Header.Set("Authorization", "Bearer "+alice2.Token)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("recreated alice2 whoami = %d, want 200 (stale handler cache bug)", rec2.Code)
+	}
+
+	// 2. Quota enforcement on SaveVault native upload.
+	smallPut := httptest.NewRequest(http.MethodPut, "/v1/savevault/files/pc/g1__main__snap_1.zip", bytes.NewReader(bytes.Repeat([]byte("a"), 32)))
+	smallPut.Header.Set("Authorization", "Bearer "+alice2.Token)
+	smallRec := httptest.NewRecorder()
+	handler.ServeHTTP(smallRec, smallPut)
+	if smallRec.Code != http.StatusCreated {
+		t.Fatalf("within-quota PUT = %d %s", smallRec.Code, smallRec.Body.String())
+	}
+	overPut := httptest.NewRequest(http.MethodPut, "/v1/savevault/files/pc/g2__main__snap_2.zip", bytes.NewReader(bytes.Repeat([]byte("b"), 40)))
+	overPut.Header.Set("Authorization", "Bearer "+alice2.Token)
+	overRec := httptest.NewRecorder()
+	handler.ServeHTTP(overRec, overPut)
+	if overRec.Code != http.StatusInsufficientStorage {
+		t.Fatalf("over-quota PUT = %d, want 507 (%s)", overRec.Code, overRec.Body.String())
+	}
+
+	// 3. Tenant pairing claim and tenant gsdt_* device token routing.
+	pairCreate := httptest.NewRequest(http.MethodPost, "/admin/api/pairings", strings.NewReader(`{"name":"deck"}`))
+	pairCreate.SetBasicAuth("admin", "admin-secret")
+	pairCreate.Header.Set(csrfHeader, "1")
+	pairCreate.Header.Set("X-Game-Save-Vault", "alice")
+	pairCreateRec := httptest.NewRecorder()
+	handler.ServeHTTP(pairCreateRec, pairCreate)
+	if pairCreateRec.Code != http.StatusCreated {
+		t.Fatalf("create tenant pairing = %d %s", pairCreateRec.Code, pairCreateRec.Body.String())
+	}
+	var createdPairing struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(pairCreateRec.Body.Bytes(), &createdPairing); err != nil {
+		t.Fatal(err)
+	}
+	claimBody, _ := json.Marshal(map[string]string{
+		"code":      createdPairing.Code,
+		"device_id": "alice-deck-1",
+	})
+	claimReq := httptest.NewRequest(http.MethodPost, "/v1/pair/claim", bytes.NewReader(claimBody))
+	claimRec := httptest.NewRecorder()
+	handler.ServeHTTP(claimRec, claimReq)
+	if claimRec.Code != http.StatusOK {
+		t.Fatalf("tenant pair claim = %d %s", claimRec.Code, claimRec.Body.String())
+	}
+	var claimed struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(claimRec.Body.Bytes(), &claimed); err != nil || !strings.HasPrefix(claimed.Token, deviceTokenPrefix) {
+		t.Fatalf("unexpected claimed payload: %s", claimRec.Body.String())
+	}
+	devWhoami := httptest.NewRequest(http.MethodGet, "/v1/savevault/files", nil)
+	devWhoami.Header.Set("Authorization", "Bearer "+claimed.Token)
+	devRec := httptest.NewRecorder()
+	handler.ServeHTTP(devRec, devWhoami)
+	if devRec.Code != http.StatusOK || !strings.Contains(devRec.Body.String(), "g1__main__snap_1.zip") {
+		t.Fatalf("tenant gsdt token GET /v1/savevault/files = %d %s", devRec.Code, devRec.Body.String())
+	}
+
+	// 4. Expired user bearer token is rejected even on non-login endpoints.
+	expiredUser, err := registry.CreateUser("expired", "s3cret-pass", "", 0, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("create expired user: %v", err)
+	}
+	expReq := httptest.NewRequest(http.MethodGet, "/v1/auth/whoami", nil)
+	expReq.Header.Set("Authorization", "Bearer "+expiredUser.Token)
+	expRec := httptest.NewRecorder()
+	handler.ServeHTTP(expRec, expReq)
+	if expRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired user bearer token status = %d, want 401", expRec.Code)
+	}
+
+	// 5. Unknown X-Game-Save-Vault returns 404 (not 500) for authenticated admin.
+	unkReq := httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
+	unkReq.SetBasicAuth("admin", "admin-secret")
+	unkReq.Header.Set("X-Game-Save-Vault", "does-not-exist")
+	unkRec := httptest.NewRecorder()
+	handler.ServeHTTP(unkRec, unkReq)
+	if unkRec.Code != http.StatusNotFound {
+		t.Fatalf("unknown admin vault = %d, want 404", unkRec.Code)
+	}
+
+	// 6. Admin Basic Auth brute-force is rate limited (429).
+	for i := 0; i < loginFailureLimit; i++ {
+		bad := httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
+		bad.RemoteAddr = "203.0.113.55:4444"
+		bad.SetBasicAuth("admin", "wrong-token")
+		badRec := httptest.NewRecorder()
+		handler.ServeHTTP(badRec, bad)
+		if badRec.Code != http.StatusUnauthorized {
+			t.Fatalf("basic auth attempt %d = %d, want 401", i+1, badRec.Code)
+		}
+	}
+	blocked := httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
+	blocked.RemoteAddr = "203.0.113.55:4444"
+	blocked.SetBasicAuth("admin", "admin-secret")
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blocked)
+	if blockedRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("blocked admin basic auth = %d, want 429", blockedRec.Code)
+	}
+
+	// 7. Leading-dot and traversal identifiers are rejected.
+	for _, badID := range []string{".", "..", ".upload-abc"} {
+		if validIdentifier(badID, 128) {
+			t.Fatalf("validIdentifier(%q) must be false", badID)
+		}
+	}
+
+	// 8. Admin token == default token disables admin across all vaults too.
+	disabledReg, err := newVaultRegistry(t.TempDir(), "same-token", 8<<20, serverOptions{adminToken: "same-token"})
+	if err != nil {
+		t.Fatalf("disabledReg: %v", err)
+	}
+	t.Cleanup(disabledReg.Close)
+	u, err := disabledReg.CreateUser("tenant1", "s3cret-pass", "", 0, time.Time{})
+	if err != nil {
+		t.Fatalf("create tenant1: %v", err)
+	}
+	adminProbe := httptest.NewRequest(http.MethodGet, "/admin/api/users", nil)
+	adminProbe.Header.Set("Authorization", "Bearer "+u.Token)
+	adminProbe.SetBasicAuth("admin", "same-token")
+	adminProbeRec := httptest.NewRecorder()
+	disabledReg.handler().ServeHTTP(adminProbeRec, adminProbe)
+	if adminProbeRec.Code != http.StatusNotFound {
+		t.Fatalf("disabled admin via tenant bearer token = %d, want 404", adminProbeRec.Code)
+	}
 }

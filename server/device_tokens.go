@@ -192,6 +192,30 @@ func parseDeviceToken(value string) (string, string, bool) {
 	return id, secret, true
 }
 
+func (s *server) hasDeviceTokenID(id string) bool {
+	s.tokensMu.Lock()
+	_, exists := s.deviceTokens.Tokens[id]
+	s.tokensMu.Unlock()
+	return exists
+}
+
+func (s *server) hasPairingCodeHash(digest [sha256.Size]byte, now time.Time) bool {
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	s.cleanupExpiredPairingsLocked(now)
+	matched := false
+	for _, candidate := range s.pairings {
+		stored, err := hex.DecodeString(candidate.CodeSHA256)
+		if err != nil || len(stored) != sha256.Size {
+			continue
+		}
+		if subtle.ConstantTimeCompare(digest[:], stored) == 1 {
+			matched = true
+		}
+	}
+	return matched
+}
+
 // validateDeviceToken distinguishes only a correct secret on a revoked record.
 // Every malformed, unknown, or wrong-secret token collapses to unauthorized so
 // the response cannot be used to probe for valid token IDs.

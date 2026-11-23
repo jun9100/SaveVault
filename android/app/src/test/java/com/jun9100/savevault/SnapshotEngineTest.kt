@@ -2,6 +2,7 @@ package com.jun9100.savevault
 
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
@@ -107,6 +108,24 @@ class SnapshotEngineTest {
 
             assertTrue(result.isFailure)
             assertFalse(File(root.parentFile, "outside.txt").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun createSnapshotRejectsIntraWorkspaceSymlinkLoops() {
+        val root = createTempDir(prefix = "savevault-symlink-loop-")
+        try {
+            val source = File(root, "source").apply { mkdirs() }
+            File(source, "save.dat").writeText("save-data")
+            Files.createSymbolicLink(File(source, "loop").toPath(), source.toPath())
+            val archive = File(root, "snapshot.zip")
+
+            val result = SnapshotEngine().createSnapshot(source, archive)
+
+            assertTrue(result.isFailure)
+            assertFalse(archive.exists())
         } finally {
             root.deleteRecursively()
         }

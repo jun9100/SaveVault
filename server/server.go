@@ -39,8 +39,9 @@ type server struct {
 	adminToken       string
 	saveVaultUsername string
 	saveVaultPassword string
-	maxObjectBytes   int64
-	startedAt        time.Time
+	maxObjectBytes    int64
+	quotaBytes        int64
+	startedAt         time.Time
 	now              func() time.Time
 	bark             *barkNotifier
 
@@ -107,11 +108,12 @@ type server struct {
 }
 
 type serverOptions struct {
-	adminToken       string
+	adminToken        string
 	saveVaultUsername string
 	saveVaultPassword string
-	settings         serverSettings
-	bark             barkConfig
+	quotaBytes        int64
+	settings          serverSettings
+	bark              barkConfig
 }
 
 func newServer(dataDir, token string, maxObjectBytes int64, adminTokens ...string) (*server, error) {
@@ -175,8 +177,9 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		adminToken:       options.adminToken,
 		saveVaultUsername: options.saveVaultUsername,
 		saveVaultPassword: options.saveVaultPassword,
-		maxObjectBytes:   maxObjectBytes,
-		startedAt:        time.Now().UTC(),
+		maxObjectBytes:    maxObjectBytes,
+		quotaBytes:        options.quotaBytes,
+		startedAt:         time.Now().UTC(),
 		now:              time.Now,
 		bark:             bark,
 		state:            serverState{Scopes: make(map[string]scope)},
@@ -450,8 +453,28 @@ func validSnapshotID(id string) bool {
 	return validIdentifier(id, 128)
 }
 
+func (s *server) checkQuota(additional int64) bool {
+	if s.quotaBytes <= 0 {
+		return true
+	}
+	if additional < 0 {
+		additional = 0
+	}
+	var used int64
+	for _, sub := range []string{"objects", "savevault-native", "savevault", "savevault-meta"} {
+		_ = filepath.Walk(filepath.Join(s.dataDir, sub), func(_ string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || !info.Mode().IsRegular() {
+				return nil
+			}
+			used += info.Size()
+			return nil
+		})
+	}
+	return used+additional <= s.quotaBytes
+}
+
 func validIdentifier(value string, maximum int) bool {
-	if value == "" || len(value) > maximum {
+	if value == "" || len(value) > maximum || value == "." || value == ".." || strings.HasPrefix(value, ".") {
 		return false
 	}
 	for _, character := range value {

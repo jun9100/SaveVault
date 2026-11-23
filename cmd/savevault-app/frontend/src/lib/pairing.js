@@ -4,7 +4,9 @@
 import { api } from './api.js';
 
 export function isPairLink(text) {
-  return typeof text === 'string' && text.trim().toLowerCase().startsWith('savevault://');
+  if (typeof text !== 'string') return false;
+  const lower = text.trim().toLowerCase();
+  return lower.startsWith('savevault://') || lower.startsWith('opensave://');
 }
 
 /** The body for /api/cloud/pair/preview. A pasted link wins over the fields,

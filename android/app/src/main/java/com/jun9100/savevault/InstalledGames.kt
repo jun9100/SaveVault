@@ -169,17 +169,24 @@ internal object InstalledGames {
         while (index < bytes.size) {
             val byte = bytes[index]
             if (byte == '%'.code.toByte() && index + 2 < bytes.size) {
-                val hex = value.substring(index + 1, index + 3)
-                val parsed = hex.toIntOrNull(16)
-                if (parsed != null) {
-                    out.write(parsed)
+                val hi = hexDigit(bytes[index + 1])
+                val lo = hexDigit(bytes[index + 2])
+                if (hi >= 0 && lo >= 0) {
+                    out.write((hi shl 4) or lo)
                     index += 3
                     continue
                 }
             }
-            out.write(byte.toInt())
+            out.write(byte.toInt() and 0xFF)
             index += 1
         }
         return out.toString(Charsets.UTF_8.name())
+    }
+
+    private fun hexDigit(byte: Byte): Int = when (val c = byte.toInt() and 0xFF) {
+        in '0'.code..'9'.code -> c - '0'.code
+        in 'a'.code..'f'.code -> c - 'a'.code + 10
+        in 'A'.code..'F'.code -> c - 'A'.code + 10
+        else -> -1
     }
 }

@@ -459,13 +459,17 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		// Not seeded: this branch is being created to receive the peer's
 		// state, which the rest of this sync pulls in. The local save is
 		// preserved by the safety snapshot the switch takes.
-		if _, err := e.Snapshots.CreateBranch(gameID, remoteData.ActiveBranch, false); err != nil &&
-			!strings.Contains(err.Error(), "already exists") {
-			return Result{}, err
+		targetBranch := snapshot.CleanBranchName(remoteData.ActiveBranch)
+		if created, err := e.Snapshots.CreateBranch(gameID, remoteData.ActiveBranch, false); err != nil {
+			if !strings.Contains(err.Error(), "already exists") {
+				return Result{}, err
+			}
+		} else if created != "" {
+			targetBranch = created
 		}
 		releaseAligned = e.Writing(gameID)
 		aligned = true
-		if err := e.Snapshots.SwitchBranch(gameID, remoteData.ActiveBranch); err != nil {
+		if err := e.Snapshots.SwitchBranch(gameID, targetBranch); err != nil {
 			return Result{}, err
 		}
 		game, err = e.Store.GetGame(gameID)
@@ -1822,9 +1826,20 @@ func fetchWithRetry(ctx context.Context, t Transport, peer Peer, ref FileRef,
 	return nil, lastErr
 }
 
+func isSafeArchiveSegment(s string) bool {
+	if s == "" || s == "." || s == ".." || len(s) > 128 {
+		return false
+	}
+	return !strings.ContainsAny(s, `/\:`+"\x00")
+}
+
 // recordMirrorSnapshot zips the (just-updated) local save under the peer's
 // snapshot id so both devices show the same history entry.
 func (e *Engine) recordMirrorSnapshot(gameID string, game store.Game, peer Peer, remoteSnap SnapshotInfo, comment string) {
+	if !isSafeArchiveSegment(remoteSnap.ID) || !isSafeArchiveSegment(gameID) || !isSafeArchiveSegment(game.ActiveBranch) {
+		e.Log("warn", fmt.Sprintf("ignoring mirror snapshot with unsafe id %q", remoteSnap.ID))
+		return
+	}
 	if _, err := e.Store.GetSnapshot(remoteSnap.ID); err == nil {
 		return // already mirrored
 	}

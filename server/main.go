@@ -206,12 +206,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	// Every vault keeps its own retention, tombstone and certificate
-	// maintenance; with one vault this is the same work as before.
-	for _, vault := range vaults.all() {
-		if *maintenanceInterval > 0 {
-			go vault.maintenanceLoop(ctx, *maintenanceInterval)
-		}
+	// Maintain every active vault (including tenants created after boot).
+	if *maintenanceInterval > 0 {
+		go vaults.maintenanceLoop(ctx, *maintenanceInterval)
 	}
 
 	httpServer := &http.Server{

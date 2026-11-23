@@ -162,10 +162,11 @@ export function sanitizeAppearance(raw) {
 export const motionAllowed = (v, reduceMotion) => sanitizeAppearance(v).motion && !reduceMotion;
 
 const KEY = 'savevault.appearance';
+const LEGACY_KEY = 'opensave.appearance';
 
 export function loadAppearance(storage = globalThis.localStorage) {
   try {
-    const saved = storage?.getItem(KEY);
+    const saved = storage?.getItem(KEY) ?? storage?.getItem(LEGACY_KEY);
     return saved ? sanitizeAppearance(JSON.parse(saved)) : { ...DEFAULT_APPEARANCE };
   } catch {
     return { ...DEFAULT_APPEARANCE };

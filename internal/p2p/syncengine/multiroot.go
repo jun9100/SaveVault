@@ -213,6 +213,19 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 
 	e.handOverEmptying(gameID, peer, local.Files, &decision)
 
+	filesAtRisk := len(decision.FilesToDeleteLocally)
+	for _, f := range decision.FilesToPull {
+		if _, existed := local.Files[f]; existed {
+			filesAtRisk++
+		}
+	}
+	if filesAtRisk > 0 && len(local.Files) > 0 && e.Snapshots != nil {
+		comment := fmt.Sprintf("Safety snapshot before syncing %q location from %s", sr.root.Name, peer.Name)
+		if _, err := e.Snapshots.CreateBeforeReplacing(gameID, comment); err != nil {
+			e.Log("warn", fmt.Sprintf("safety snapshot before syncing %q location of %q failed: %v", sr.root.Name, game.Name, err))
+		}
+	}
+
 	// Held across the whole apply, as for the main folder: from the first
 	// deletion to the last pull this location is a mixture nobody holds
 	// (settle.go).

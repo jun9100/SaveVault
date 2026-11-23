@@ -227,10 +227,11 @@ class RootStorage(private val context: Context) : PathStorage {
             checkRootAccess().getOrThrow()
             require(locations.isNotEmpty()) { "游戏没有可备份的存档位置" }
             clearWorkspace(destinationRoot)
-            val rootPrefix = root.trimEnd('/') + "/"
+            val canonicalRoot = File(root).canonicalPath
+            val rootPrefix = canonicalRoot.trimEnd('/') + "/"
             locations.forEach { location ->
                 val relative = GameSnapshotManifest.safeRelativePath(location.relativePath)
-                val source = File(root, relative).canonicalPath
+                val source = File(canonicalRoot, relative).canonicalPath
                 require(source.startsWith(rootPrefix)) { "存档路径超出已扫描目录" }
                 requireDirectory(source)
                 val sourceArg = RootCommand.shellQuote(source)
@@ -259,20 +260,47 @@ class RootStorage(private val context: Context) : PathStorage {
             val root = RootPathPolicy.canonicalizeForScan(rawRootPath)
             checkRootAccess().getOrThrow()
             require(locations.isNotEmpty()) { "游戏快照没有存档位置" }
-            val rootPrefix = root.trimEnd('/') + "/"
+            val canonicalRoot = File(root).canonicalPath
+            val rootPrefix = canonicalRoot.trimEnd('/') + "/"
             if (createMissing) {
-                // 云端下发：目标存档目录可能还不存在，先按相对路径建出来。
+                // 云端下发：目标存档目录可能还不存在，逐段校验无符号链接并继承既有祖先目录的 uid/gid/mode。
                 locations.forEach { location ->
                     val relative = GameSnapshotManifest.safeRelativePath(location.relativePath)
-                    val target = File(root, relative).canonicalFile
+                    val target = File(canonicalRoot, relative).canonicalFile
                     require(target.path.startsWith(rootPrefix)) { "恢复目标超出已扫描目录" }
-                    RootCommand.requireSuccess("mkdir -p -- ${RootCommand.shellQuote(target.path)}")
+                    val segments = relative.split('/').filter(String::isNotEmpty)
+                    val createScript = buildString {
+                        appendLine("set -e")
+                        appendLine("cur=${RootCommand.shellQuote(canonicalRoot)}")
+                        appendLine("if [ -L \"\$cur\" ] || [ ! -d \"\$cur\" ]; then echo 'invalid restore root'; exit 1; fi")
+                        appendLine("uid=\$(stat -c '%u' \"\$cur\")")
+                        appendLine("gid=\$(stat -c '%g' \"\$cur\")")
+                        appendLine("mode=\$(stat -c '%a' \"\$cur\")")
+                        for (segment in segments) {
+                            appendLine("next=\"\$cur/\"${RootCommand.shellQuote(segment)}")
+                            appendLine("if [ -L \"\$next\" ]; then echo 'symlink in restore path'; exit 1; fi")
+                            appendLine("if [ -d \"\$next\" ]; then")
+                            appendLine("  uid=\$(stat -c '%u' \"\$next\")")
+                            appendLine("  gid=\$(stat -c '%g' \"\$next\")")
+                            appendLine("  mode=\$(stat -c '%a' \"\$next\")")
+                            appendLine("elif [ -e \"\$next\" ]; then")
+                            appendLine("  echo 'non-directory in restore path'; exit 1")
+                            appendLine("else")
+                            appendLine("  mkdir -- \"\$next\"")
+                            appendLine("  chown \"\$uid:\$gid\" \"\$next\"")
+                            appendLine("  chmod \"\$mode\" \"\$next\"")
+                            appendLine("  chcon --reference=\"\$cur\" -- \"\$next\" 2>/dev/null || true")
+                            appendLine("fi")
+                            appendLine("cur=\"\$next\"")
+                        }
+                    }
+                    RootCommand.requireSuccess(createScript)
                 }
             }
             val token = UUID.randomUUID().toString()
             val operations = locations.mapIndexed { index, location ->
                 val relative = GameSnapshotManifest.safeRelativePath(location.relativePath)
-                val target = File(root, relative).canonicalFile
+                val target = File(canonicalRoot, relative).canonicalFile
                 require(target.path.startsWith(rootPrefix)) { "恢复目标超出已扫描目录" }
                 requireDirectory(target.path)
                 val archivePath = PathPolicy.requireSafeDocumentName(location.archivePath)
@@ -283,6 +311,7 @@ class RootStorage(private val context: Context) : PathStorage {
                 val metadata = readMetadata(target)
                 val parent = target.parentFile ?: error("游戏存档目录没有父目录")
                 GameRestoreOperation(
+                    relativePath = relative,
                     target = target,
                     prepared = File(parent, ".savevault-game-new-$token-$index"),
                     backup = File(parent, ".savevault-game-old-$token-$index"),
@@ -301,7 +330,13 @@ class RootStorage(private val context: Context) : PathStorage {
 
             val commands = buildString {
                 appendLine("set -e")
+                appendLine("if [ -L ${RootCommand.shellQuote(canonicalRoot)} ]; then echo 'symlink in restore root'; exit 1; fi")
                 operations.forEach { operation ->
+                    var cursor = canonicalRoot
+                    for (segment in operation.relativePath.split('/').filter(String::isNotEmpty)) {
+                        cursor = "$cursor/$segment"
+                        appendLine("if [ -L ${RootCommand.shellQuote(cursor)} ]; then echo 'symlink in restore path'; exit 1; fi")
+                    }
                     val preparedArg = RootCommand.shellQuote(operation.prepared.path)
                     val targetArg = RootCommand.shellQuote(operation.target.path)
                     appendLine("rm -rf -- $preparedArg")
@@ -315,6 +350,7 @@ class RootStorage(private val context: Context) : PathStorage {
                     val target = RootCommand.shellQuote(operation.target.path)
                     val backup = RootCommand.shellQuote(operation.backup.path)
                     appendLine("if ! mv -- $target $backup; then")
+                    appendLine("set +e")
                     operations.take(index).asReversed().forEach { moved ->
                         appendLine("mv -- ${RootCommand.shellQuote(moved.backup.path)} ${RootCommand.shellQuote(moved.target.path)}")
                     }
@@ -326,6 +362,7 @@ class RootStorage(private val context: Context) : PathStorage {
                     val prepared = RootCommand.shellQuote(operation.prepared.path)
                     val target = RootCommand.shellQuote(operation.target.path)
                     appendLine("if ! mv -- $prepared $target; then")
+                    appendLine("set +e")
                     operations.take(index).forEach { published ->
                         appendLine("rm -rf -- ${RootCommand.shellQuote(published.target.path)}")
                     }
@@ -343,9 +380,18 @@ class RootStorage(private val context: Context) : PathStorage {
                 RootCommand.requireSuccess(commands)
             } catch (error: Throwable) {
                 runCatching {
-                    RootCommand.requireSuccess(
-                        operations.joinToString(";") { "rm -rf -- ${RootCommand.shellQuote(it.prepared.path)}" },
-                    )
+                    val rollback = buildString {
+                        appendLine("set +e")
+                        operations.asReversed().forEach { op ->
+                            val targetArg = RootCommand.shellQuote(op.target.path)
+                            val backupArg = RootCommand.shellQuote(op.backup.path)
+                            appendLine("if [ ! -e $targetArg ] && [ -e $backupArg ]; then mv -- $backupArg $targetArg; fi")
+                        }
+                        operations.forEach { op ->
+                            appendLine("rm -rf -- ${RootCommand.shellQuote(op.prepared.path)}")
+                        }
+                    }
+                    RootCommand.execute(rollback)
                 }
                 throw error
             }
@@ -392,15 +438,16 @@ class RootStorage(private val context: Context) : PathStorage {
             val oldTargetArg = RootCommand.shellQuote(oldTarget.path)
             val command = """
                 set -e
+                if [ -L $targetArg ]; then echo 'symlink target'; exit 1; fi
                 rm -rf -- $stagingArg
                 rm -rf -- $oldTargetArg
                 mkdir -- $stagingArg
-                if ! cp -a -- $workspaceArg/. $stagingArg/; then rm -rf -- $stagingArg; exit 1; fi
-                if ! chown -R ${metadata.uid}:${metadata.gid} $stagingArg; then rm -rf -- $stagingArg; exit 1; fi
-                if ! chmod ${metadata.mode} $stagingArg; then rm -rf -- $stagingArg; exit 1; fi
+                if ! cp -a -- $workspaceArg/. $stagingArg/; then set +e; rm -rf -- $stagingArg; exit 1; fi
+                if ! chown -R ${metadata.uid}:${metadata.gid} $stagingArg; then set +e; rm -rf -- $stagingArg; exit 1; fi
+                if ! chmod ${metadata.mode} $stagingArg; then set +e; rm -rf -- $stagingArg; exit 1; fi
                 chcon -R --reference=$targetArg -- $stagingArg 2>/dev/null || true
-                if ! mv -- $targetArg $oldTargetArg; then rm -rf -- $stagingArg; exit 1; fi
-                if ! mv -- $stagingArg $targetArg; then mv -- $oldTargetArg $targetArg; rm -rf -- $stagingArg; exit 1; fi
+                if ! mv -- $targetArg $oldTargetArg; then set +e; rm -rf -- $stagingArg; exit 1; fi
+                if ! mv -- $stagingArg $targetArg; then set +e; mv -- $oldTargetArg $targetArg; rm -rf -- $stagingArg; exit 1; fi
                 restorecon -RF -- $targetArg 2>/dev/null || true
                 rm -rf -- $oldTargetArg
             """.trimIndent()
@@ -408,8 +455,8 @@ class RootStorage(private val context: Context) : PathStorage {
                 RootCommand.requireSuccess(command)
             } catch (error: Throwable) {
                 runCatching {
-                    RootCommand.requireSuccess(
-                        "rm -rf -- $stagingArg; if [ ! -e $targetArg ] && [ -e $oldTargetArg ]; then mv -- $oldTargetArg $targetArg; fi",
+                    RootCommand.execute(
+                        "set +e; if [ ! -e $targetArg ] && [ -e $oldTargetArg ]; then mv -- $oldTargetArg $targetArg; fi; rm -rf -- $stagingArg",
                     )
                 }
                 throw error
@@ -453,6 +500,7 @@ class RootStorage(private val context: Context) : PathStorage {
     )
 
     private data class GameRestoreOperation(
+        val relativePath: String,
         val target: File,
         val prepared: File,
         val backup: File,

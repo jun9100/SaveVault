@@ -42,9 +42,15 @@ func SecretsPath() string {
 		return p
 	}
 	if runtime.GOOS != "windows" {
-		// A relay on Linux usually runs as a service account, and /etc is
-		// where its operator will look. Falls back to the home directory when
-		// /etc is not writable, which is the unprivileged case.
+		// Prefer an existing secrets file in /etc before probing directory
+		// writability: under systemd ProtectSystem=strict, the unprivileged
+		// savevault-relay service account can read its 0600 file in /etc
+		// without having write permission on /etc/savevault itself.
+		for _, etc := range []string{"/etc/savevault/relay-secrets.json", "/etc/opensave/relay-secrets.json"} {
+			if info, err := os.Stat(etc); err == nil && !info.IsDir() {
+				return etc
+			}
+		}
 		if etc := "/etc/savevault/relay-secrets.json"; canWriteDir(filepath.Dir(etc)) {
 			return etc
 		}
@@ -53,7 +59,15 @@ func SecretsPath() string {
 	if err != nil {
 		return "relay-secrets.json"
 	}
-	return filepath.Join(home, ".savevault", "relay-secrets.json")
+	primary := filepath.Join(home, ".savevault", "relay-secrets.json")
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+	legacy := filepath.Join(home, ".opensave", "relay-secrets.json")
+	if info, err := os.Stat(legacy); err == nil && !info.IsDir() {
+		return legacy
+	}
+	return primary
 }
 
 func canWriteDir(dir string) bool {

@@ -347,6 +347,10 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "blob hash does not match id")
 		return
 	}
+	if !s.checkQuota(bytesWritten) {
+		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
 
 	if err := os.Rename(temporaryPath, destination); err != nil {
 		if _, statErr := os.Stat(destination); statErr == nil {
@@ -583,15 +587,15 @@ func (s *server) handlePutSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	blobSize, ok := s.snapshotBlobSize(w, candidate)
-	if !ok {
-		return
-	}
 
 	deviceID := requestDeviceID(r)
 	expectedHead := strings.Trim(r.Header.Get("If-Match"), "\"")
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	blobSize, ok := s.snapshotBlobSize(w, candidate)
+	if !ok {
+		return
+	}
 	storedScope := s.state.Scopes[scopeID]
 	if existing, ok := storedScope.Snapshots[snapshotID]; ok {
 		if existing.snapshot == candidate && storedScope.Head == snapshotID {
@@ -652,14 +656,14 @@ func (s *server) handlePutConflictSnapshot(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	blobSize, ok := s.snapshotBlobSize(w, candidate)
-	if !ok {
-		return
-	}
 
 	deviceID := requestDeviceID(r)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	blobSize, ok := s.snapshotBlobSize(w, candidate)
+	if !ok {
+		return
+	}
 	storedScope, exists := s.state.Scopes[scopeID]
 	if !exists || storedScope.Head == "" {
 		writeError(w, http.StatusNotFound, "scope has no current snapshot")

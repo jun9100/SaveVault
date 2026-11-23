@@ -161,7 +161,11 @@ func (s *Server) Start() (string, error) {
 		return "", err
 	}
 	s.listener = ln
-	s.httpServer = &http.Server{Handler: mux}
+	s.httpServer = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 
 	go func() {
 		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -237,11 +241,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(totals)
 }
 
+const (
+	maxRelayRooms       = 2000
+	maxRelayClients     = 4000
+	maxRoomCodeBytes    = 128
+	maxDeviceNameBytes  = 128
+	maxOAuthBodyBytes   = 16 << 10
+	maxOAuthRespBytes   = 64 << 10
+)
+
+var oauthHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	roomCode := r.URL.Query().Get("room")
-	deviceName := r.URL.Query().Get("device")
+	roomCode := strings.TrimSpace(r.URL.Query().Get("room"))
+	deviceName := strings.TrimSpace(r.URL.Query().Get("device"))
 	if deviceName == "" {
 		deviceName = "Unknown Device"
+	}
+	if len(deviceName) > maxDeviceNameBytes {
+		deviceName = deviceName[:maxDeviceNameBytes]
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
@@ -255,16 +273,30 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	// transfer starts: manifests (small JSON) pass, every block payload
 	// drops the link, and syncs die in an endless reconnect-retry loop.
 	conn.SetReadLimit(16 << 20)
-	if roomCode == "" {
-		conn.Close(websocket.StatusCode(4001), "Missing 'room' parameter")
+	if roomCode == "" || len(roomCode) > maxRoomCodeBytes {
+		conn.Close(websocket.StatusCode(4001), "Invalid or missing 'room' parameter")
 		return
 	}
 
 	c := &client{conn: conn, deviceName: deviceName, send: make(chan []byte, sendQueueSlots), srv: s}
 
 	s.mu.Lock()
+	totalActive := 0
+	for _, rm := range s.rooms {
+		totalActive += len(rm)
+	}
+	if totalActive >= maxRelayClients {
+		s.mu.Unlock()
+		conn.Close(websocket.StatusCode(4003), "Relay is at capacity")
+		return
+	}
 	room, ok := s.rooms[roomCode]
 	if !ok {
+		if len(s.rooms) >= maxRelayRooms {
+			s.mu.Unlock()
+			conn.Close(websocket.StatusCode(4003), "Relay room limit reached")
+			return
+		}
 		room = map[*client]struct{}{}
 		s.rooms[roomCode] = room
 	}
@@ -292,24 +324,30 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
-	ctx := r.Context()
+	ctx, cancelConn := context.WithCancel(r.Context())
+	defer cancelConn()
 
-	// Writer: drains the send channel.
-	//
-	// Closing the connection on the way out is load-bearing. If this
-	// goroutine stops while the reader is still running — a write error, or
-	// the 10s timeout below firing on a stalled peer — nothing drains
-	// c.send again. It fills its slots, enqueue then refuses everything
-	// forever, and the client sits there looking perfectly connected while
-	// receiving not one message: no peers, no pings, no syncs, until
-	// something else tears the socket down. Closing here makes the reader
-	// fail too, so the client notices and reconnects.
+	// Writer & server-side heartbeat: drains the send channel and periodically
+	// pings the peer so dead half-open TCP sockets release their room slot.
 	go func() {
 		defer conn.Close(websocket.StatusInternalError, "writer stopped")
+		var pingC <-chan time.Time
+		if s.cfg.HeartbeatInterval > 0 {
+			ticker := time.NewTicker(s.cfg.HeartbeatInterval)
+			defer ticker.Stop()
+			pingC = ticker.C
+		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-pingC:
+				pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				err := conn.Ping(pingCtx)
+				cancel()
+				if err != nil {
+					return
+				}
 			case raw, ok := <-c.send:
 				if !ok {
 					return
@@ -381,7 +419,7 @@ func (s *Server) handleOAuthProxy(w http.ResponseWriter, r *http.Request) {
 		RedirectURI  string `json:"redirect_uri"`
 		RefreshToken string `json:"refresh_token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxOAuthBodyBytes)).Decode(&payload); err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
@@ -411,7 +449,7 @@ func (s *Server) handleOAuthProxy(w http.ResponseWriter, r *http.Request) {
 		form["refresh_token"] = []string{payload.RefreshToken}
 	}
 
-	resp, err := http.PostForm("https://oauth2.googleapis.com/token", form)
+	resp, err := oauthHTTPClient.PostForm("https://oauth2.googleapis.com/token", form)
 	if err != nil {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{
 			"error": "OAuth Proxy failed to exchange token: " + err.Error(),
@@ -422,7 +460,7 @@ func (s *Server) handleOAuthProxy(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, maxOAuthRespBytes))
 }
 
 func writeJSONStatus(w http.ResponseWriter, status int, v any) {

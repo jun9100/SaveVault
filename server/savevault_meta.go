@@ -530,6 +530,10 @@ func (s *server) handlePutSaveVaultCustomCover(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	if !s.checkQuota(int64(len(data))) {
+		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
 	actor := requestDeviceID(r)
 
 	s.saveVaultMu.Lock()

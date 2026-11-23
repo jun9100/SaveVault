@@ -79,12 +79,25 @@ func (r *vaultRegistry) persistUsersLocked(next userState) error {
 	if err != nil {
 		return err
 	}
-	path := r.usersPath()
-	temporary := path + ".tmp"
-	if err := os.WriteFile(temporary, raw, 0o600); err != nil {
-		return err
+	return writeAtomic(r.usersPath(), raw)
+}
+
+func (r *vaultRegistry) vaultAccessError(vaultID string, now time.Time) string {
+	r.usersMu.Lock()
+	defer r.usersMu.Unlock()
+	for _, record := range r.users.Users {
+		if record.VaultID != vaultID {
+			continue
+		}
+		if record.Status != userStatusActive {
+			return "account disabled"
+		}
+		if !record.ExpiresAt.IsZero() && now.After(record.ExpiresAt) {
+			return "account expired"
+		}
+		return ""
 	}
-	return os.Rename(temporary, path)
+	return ""
 }
 
 func (r *vaultRegistry) userLocked(username string) (int, *userRecord) {
@@ -107,6 +120,9 @@ func (r *vaultRegistry) CreateUser(username, password, note string, quotaBytes i
 	if len(password) < 8 {
 		return userRecord{}, errors.New("password must be at least 8 characters")
 	}
+	if quotaBytes < 0 {
+		return userRecord{}, errors.New("quota must not be negative")
+	}
 	hash, err := hashPassword(password)
 	if err != nil {
 		return userRecord{}, err
@@ -128,33 +144,30 @@ func (r *vaultRegistry) CreateUser(username, password, note string, quotaBytes i
 	}
 
 	r.usersMu.Lock()
+	defer r.usersMu.Unlock()
 	if _, existing := r.userLocked(username); existing != nil {
-		r.usersMu.Unlock()
 		return userRecord{}, errors.New("username already exists")
 	}
 	if record.VaultID == defaultVaultID {
-		r.usersMu.Unlock()
 		return userRecord{}, errors.New("username maps to reserved default vault")
 	}
 	for _, existing := range r.users.Users {
 		if existing.VaultID == record.VaultID {
-			r.usersMu.Unlock()
 			return userRecord{}, errors.New("username maps to an existing vault")
 		}
 	}
+	previous := r.users
 	next := r.users
 	next.Version = 1
 	next.Users = append(append([]userRecord{}, r.users.Users...), record)
 	if err := r.persistUsersLocked(next); err != nil {
-		r.usersMu.Unlock()
+		return userRecord{}, err
+	}
+	if _, err := r.vaultWithTokenAndQuota(record.VaultID, record.Token, record.QuotaBytes); err != nil {
+		_ = r.persistUsersLocked(previous)
 		return userRecord{}, err
 	}
 	r.users = next
-	r.usersMu.Unlock()
-
-	if _, err := r.vaultWithToken(record.VaultID, record.Token); err != nil {
-		return userRecord{}, err
-	}
 	return record, nil
 }
 
@@ -259,13 +272,14 @@ func (r *vaultRegistry) DeleteUser(username string) error {
 		return err
 	}
 	r.users = next
-	r.usersMu.Unlock()
-
 	r.mu.Lock()
 	delete(r.byToken, token)
 	vault := r.vaults[vaultID]
 	delete(r.vaults, vaultID)
 	r.mu.Unlock()
+	r.usersMu.Unlock()
+
+	r.evictHandler(vault)
 	if vault != nil {
 		vault.Close()
 	}
@@ -305,7 +319,7 @@ func (r *vaultRegistry) restoreUsers() error {
 		if record.Status != userStatusActive {
 			continue
 		}
-		if _, err := r.vaultWithToken(record.VaultID, record.Token); err != nil {
+		if _, err := r.vaultWithTokenAndQuota(record.VaultID, record.Token, record.QuotaBytes); err != nil {
 			return err
 		}
 	}

@@ -141,6 +141,20 @@ internal object CloudPull {
     }
 
     /**
+     * Root-aware relative save path: when a PPSSPP root is already `.../SAVEDATA`,
+     * place saves directly under `<GAME_ID>` instead of doubling `SAVEDATA/SAVEDATA/<GAME_ID>`.
+     */
+    fun relativePath(root: LocalSaveRoot, id: String): String? {
+        val relative = relativePath(root.family, id) ?: return null
+        if (root.family == SaveRootFamily.PPSSPP &&
+            root.path.lowercase(Locale.ROOT).trimEnd('/').endsWith("/savedata")
+        ) {
+            return relative.removePrefix("SAVEDATA/")
+        }
+        return relative
+    }
+
+    /**
      * 云端游戏与本机存档根的交叉结果。
      *
      * [exists] 判断"这个根下这个相对路径已经有存档了吗"，已有就跳过——已有存档的
@@ -161,7 +175,7 @@ internal object CloudPull {
         for (game in games) {
             val id = titleIdOf(game.identityId) ?: pspIdOf(game.identityId) ?: continue
             for (root in roots) {
-                val relative = relativePath(root.family, id) ?: continue
+                val relative = relativePath(root, id) ?: continue
                 val key = "${root.path}\u0000$relative"
                 if (!seen.add(key)) continue
                 if (exists(root.path, relative)) continue

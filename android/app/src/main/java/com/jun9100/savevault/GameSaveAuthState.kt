@@ -134,6 +134,7 @@ internal class GameSaveAuthGuard(context: Context) : GameSaveAuthObserver {
             runCatching {
                 WorkManager.getInstance(appContext).cancelUniqueWork(BatchWorker.UNIQUE_WORK_NAME)
             }
+            runCatching { SaveWatchService.stop(appContext) }
             PendingUploadStore(appContext).clear()
         }
 

@@ -116,6 +116,7 @@ object SaveSourceDetector {
     )
     private val dedicatedSharedStoragePackages = setOf(
         "dev.eden.eden_emulator",
+        "dev.eden.eden_emulator.nightly",
         "dev.eglantine.eglantine",
         "dev.eden.nx2",
         "com.xiaoji.egggame",
@@ -126,10 +127,12 @@ object SaveSourceDetector {
     private val excludedArtifactPathNames = setOf(
         // 云端快照里的元数据前缀（internal/snapshot/zip_roots.go 的 RootPrefix）。
         // 旧版恢复把它连同内容一起落进了存档目录，于是
-        // `<TITLE_ID>/.savevault-locations/<TITLE_ID>` 被当成"第二个存档位置"，
+        // `<TITLE_ID>/.savevault-locations/<TITLE_ID>` 或旧版 `.opensave-locations` 被当成"第二个存档位置"，
         // 与父目录互相包含 -> 备份/恢复直接拒绝（马力欧卡丁车8 就是这么挂的）。
         ".savevault-locations",
+        ".opensave-locations",
         "savevaultintegrationtest",
+        "opensaveintegrationtest",
         "eden-save-import-stage",
         "eden-sync-test",
         "eden-test",

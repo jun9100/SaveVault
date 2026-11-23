@@ -42,11 +42,9 @@ const KeySize = 32
 
 // hkdfInfo domain-separates the derived key.
 //
-// Two devices could in principle share an X25519 secret for more than one
-// purpose later; binding the derivation to a purpose string means a key minted
-// here can never be mistaken for one minted elsewhere, even if the same pair
-// of identities is involved.
-const hkdfInfo = "savevault/e2ee/save-payload/v1"
+// Wire-protocol v1 constant: must remain immutable across rebrands so pinned
+// X25519 pairings and sealed SQLite vault keys continue deriving identical keys.
+const hkdfInfo = "opensave/e2ee/save-payload/v1"
 
 // Identity is one device's long-lived key pair.
 //

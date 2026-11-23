@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -74,13 +79,91 @@ func (s *Server) fallbackArtURL(name, appID string) (artURL string, nsfw bool) {
 	if json.NewDecoder(resp.Body).Decode(&payload) != nil {
 		return "", false
 	}
-	if !strings.HasPrefix(payload.URL, "https://") {
+	if !isSafePublicHTTPSURL(payload.URL) {
 		// The relay is another machine's answer, and this one is about to
-		// fetch whatever it names. Only https, and never a scheme that could
-		// reach something local.
+		// fetch whatever it names. Only https to a non-local host.
 		return "", false
 	}
 	return payload.URL, payload.NSFW
+}
+
+func isPublicIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	addr = addr.Unmap()
+	return !addr.IsLoopback() && !addr.IsPrivate() && !addr.IsLinkLocalUnicast() &&
+		!addr.IsLinkLocalMulticast() && !addr.IsMulticast() && !addr.IsUnspecified()
+}
+
+func isSafePublicHTTPSURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" || strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".local") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil && !isPublicIP(ip) {
+		return false
+	}
+	return true
+}
+
+var fallbackCoverClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			var dialer net.Dialer
+			for _, ipAddr := range ips {
+				if !isPublicIP(ipAddr.IP) {
+					return nil, errors.New("refusing non-public cover image address")
+				}
+			}
+			for _, ipAddr := range ips {
+				conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
+				if dialErr == nil {
+					return conn, nil
+				}
+				err = dialErr
+			}
+			return nil, err
+		},
+	},
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
+		if !isSafePublicHTTPSURL(req.URL.String()) {
+			return errors.New("refusing unsafe cover redirect")
+		}
+		return nil
+	},
+}
+
+func fetchFallbackImage(rawURL string) ([]byte, error) {
+	if !isSafePublicHTTPSURL(rawURL) {
+		return nil, errors.New("unsafe fallback cover URL")
+	}
+	resp, err := fallbackCoverClient.Get(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, &httpStatusError{status: resp.Status}
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 }
 
 // fetchFallbackCover retrieves art from the second source and caches it under
@@ -91,11 +174,11 @@ func (s *Server) fetchFallbackCover(cacheKey, name, appID string, portrait bool)
 	if artURL == "" {
 		return nil, fmt.Errorf("no fallback art for %q", name)
 	}
-	data, err := fetchImage(artURL)
+	data, err := fetchFallbackImage(artURL)
 	if err != nil {
 		// Same reasoning as the Steam path: a network that blocks the source
 		// directly can still reach it through the image proxy.
-		data, err = fetchImage(imageProxyURL(artURL))
+		data, err = fetchFallbackImage(imageProxyURL(artURL))
 		if err != nil {
 			return nil, err
 		}

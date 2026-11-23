@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -184,6 +185,93 @@ func (s *Store) EnsureDefaultSettings(dataDir, backupsDir string) error {
 
 	if _, err := tx.Exec(`INSERT OR IGNORE INTO cloud_config (id) VALUES (1)`); err != nil {
 		return fmt.Errorf("insert default cloud_config: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// MigrateLegacyHomePaths rewrites persisted paths inside settings, snapshots,
+// and cloud_upload_retry that still reference a migrated ~/.opensave or
+// ~/.savesync directory after config.Resolve renamed it to ~/.savevault.
+// Safe to call on every startup (idempotent).
+func (s *Store) MigrateLegacyHomePaths(newHomeDir string) error {
+	if filepath.Base(newHomeDir) != ".savevault" {
+		return nil
+	}
+	parent := filepath.Dir(newHomeDir)
+	for _, legacyName := range []string{".opensave", ".savesync"} {
+		oldHome := filepath.Join(parent, legacyName)
+		if info, err := os.Stat(oldHome); err == nil && info.IsDir() {
+			// Legacy directory still exists separately; do not touch its paths.
+			continue
+		}
+		if err := s.rewriteHomePrefix(oldHome, newHomeDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) rewriteHomePrefix(oldHome, newHome string) error {
+	rewrite := func(p string) (string, bool) {
+		if p == oldHome {
+			return newHome, true
+		}
+		for _, sep := range []string{string(filepath.Separator), "/", `\`} {
+			if strings.HasPrefix(p, oldHome+sep) {
+				return newHome + p[len(oldHome):], true
+			}
+		}
+		return p, false
+	}
+
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var dataDir, backupsDir, syncBackupsDir string
+	if err := tx.QueryRow(`SELECT data_dir, backups_dir, sync_backups_dir FROM settings WHERE id = 1`).
+		Scan(&dataDir, &backupsDir, &syncBackupsDir); err == nil {
+		nd, c1 := rewrite(dataDir)
+		nb, c2 := rewrite(backupsDir)
+		ns, c3 := rewrite(syncBackupsDir)
+		if c1 || c2 || c3 {
+			if _, err := tx.Exec(`UPDATE settings SET data_dir = ?, backups_dir = ?, sync_backups_dir = ? WHERE id = 1`, nd, nb, ns); err != nil {
+				return err
+			}
+		}
+	}
+
+	type snapRow struct {
+		ID      string `db:"id"`
+		ZipPath string `db:"zip_path"`
+	}
+	var snaps []snapRow
+	if err := tx.Select(&snaps, `SELECT id, zip_path FROM snapshots WHERE zip_path LIKE ? OR zip_path LIKE ?`, oldHome+"/%", oldHome+`\%`); err == nil {
+		for _, row := range snaps {
+			if updated, ok := rewrite(row.ZipPath); ok {
+				if _, err := tx.Exec(`UPDATE snapshots SET zip_path = ? WHERE id = ?`, updated, row.ID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	type retryRow struct {
+		Key     string `db:"remote_key"`
+		ZipPath string `db:"zip_path"`
+	}
+	var retries []retryRow
+	if err := tx.Select(&retries, `SELECT remote_key, zip_path FROM cloud_upload_retry WHERE zip_path LIKE ? OR zip_path LIKE ?`, oldHome+"/%", oldHome+`\%`); err == nil {
+		for _, row := range retries {
+			if updated, ok := rewrite(row.ZipPath); ok {
+				if _, err := tx.Exec(`UPDATE cloud_upload_retry SET zip_path = ? WHERE remote_key = ?`, updated, row.Key); err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	return tx.Commit()

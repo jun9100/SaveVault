@@ -262,6 +262,10 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 		}
 	}
 	digest := hex.EncodeToString(hash.Sum(nil))
+	if _, statErr := os.Stat(destination); errors.Is(statErr, os.ErrNotExist) && !s.checkQuota(written) {
+		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
 	// Link publication is create-only: a second uploader can never replace an
 	// archive that another request has already finished. The temporary file and
 	// destination live in the same directory, so a successful link is atomic.

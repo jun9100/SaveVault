@@ -164,7 +164,7 @@ ManifestDPIAware true
 ## has both and starts the app twice at every boot; that second value is
 ## removed on install, on uninstall, and by the app at launch.
 !define SAVEVAULT_RUN_VALUE "SaveVault"
-!define LEGACY_RUN_VALUE "SaveVault"
+!define LEGACY_RUN_VALUE "OpenSave"
 
 ####
 ## The app before it was renamed: up to 2.4.x it installed as SaveVault, under

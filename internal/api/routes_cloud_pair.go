@@ -32,6 +32,21 @@ func normalizePairingTarget(raw string) (server, host string, err error) {
 	return server, parsed.Host, nil
 }
 
+func canonicalHost(rawURL, host string) string {
+	host = strings.TrimSpace(strings.ToLower(host))
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return host
+	}
+	if parsed.Scheme == "https" && strings.HasSuffix(host, ":443") {
+		return strings.TrimSuffix(host, ":443")
+	}
+	if parsed.Scheme == "http" && strings.HasSuffix(host, ":80") {
+		return strings.TrimSuffix(host, ":80")
+	}
+	return host
+}
+
 // handleCloudPairPreview parses a pasted link or separate fields without
 // touching the network, so the UI can show the host before anything is sent.
 func (s *Server) handleCloudPairPreview(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +154,7 @@ func (s *Server) handleCloudPairClaim(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	accountChanged := cfg.Provider != cloud.GameSaveProvider || cfg.URL != server || cfg.Password != result.Token
 	cfg.Provider = cloud.GameSaveProvider
 	cfg.URL = server
 	cfg.Username = ""
@@ -147,6 +163,11 @@ func (s *Server) handleCloudPairClaim(w http.ResponseWriter, r *http.Request) {
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if accountChanged {
+		if err := s.Daemon.ResetCloudAccountState(); err != nil && s.Daemon.Log != nil {
+			s.Daemon.Log.Log("warn", "could not clear previous cloud account state after pairing: "+err.Error())
+		}
 	}
 	// A successful pairing supersedes any refusal from the previous key.
 	if err := s.Daemon.Store.SetGameSaveAuthBlock(""); err != nil && s.Daemon.Log != nil {
@@ -274,8 +295,8 @@ func (s *Server) handleCloudLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if confirmed := strings.TrimSpace(body.ConfirmedHost); confirmed != "" &&
-		!strings.EqualFold(confirmed, host) {
+	confirmed := strings.TrimSpace(body.ConfirmedHost)
+	if confirmed == "" || canonicalHost(server, confirmed) != canonicalHost(server, host) {
 		writeError(w, http.StatusBadRequest, "confirm the server's host name before signing in")
 		return
 	}
@@ -290,6 +311,8 @@ func (s *Server) handleCloudLogin(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusUnauthorized
 		case errors.Is(err, cloud.ErrGameSaveLoginUnsupported):
 			status = http.StatusNotImplemented
+		case errors.Is(err, cloud.ErrGameSaveLoginRateLimited):
+			status = http.StatusTooManyRequests
 		}
 		writeError(w, status, err.Error())
 		return
@@ -300,19 +323,30 @@ func (s *Server) handleCloudLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	accountChanged := cfg.Provider != cloud.GameSaveProvider || cfg.URL != server || cfg.Password != token
+	username := strings.TrimSpace(body.Username)
 	cfg.Provider = cloud.GameSaveProvider
 	cfg.URL = server
+	cfg.Username = username
 	cfg.Password = token
 	cfg.Enabled = true
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if accountChanged {
+		if err := s.Daemon.ResetCloudAccountState(); err != nil && s.Daemon.Log != nil {
+			s.Daemon.Log.Log("warn", "could not clear previous cloud account state after login: "+err.Error())
+		}
+	}
 	if err := s.Daemon.Store.SetGameSaveAuthBlock(""); err != nil && s.Daemon.Log != nil {
 		s.Daemon.Log.Log("warn", "could not clear the game-save auth block after login: "+err.Error())
 	}
-	if s.Daemon.Log != nil {
-		s.Daemon.Log.Log("info", fmt.Sprintf("signed in to game-save at %s as %q", host, strings.TrimSpace(body.Username)))
+	if err := s.Daemon.Store.SetGameSaveAuthWarning(store.GameSaveAuthWarningNone); err != nil && s.Daemon.Log != nil {
+		s.Daemon.Log.Log("warn", "could not clear the game-save auth warning after login: "+err.Error())
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"server": server, "username": strings.TrimSpace(body.Username)})
+	if s.Daemon.Log != nil {
+		s.Daemon.Log.Log("info", fmt.Sprintf("signed in to game-save at %s as %q", host, username))
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"server": server, "username": username})
 }

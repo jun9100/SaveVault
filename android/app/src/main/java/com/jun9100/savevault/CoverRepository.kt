@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,16 +64,25 @@ class CoverRepository(context: Context) {
     fun hasCustomCover(gameKey: String): Boolean = customFile(gameKey).isFile
 
     /** Stores the picture at [uri] as [gameKey]'s cover on this device. */
-    suspend fun setCustomCover(gameKey: String, uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        val bytes = runCatching {
-            contentResolver.openInputStream(uri)?.use { input -> readAtMost(input, MAX_PICKED_BYTES) }
-        }.getOrNull() ?: return@withContext false
-        val bitmap = decodeScaled(bytes) ?: return@withContext false
-        writeScaled(bitmap, customFile(gameKey)).also { if (it) revision++ }
+    suspend fun setCustomCover(gameKey: String, uri: Uri): Boolean {
+        val saved = withContext(Dispatchers.IO) {
+            val bytes = runCatching {
+                contentResolver.openInputStream(uri)?.use { input -> readAtMost(input, MAX_PICKED_BYTES) }
+            }.getOrNull() ?: return@withContext false
+            val bitmap = decodeScaled(bytes) ?: return@withContext false
+            writeScaled(bitmap, customFile(gameKey))
+        }
+        if (saved) {
+            withContext(Dispatchers.Main) { revision++ }
+        }
+        return saved
     }
 
-    suspend fun clearCustomCover(gameKey: String) = withContext(Dispatchers.IO) {
-        if (customFile(gameKey).delete()) revision++
+    suspend fun clearCustomCover(gameKey: String) {
+        val deleted = withContext(Dispatchers.IO) { customFile(gameKey).delete() }
+        if (deleted) {
+            withContext(Dispatchers.Main) { revision++ }
+        }
     }
 
     /** The whole stream, or null when it is longer than [limit]. */
@@ -93,7 +103,7 @@ class CoverRepository(context: Context) {
         val target = File(directory, "$cacheKey.jpg")
         decode(target)?.let { return it }
         if (!directory.exists() && !directory.mkdirs()) return null
-        val temporary = File(directory, ".$cacheKey.part")
+        val temporary = File(directory, ".$cacheKey.${UUID.randomUUID()}.part")
         val bitmap = urls.firstNotNullOfOrNull { url ->
             if (download(url, temporary)) decode(temporary) else null
         }
@@ -134,7 +144,7 @@ class CoverRepository(context: Context) {
 
     private fun writeScaled(bitmap: Bitmap, target: File): Boolean {
         if (!directory.exists() && !directory.mkdirs()) return false
-        val temporary = File(directory, ".${target.name}.part")
+        val temporary = File(directory, ".${target.name}.${UUID.randomUUID()}.part")
         val saved = runCatching {
             FileOutputStream(temporary).use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
         }.getOrDefault(false)

@@ -784,16 +784,21 @@ class GameSaveClient(
                 .toString()
                 .toRequestBody(JSON_MEDIA_TYPE)
             val request = Request.Builder().url("$base/v1/login").post(body).build()
-            sharedHttpClient.newCall(request).execute().use { response ->
-                when (response.code) {
+            val response = try {
+                sharedHttpClient.newCall(request).execute()
+            } catch (error: IOException) {
+                throw GameSaveException("无法连接 SaveVault 云端：${error.message ?: "网络错误"}", retryable = true)
+            }
+            response.use { res ->
+                when (res.code) {
                     401 -> error("账号或密码不正确")
                     404 -> error("服务器版本过旧，没有账号登录接口（/v1/login）")
                     429 -> error("登录尝试过于频繁，请稍后再试")
                 }
-                if (!response.isSuccessful) {
-                    error("登录失败（HTTP ${response.code}）")
+                if (!res.isSuccessful) {
+                    error("登录失败（HTTP ${res.code}）")
                 }
-                val token = JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES)).optString("token").trim()
+                val token = JSONObject(readBoundedString(res, MAX_AUTH_JSON_BODY_BYTES)).optString("token").trim()
                 require(token.isNotEmpty()) { "服务器没有返回登录令牌" }
                 require(token.none { it.code !in 0x21..0x7e }) { "服务器返回的登录令牌无效" }
                 token

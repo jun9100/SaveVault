@@ -97,10 +97,11 @@ export function happened(items, games = {}, seenAt = 0, now = Date.now()) {
 export const badgeCount = (waiting, events) => waiting.length + events.filter((e) => e.unread).length;
 
 const SEEN_KEY = 'savevault.notificationsSeenAt';
+const LEGACY_SEEN_KEY = 'opensave.notificationsSeenAt';
 
 export function loadSeenAt(storage = globalThis.localStorage) {
   try {
-    return Number(storage?.getItem(SEEN_KEY)) || 0;
+    return Number(storage?.getItem(SEEN_KEY) ?? storage?.getItem(LEGACY_SEEN_KEY)) || 0;
   } catch {
     return 0;
   }
