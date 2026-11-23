@@ -628,9 +628,9 @@ internal class GameOperations(
         require(workingRoot.mkdirs()) { "无法创建游戏恢复暂存目录" }
         try {
             snapshotEngine.restoreSnapshot(archive, extractedRoot).getOrThrow()
-            val manifestFile = GameSnapshotManifest.findIn(extractedRoot)
-            val manifest = if (manifestFile != null) {
-                GameSnapshotManifest.read(manifestFile)
+            val existingManifestFile = GameSnapshotManifest.findIn(extractedRoot)
+            val manifest = if (existingManifestFile != null) {
+                GameSnapshotManifest.read(existingManifestFile)
             } else {
                 // A single TitleID directory uses the desktop ZIP layout so it can
                 // be shared with the Windows client. Stage it behind our normal
@@ -659,6 +659,10 @@ internal class GameOperations(
             }
             require(manifest.matches(currentGame)) { "游戏快照路径与当前扫描清单不匹配；请重新扫描并检查游戏身份" }
             require(manifest.gameKey == requestedGame.gameKey) { "游戏快照身份与所选游戏不匹配" }
+            val manifestFile = File(extractedRoot, GameSnapshotManifest.FILE_NAME)
+            if (existingManifestFile != null && existingManifestFile != manifestFile) {
+                existingManifestFile.delete()
+            }
             manifest.write(manifestFile)
             val restoredFingerprint = AutoBackupPolicy.fingerprint(extractedRoot)
             val restoredManifestHash = restoredFingerprint.manifestHash
