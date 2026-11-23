@@ -18,9 +18,12 @@ import (
 // right magic header and past the minimum size.
 func fakeBinary() []byte {
 	var head []byte
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		head = []byte{'M', 'Z', 0x90, 0x00}
-	} else {
+	case "darwin":
+		head = []byte{0xCF, 0xFA, 0xED, 0xFE} // 64-bit Mach-O
+	default:
 		head = []byte{0x7F, 'E', 'L', 'F'}
 	}
 	return append(head, bytes.Repeat([]byte{0x42}, minPlausibleBinary)...)

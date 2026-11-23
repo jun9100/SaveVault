@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,10 +101,26 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 // Installs living in a protected folder (Program Files) can't be swapped
 // by an unelevated rename — for those, the NSIS installer is downloaded
 // and launched instead; it requests UAC elevation itself.
-func (a *App) InstallUpdateFromURL(url string) string {
-	if !strings.HasPrefix(url, "https://") {
-		return "update URL must be https"
+// isAllowedUpdateURL restricts self-update downloads to release assets hosted
+// on the official GitHub repository so a malicious page or bug cannot point
+// the updater at an arbitrary executable URL.
+func isAllowedUpdateURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "github.com") {
+		return fmt.Errorf("update URL must point to https://github.com/%s/releases/download/", updateRepo)
 	}
+	wantPrefix := "/" + strings.ToLower(updateRepo) + "/releases/download/"
+	if !strings.HasPrefix(strings.ToLower(u.Path), wantPrefix) || strings.Contains(u.Path, "..") {
+		return fmt.Errorf("update URL must point to an official %s GitHub release asset", updateRepo)
+	}
+	return nil
+}
+
+func (a *App) InstallUpdateFromURL(rawURL string) string {
+	if err := isAllowedUpdateURL(rawURL); err != nil {
+		return err.Error()
+	}
+	url := rawURL
 	if runningInFlatpak() {
 		return flatpakUpdateMsg
 	}
@@ -213,6 +230,11 @@ func (a *App) installViaInstaller() {
 		a.updateEvent("error", 0, "download failed: "+err.Error())
 		return
 	}
+	if err := selfupdate.VerifyDownload(instURL, dest); err != nil {
+		os.Remove(dest)
+		a.updateEvent("error", 0, err.Error())
+		return
+	}
 	if err := selfupdate.ValidateExecutable(dest); err != nil {
 		os.Remove(dest)
 		a.updateEvent("error", 0, err.Error())
@@ -221,7 +243,8 @@ func (a *App) installViaInstaller() {
 
 	a.updateEvent("installing", 100, "")
 	cmd := exec.Command("powershell", "-NoProfile", "-Command",
-		"Start-Process -FilePath '"+dest+"'")
+		"Start-Process -FilePath $env:OPENSAVE_INSTALLER")
+	cmd.Env = append(os.Environ(), "OPENSAVE_INSTALLER="+dest)
 	if err := cmd.Start(); err != nil {
 		os.Remove(dest)
 		a.updateEvent("error", 0, "launch installer: "+err.Error())

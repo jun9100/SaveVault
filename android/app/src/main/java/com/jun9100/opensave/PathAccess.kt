@@ -55,8 +55,12 @@ class PathAccess(context: Context) : PathStorage {
      * 让"来源"页显示的是原因而不是一个空列表。
      */
     private suspend fun backend(): PathStorage {
-        val granted = rootGranted ?: withContext(Dispatchers.IO) {
-            root.checkRootAccess().isSuccess.also { rootGranted = it }
+        val granted = if (!OnboardingStore(appContext).rootAllowed()) {
+            false
+        } else {
+            rootGranted ?: withContext(Dispatchers.IO) {
+                root.checkRootAccess().isSuccess.also { rootGranted = it }
+            }
         }
         return when {
             granted -> root

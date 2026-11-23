@@ -71,3 +71,14 @@ func RestoreRegistryCapture(gameName, dir string) []string {
 	}
 	return warnings
 }
+
+// RestoreRegistryCaptureAllowed writes back only the captured registry keys
+// that belong to the game's locally configured allowlist.
+func RestoreRegistryCaptureAllowed(gameName, dir string, allowedKeys []string) []string {
+	warnings, err := winreg.RestoreFromDirAllowed(dir, allowedKeys)
+	if err != nil {
+		return []string{fmt.Sprintf(
+			"the registry saves for %q could not be restored: %v — its files were restored", gameName, err)}
+	}
+	return warnings
+}

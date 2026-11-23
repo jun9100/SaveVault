@@ -1,11 +1,14 @@
 package com.jun9100.opensave
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -121,7 +124,7 @@ object AllFilesPathPolicy {
 class AllFilesStorage(
     private val context: Context,
     /** 便于在单测里注入；默认读系统设置。 */
-    private val permissionChecker: () -> Boolean = ::isExternalStorageManager,
+    private val permissionChecker: () -> Boolean = { hasAllFilesPermission(context) },
 ) : PathStorage {
     private val selectionStore = SourceSelectionStore(context)
 
@@ -238,8 +241,13 @@ class AllFilesStorage(
     ): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
             checkAllFilesAccess().getOrThrow()
-            val file = File(directory.trimEnd('/'), fileName)
-            if (!file.isFile || file.length() > maxBytes) return@runCatching null
+            require(maxBytes > 0) { "maxBytes must be positive" }
+            val safeDir = AllFilesPathPolicy.canonicalize(directory)
+            val safeName = PathPolicy.requireSafeDocumentName(fileName)
+            val file = File(safeDir, safeName)
+            if (Files.isSymbolicLink(file.toPath()) || !file.isFile || file.length() > maxBytes) {
+                return@runCatching null
+            }
             file.readBytes()
         }.getOrNull()
     }
@@ -360,6 +368,8 @@ class AllFilesStorage(
                 },
             ) { "游戏快照包含重叠恢复目标" }
 
+            val backedUp = mutableListOf<Operation>()
+            val published = mutableListOf<Operation>()
             try {
                 for (operation in operations) {
                     // staging 建在目标父目录内，才能保证最后的 rename 不跨文件系统。
@@ -372,16 +382,19 @@ class AllFilesStorage(
                     if (!operation.target.renameTo(operation.backup)) {
                         error("无法暂存原存档：${operation.target.path}")
                     }
+                    backedUp += operation
                 }
                 for (operation in operations) {
                     if (!operation.prepared.renameTo(operation.target)) {
                         error("无法发布新存档：${operation.target.path}")
                     }
+                    published += operation
                 }
                 operations.forEach { deleteRecursively(it.backup) }
             } catch (error: Throwable) {
+                published.asReversed().forEach { deleteRecursively(it.target) }
                 operations.forEach { deleteRecursively(it.prepared) }
-                for (operation in operations) {
+                backedUp.asReversed().forEach { operation ->
                     if (!operation.target.exists() && operation.backup.exists()) {
                         operation.backup.renameTo(operation.target)
                     }
@@ -482,6 +495,17 @@ class AllFilesStorage(
     }
 }
 
-/** 默认权限来源：API 30 起读系统设置，30 以下旧存储模型本来就放行。 */
+/** 默认权限来源：API 30 起读系统设置，API 30 以下校验外部存储运行时读写权限。 */
+internal fun hasAllFilesPermission(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+/** 仅用于兼容未传入 Context 的检查。 */
 internal fun isExternalStorageManager(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()

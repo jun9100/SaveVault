@@ -17,6 +17,9 @@ import com.jun9100.opensave.ops.GameOperations
 import com.jun9100.opensave.ops.PendingUpload
 import com.jun9100.opensave.ops.ready
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Games whose newest backup was saved but never reached game-save, kept on
@@ -243,28 +246,36 @@ class PendingUploadWorker(
         store: PendingUploadStore,
         keys: Set<String>,
         config: GameSaveConfig,
-    ): Result {
+    ): Result = withContext(Dispatchers.IO) {
         // The scan only resolves the saved keys to their games; no snapshot is built from it.
         val entries = GameLibrary.batchBackupEligibleEntries(
             GameLibrary.sourceGames(ScheduledSources.scan(applicationContext)),
         ).associateBy(SourceGameEntry::libraryKey)
         val operations = GameOperations(applicationContext)
         val tombstones = ScopeTombstoneStore(applicationContext)
+        val authStore = GameSaveAuthStore(applicationContext)
         // A stopped scope is dropped from the queue without a request: retrying it
         // could only produce the same 410 the tombstone already records.
         val (_, pending) = keys.partition { key ->
             entries[key]?.let { ScopeTombstonePolicy.shouldSkip(tombstones.get(it.cloudScopeIdentity())) } ?: false
         }
         val verdicts = mutableMapOf<String, CloudVerdict>()
-        val results = pending.map { key -> key to retryOne(key, entries[key], operations, config, verdicts) }
+        val results = mutableListOf<Pair<String, PendingUploadPolicy.Outcome>>()
+        for (key in pending) {
+            if (authStore.blocked().isNotEmpty()) break
+            val outcome = retryOne(key, entries[key], operations, config, verdicts)
+            results += key to outcome
+            if (authStore.blocked().isNotEmpty()) break
+        }
         val decision = PendingUploadPolicy.decide(results, runAttemptCount)
+        val authBlocked = authStore.blocked().isNotEmpty()
         // Keys queued by a manual failure while this attempt ran were appended as
         // another request; [PendingUploadStore.finish] leaves them for it. Stopped
         // keys are part of [keys], so this also ends their retries.
-        store.finish(keys, decision.keepKeys)
+        store.finish(keys, if (authBlocked) emptyList() else decision.keepKeys)
         recordVerdicts(verdicts)
         record(PendingUploadPolicy.entry(decision))
-        return if (decision.retry) Result.retry() else Result.success()
+        if (!authBlocked && decision.retry) Result.retry() else Result.success()
     }
 
     private suspend fun retryOne(
@@ -303,6 +314,7 @@ class PendingUploadWorker(
                 }
             },
             onFailure = { error ->
+                if (error is CancellationException) throw error
                 PendingUploadPolicy.Outcome.Failed(
                     name,
                     error.message ?: "补传失败",

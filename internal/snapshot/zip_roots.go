@@ -246,6 +246,10 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 		}
 	}
 
+	if len(r.File) > maxArchiveEntries {
+		return nil, fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
+	}
+	budget := &extractBudget{remaining: maxArchiveExtractBytes}
 	cleared := map[string]bool{}
 	missing := map[string]bool{}
 	for _, f := range r.File {
@@ -283,7 +287,7 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 				continue
 			}
 		}
-		if err := extractEntryAs(f, target, entry); err != nil {
+		if err := extractEntryAsLimited(f, target, entry, budget); err != nil {
 			return nil, err
 		}
 	}

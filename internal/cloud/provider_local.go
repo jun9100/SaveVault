@@ -21,15 +21,35 @@ func (p localFolder) upload(f *os.File, size int64, fileName string) error {
 	return p.put(f, fileName)
 }
 
+func (p localFolder) resolveFile(fileName string) (string, error) {
+	if p.cfg.URL == "" {
+		return "", fmt.Errorf("no local folder destination configured")
+	}
+	if fileName == "" || fileName == "." || fileName == ".." || strings.ContainsAny(fileName, `/\`+"\x00") {
+		return "", fmt.Errorf("invalid cloud file name %q", fileName)
+	}
+	base, err := filepath.Abs(p.cfg.URL)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(base, fileName)
+	rel, err := filepath.Rel(base, target)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("cloud file name %q escapes destination folder", fileName)
+	}
+	return target, nil
+}
+
 // put stores what r holds under fileName, appearing under that name only
 // once it is all there (see writeFileWhole). Another device reading the same
 // folder never lists a snapshot that is still being copied, and a copy that
 // fails leaves nothing that looks like one.
 func (p localFolder) put(r io.Reader, fileName string) error {
-	if p.cfg.URL == "" {
-		return fmt.Errorf("no local folder destination configured")
+	target, err := p.resolveFile(fileName)
+	if err != nil {
+		return err
 	}
-	return writeFileWhole(filepath.Join(p.cfg.URL, fileName), func(w io.Writer) error {
+	return writeFileWhole(target, func(w io.Writer) error {
 		_, err := io.Copy(w, r)
 		return err
 	})
@@ -61,10 +81,11 @@ func (p localFolder) list() ([]CloudFile, error) {
 }
 
 func (p localFolder) download(fileName, localPath string) error {
-	if p.cfg.URL == "" {
-		return fmt.Errorf("no local folder destination configured")
+	target, err := p.resolveFile(fileName)
+	if err != nil {
+		return err
 	}
-	src, err := os.Open(filepath.Join(p.cfg.URL, fileName))
+	src, err := os.Open(target)
 	if err != nil {
 		return fmt.Errorf("file %q not found in local folder", fileName)
 	}
@@ -76,8 +97,9 @@ func (p localFolder) download(fileName, localPath string) error {
 }
 
 func (p localFolder) remove(f CloudFile) error {
-	if p.cfg.URL == "" {
-		return fmt.Errorf("no local folder destination configured")
+	target, err := p.resolveFile(f.Name)
+	if err != nil {
+		return err
 	}
-	return os.Remove(filepath.Join(p.cfg.URL, f.Name))
+	return os.Remove(target)
 }

@@ -59,7 +59,12 @@ func (s *Server) handleLaunchGame(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": msg, "reason": "not-installed"})
 			return
 		}
-		if err := openURL("steam://run/" + game.AppID); err != nil {
+		appID := strings.TrimSpace(game.AppID)
+		if !isASCIIUnsignedInt(appID) {
+			writeError(w, http.StatusBadRequest, "invalid Steam App ID")
+			return
+		}
+		if err := openURL("steam://run/" + appID); err != nil {
 			writeError(w, http.StatusInternalServerError, "could not launch via Steam: "+err.Error())
 			return
 		}
@@ -81,14 +86,32 @@ var (
 
 // openWithSystem opens a URL/protocol handler with the OS default handler.
 func openWithSystem(url string) error {
+	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	case "darwin":
-		return exec.Command("open", url).Start()
+		cmd = exec.Command("open", url)
 	default:
-		return exec.Command("xdg-open", url).Start()
+		cmd = exec.Command("xdg-open", url)
 	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
+func isASCIIUnsignedInt(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // launchCommand is how a game's program is started.

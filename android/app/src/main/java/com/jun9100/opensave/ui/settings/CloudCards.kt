@@ -116,12 +116,14 @@ internal fun GameSaveCard(
                     },
                 )
             }
-            GameSaveAuthText.warning(state.gameSaveAuth)?.let { text ->
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
+            if (state.gameSaveUsername.isBlank()) {
+                GameSaveAuthText.warning(state.gameSaveAuth)?.let { text ->
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
             }
             OutlinedButton(
                 onClick = whenIdle(state.busy) { viewModel.openPairing() },

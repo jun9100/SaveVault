@@ -692,8 +692,9 @@ func (e *Engine) InitiatePairWan(ctx context.Context, peerID string) error {
 	if err != nil {
 		return err
 	}
-	// "relay" is the JS grace-window key for WAN-initiated handshakes.
-	e.Pairing.RecordSent(peerID, "relay")
+	// Scope the WAN grace window strictly to the target peer ID rather than
+	// a wildcard "relay" key so another room member cannot hijack the confirm.
+	e.Pairing.RecordSent(peerID)
 
 	_, err = e.Wan.Request(ctx, peerID, "/handshake", "POST", e.pairingIdentity(settings))
 	if err != nil {

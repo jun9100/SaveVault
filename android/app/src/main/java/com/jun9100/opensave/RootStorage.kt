@@ -125,8 +125,12 @@ class RootStorage(private val context: Context) : PathStorage {
     /** The bytes of [fileName] in [directory] (an absolute path), or null when missing or larger than [maxBytes]. */
     override suspend fun readSmallFile(directory: String, fileName: String, maxBytes: Int): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
-            val path = RootCommand.shellQuote(directory.trimEnd('/') + "/" + fileName)
-            val result = RootCommand.execute("[ -f $path ] && [ \$(stat -c %s $path) -le $maxBytes ] && base64 -w 0 $path")
+            require(maxBytes > 0) { "maxBytes must be positive" }
+            val safeName = PathPolicy.requireSafeDocumentName(fileName)
+            val dir = directory.trim().trimEnd('/')
+            require(dir.startsWith("/") && !dir.split('/').any { it == ".." }) { "Invalid directory path" }
+            val path = RootCommand.shellQuote("$dir/$safeName")
+            val result = RootCommand.execute("[ ! -L $path ] && [ -f $path ] && [ \$(stat -c %s $path) -le $maxBytes ] && base64 -w 0 $path")
             if (result.exitCode != 0 || result.output.isBlank()) return@runCatching null
             android.util.Base64.decode(result.output, android.util.Base64.DEFAULT)
         }.getOrNull()
@@ -235,8 +239,8 @@ class RootStorage(private val context: Context) : PathStorage {
                 val uid = Process.myUid()
                 RootCommand.requireSuccess(
                     "set -e; " +
-                        "if [ -n \"\$(find $sourceArg -type l -print -quit)\" ]; then echo 'symlink in save path'; exit 1; fi; " +
-                        "if [ -n \"\$(find $sourceArg ! -type d ! -type f -print -quit)\" ]; then echo 'special file in save path'; exit 1; fi; " +
+                        "if [ -L $sourceArg ] || [ -n \"\$(find $sourceArg -type l -print 2>/dev/null | head -n 1)\" ]; then echo 'symlink in save path'; exit 1; fi; " +
+                        "if [ -n \"\$(find $sourceArg ! -type d ! -type f -print 2>/dev/null | head -n 1)\" ]; then echo 'special file in save path'; exit 1; fi; " +
                         "mkdir -- $destinationArg; " +
                         "cp -a -- ${RootCommand.shellQuote("$source/.")} ${RootCommand.shellQuote("${destination.path}/")}; " +
                         "chown -R $uid:$uid $destinationArg",
@@ -299,11 +303,13 @@ class RootStorage(private val context: Context) : PathStorage {
                 appendLine("set -e")
                 operations.forEach { operation ->
                     val preparedArg = RootCommand.shellQuote(operation.prepared.path)
+                    val targetArg = RootCommand.shellQuote(operation.target.path)
                     appendLine("rm -rf -- $preparedArg")
                     appendLine("mkdir -- $preparedArg")
                     appendLine("cp -a -- ${RootCommand.shellQuote("${operation.staged.path}/.")} ${RootCommand.shellQuote("${operation.prepared.path}/")}")
                     appendLine("chown -R ${operation.uid}:${operation.gid} $preparedArg")
                     appendLine("chmod ${operation.mode} $preparedArg")
+                    appendLine("chcon -R --reference=$targetArg -- $preparedArg 2>/dev/null || true")
                 }
                 operations.forEachIndexed { index, operation ->
                     val target = RootCommand.shellQuote(operation.target.path)
@@ -330,6 +336,7 @@ class RootStorage(private val context: Context) : PathStorage {
                     appendLine("exit 1")
                     appendLine("fi")
                 }
+                operations.forEach { appendLine("restorecon -RF -- ${RootCommand.shellQuote(it.target.path)} 2>/dev/null || true") }
                 operations.forEach { appendLine("rm -rf -- ${RootCommand.shellQuote(it.backup.path)}") }
             }
             try {
@@ -357,7 +364,10 @@ class RootStorage(private val context: Context) : PathStorage {
             val sourceArg = RootCommand.shellQuote(path)
             val workspaceArg = RootCommand.shellQuote(workspace.canonicalPath)
             RootCommand.requireSuccess(
-                "set -e; cp -a -- $sourceArg/. $workspaceArg/; " +
+                "set -e; " +
+                    "if [ -L $sourceArg ] || [ -n \"\$(find $sourceArg -type l -print 2>/dev/null | head -n 1)\" ]; then echo 'symlink in save path'; exit 1; fi; " +
+                    "if [ -n \"\$(find $sourceArg ! -type d ! -type f -print 2>/dev/null | head -n 1)\" ]; then echo 'special file in save path'; exit 1; fi; " +
+                    "cp -a -- $sourceArg/. $workspaceArg/; " +
                     "chown -R ${Process.myUid()}:${Process.myUid()} $workspaceArg",
             )
             WorkspaceReport.build(workspace, File(path).name.ifBlank { path })
@@ -388,15 +398,19 @@ class RootStorage(private val context: Context) : PathStorage {
                 if ! cp -a -- $workspaceArg/. $stagingArg/; then rm -rf -- $stagingArg; exit 1; fi
                 if ! chown -R ${metadata.uid}:${metadata.gid} $stagingArg; then rm -rf -- $stagingArg; exit 1; fi
                 if ! chmod ${metadata.mode} $stagingArg; then rm -rf -- $stagingArg; exit 1; fi
+                chcon -R --reference=$targetArg -- $stagingArg 2>/dev/null || true
                 if ! mv -- $targetArg $oldTargetArg; then rm -rf -- $stagingArg; exit 1; fi
                 if ! mv -- $stagingArg $targetArg; then mv -- $oldTargetArg $targetArg; rm -rf -- $stagingArg; exit 1; fi
+                restorecon -RF -- $targetArg 2>/dev/null || true
                 rm -rf -- $oldTargetArg
             """.trimIndent()
             try {
                 RootCommand.requireSuccess(command)
             } catch (error: Throwable) {
                 runCatching {
-                    RootCommand.requireSuccess("rm -rf -- $stagingArg; rm -rf -- $oldTargetArg")
+                    RootCommand.requireSuccess(
+                        "rm -rf -- $stagingArg; if [ ! -e $targetArg ] && [ -e $oldTargetArg ]; then mv -- $oldTargetArg $targetArg; fi",
+                    )
                 }
                 throw error
             }

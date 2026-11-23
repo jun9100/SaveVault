@@ -113,7 +113,22 @@ func ParseExportEntryName(name string) (gameID, branch, snapID string, ok bool) 
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
 		return "", "", "", false
 	}
+	for _, seg := range parts {
+		if !isSafeArchiveSegment(seg) {
+			return "", "", "", false
+		}
+	}
 	return parts[0], parts[1], parts[2], true
+}
+
+func isSafeArchiveSegment(seg string) bool {
+	if seg == "" || seg == "." || seg == ".." {
+		return false
+	}
+	if strings.ContainsAny(seg, `/\:`+"\x00") || strings.Contains(seg, "..") {
+		return false
+	}
+	return true
 }
 
 var branchNameRe = regexp.MustCompile(`[^a-z0-9_-]`)
@@ -802,7 +817,8 @@ func (m *Manager) Restore(gameID, snapshotID string) (store.Snapshot, error) {
 	// without its registry half is worth more than an error that leaves the
 	// caller unsure whether anything happened at all.
 	if dir := restoreRoots[winreg.LocationName]; dir != "" {
-		for _, w := range RestoreRegistryCapture(game.Name, dir) {
+		allowedKeys, _ := m.Store.GameRegistryKeys(game.ID)
+		for _, w := range RestoreRegistryCaptureAllowed(game.Name, dir, allowedKeys) {
 			if m.Log != nil {
 				m.Log("warn", w)
 			}
@@ -1011,7 +1027,8 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 		// being left — a save the game never had, and one nothing in the
 		// listing would show as wrong.
 		if dir := switchRoots[winreg.LocationName]; dir != "" {
-			for _, w := range RestoreRegistryCapture(game.Name, dir) {
+			allowedKeys, _ := m.Store.GameRegistryKeys(game.ID)
+			for _, w := range RestoreRegistryCaptureAllowed(game.Name, dir, allowedKeys) {
 				if m.Log != nil {
 					m.Log("warn", w)
 				}

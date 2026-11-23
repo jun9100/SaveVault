@@ -2,6 +2,7 @@ package com.jun9100.opensave
 
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -199,6 +200,9 @@ interface GameSaveAuthObserver {
     /** Called only for `token_revoked` and `shared_token_disabled`. */
     fun onAuthRejected(code: String)
 
+    /** Token-aware variant so an in-flight failure with an old credential never clears a freshly saved one. */
+    fun onAuthRejected(code: String, rejectedToken: String) = onAuthRejected(code)
+
     /** The cloud is in the shared-token warning stage (`warn`). */
     fun onSharedTokenWarning()
 }
@@ -214,11 +218,6 @@ class GameSaveClient(
     private val device: GameSaveDeviceIdentity? = null,
     private val authObserver: GameSaveAuthObserver? = null,
 ) {
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .build()
     private val serviceUrl = normalizeServiceUrl(config.serviceUrl)
 
     init {
@@ -233,7 +232,7 @@ class GameSaveClient(
         execute(request("$serviceUrl/v1/auth/whoami")).use { response ->
             if (response.code == 404) return@runCatching null
             requireSuccess(response, "查询 SaveVault 云端凭据")
-            val json = JSONObject(response.body?.string().orEmpty())
+            val json = JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES))
             GameSaveWhoami(
                 auth = json.optString("auth").trim(),
                 tokenId = json.optString("token_id").trim(),
@@ -247,7 +246,7 @@ class GameSaveClient(
     fun list(): Result<List<RemoteSnapshot>> = runCatching {
         execute(request(listEndpoint())).use { response ->
             requireSuccess(response, "列举 SaveVault 云端快照")
-            val body = response.body?.string().orEmpty()
+            val body = readBoundedString(response, MAX_JSON_BODY_BYTES)
             val files = JSONObject(body).optJSONArray("files") ?: return@use emptyList()
             buildList {
                 for (index in 0 until files.length()) {
@@ -326,7 +325,7 @@ class GameSaveClient(
         execute(request(scopeEndpoint(type.id, gameId)), scopeType = type.id).use { response ->
             if (response.code == 404) throw GameSaveScopesUnsupportedException()
             requireSuccess(response, "读取 SaveVault 云端当前存档")
-            parseScope(response.body?.string().orEmpty(), type.id, gameId)
+            parseScope(readBoundedString(response, MAX_JSON_BODY_BYTES), type.id, gameId)
         }
     }.mapFailure()
 
@@ -365,7 +364,7 @@ class GameSaveClient(
         execute(request("$serviceUrl/v1/opensave/games")).use { response ->
             if (response.code == 404) return@runCatching null
             requireSuccess(response, "读取 SaveVault 云端游戏列表")
-            parseGames(response.body?.string().orEmpty())
+            parseGames(readBoundedString(response, MAX_JSON_BODY_BYTES))
         }
     }.mapFailure()
 
@@ -475,12 +474,12 @@ class GameSaveClient(
         if (!conflict) request.header("If-Match", "\"$expectedHead\"")
         execute(request, scopeType = type.id).use { response ->
             if (response.code == 409) {
-                val head = runCatching { JSONObject(response.body?.string().orEmpty()).optString("head").trim() }
+                val head = runCatching { JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES)).optString("head").trim() }
                     .getOrDefault("")
                 throw GameSaveScopeConflictException(head)
             }
             requireSuccess(response, if (conflict) "保留 SaveVault 云端冲突快照" else "更新 SaveVault 云端当前存档")
-            parseScopeSnapshot(JSONObject(response.body?.string().orEmpty()))
+            parseScopeSnapshot(JSONObject(readBoundedString(response, MAX_JSON_BODY_BYTES)))
         }
     }.mapFailure()
 
@@ -549,7 +548,7 @@ class GameSaveClient(
      * deleted or merged scope must never be retried or recreated.
      */
     private fun execute(builder: Request.Builder, scopeType: String? = null): Response {
-        val response = httpClient.newCall(builder.build()).execute()
+        val response = sharedHttpClient.newCall(builder.build()).execute()
         try {
             if (response.header(AUTH_WARNING_HEADER) == SHARED_TOKEN_DEPRECATED) {
                 runCatching { authObserver?.onSharedTokenWarning() }
@@ -560,7 +559,7 @@ class GameSaveClient(
                 }.getOrDefault("")
                 val reason = code.takeIf { it == TOKEN_REVOKED || it == SHARED_TOKEN_DISABLED } ?: UNAUTHORIZED
                 // Persist/stop background work before the caller unwinds; that path must not retry.
-                if (reason != UNAUTHORIZED) runCatching { authObserver?.onAuthRejected(reason) }
+                if (reason != UNAUTHORIZED) runCatching { authObserver?.onAuthRejected(reason, config.syncKey) }
                 response.close()
                 throw GameSaveAuthException(reason, authMessage(reason))
             }
@@ -576,7 +575,7 @@ class GameSaveClient(
 
     private fun requireSuccess(response: Response, operation: String) {
         if (response.isSuccessful) return
-        val body = runCatching { response.body?.string().orEmpty().take(512) }.getOrDefault("")
+        val body = runCatching { response.peekBody(512L).string().take(512) }.getOrDefault("")
         throw GameSaveException(
             "${operation}失败：HTTP ${response.code}${if (body.isBlank()) "" else " - $body"}",
             response.code >= 500 || response.code == 408 || response.code == 429,
@@ -633,19 +632,42 @@ class GameSaveClient(
         private const val TIMEOUT_MS = 30L * 1000L
         private const val AUTH_ERROR_BODY_LIMIT = 4096L
         private const val SCOPE_GONE_BODY_LIMIT = 4096L
+        private const val MAX_JSON_BODY_BYTES = 16L * 1024L * 1024L
+        private const val MAX_AUTH_JSON_BODY_BYTES = 64L * 1024L
         private const val AUTH_WARNING_HEADER = "X-Game-Save-Auth-Warning"
         private const val SHARED_TOKEN_DEPRECATED = "shared-token-deprecated"
         private const val TOKEN_REVOKED = "token_revoked"
         private const val SHARED_TOKEN_DISABLED = "shared_token_disabled"
         private const val UNAUTHORIZED = "unauthorized"
 
-        /** The pairing call has no saved credential, so it builds its own client. */
-        private val pairingHttpClient: OkHttpClient by lazy {
+        /** Shared HTTP client so connection pools/threads are reused and 3xx never forwards credentials. */
+        internal val sharedHttpClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
                 .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .writeTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build()
+        }
+
+        private fun readBoundedString(response: Response, maxBytes: Long): String {
+            val stream = response.body?.byteStream() ?: return ""
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(8192)
+            var total = 0L
+            stream.use { input ->
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > maxBytes) {
+                        throw GameSaveException("SaveVault 云端响应体过大")
+                    }
+                    out.write(buf, 0, n)
+                }
+            }
+            return out.toString(Charsets.UTF_8.name())
         }
 
         /**
@@ -677,9 +699,9 @@ class GameSaveClient(
                 .header("Content-Type", "application/json")
                 .also { applyDeviceHeaders(it, device) }
                 .build()
-            pairingHttpClient.newCall(request).execute().use { response ->
+            sharedHttpClient.newCall(request).execute().use { response ->
                 when (response.code) {
-                    200 -> parsePairingResult(response.body?.string().orEmpty())
+                    200 -> parsePairingResult(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES))
                     400 -> throw GameSaveException("配对请求无效", httpStatus = 400)
                     401 -> throw GameSaveException("配对码无效、已过期或已被使用", httpStatus = 401)
                     404 -> throw GameSavePairingUnsupportedException()
@@ -762,25 +784,21 @@ class GameSaveClient(
                 .toString()
                 .toRequestBody(JSON_MEDIA_TYPE)
             val request = Request.Builder().url("$base/v1/login").post(body).build()
-            val client = OkHttpClient.Builder()
-                .connectTimeout(LOGIN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                .readTimeout(LOGIN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                .build()
-            client.newCall(request).execute().use { response ->
+            sharedHttpClient.newCall(request).execute().use { response ->
                 when (response.code) {
                     401 -> error("账号或密码不正确")
                     404 -> error("服务器版本过旧，没有账号登录接口（/v1/login）")
+                    429 -> error("登录尝试过于频繁，请稍后再试")
                 }
                 if (!response.isSuccessful) {
                     error("登录失败（HTTP ${response.code}）")
                 }
-                val token = JSONObject(response.body?.string().orEmpty()).optString("token").trim()
+                val token = JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES)).optString("token").trim()
                 require(token.isNotEmpty()) { "服务器没有返回登录令牌" }
+                require(token.none { it.code !in 0x21..0x7e }) { "服务器返回的登录令牌无效" }
                 token
             }
         }
-
-        private const val LOGIN_TIMEOUT_MILLIS = 20_000L
 
         fun normalizeServiceUrl(value: String): String {
             val raw = value.trim()

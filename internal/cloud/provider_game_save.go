@@ -114,17 +114,35 @@ func (p gameSave) authorize(req *http.Request) error {
 		deviceName = "OpenSave " + runtime.GOOS
 	}
 	platform := "opensave-" + runtime.GOOS
+	encodedDeviceName := encodeDeviceNameHeader(deviceName)
 	req.Header.Set("Authorization", "Bearer "+p.token())
 	// Send both header families while clients and servers upgrade independently.
 	// game-save prefers X-OpenSave-*; released eden-syncd-compatible services
 	// only recognize the X-Eden-* equivalents.
 	for _, header := range []string{"X-OpenSave", "X-Eden"} {
 		req.Header.Set(header+"-Device-ID", deviceID)
-		req.Header.Set(header+"-Device-Name", deviceName)
+		req.Header.Set(header+"-Device-Name", encodedDeviceName)
 		req.Header.Set(header+"-Platform", platform)
 		req.Header.Set(header+"-Version", version.Version)
 	}
 	return nil
+}
+
+// encodeDeviceNameHeader sends printable ASCII names verbatim and RFC 8187
+// encodes non-ASCII names ("UTF-8''...") so HTTP header transport preserves
+// Unicode device names cleanly (matching game-save's decodeDeviceHeader).
+func encodeDeviceNameHeader(name string) string {
+	needsEncoding := false
+	for i := 0; i < len(name); i++ {
+		if name[i] < 0x20 || name[i] >= 0x7f {
+			needsEncoding = true
+			break
+		}
+	}
+	if !needsEncoding {
+		return name
+	}
+	return "UTF-8''" + url.PathEscape(name)
 }
 
 func (p gameSave) upload(f *os.File, size int64, fileName string) error {

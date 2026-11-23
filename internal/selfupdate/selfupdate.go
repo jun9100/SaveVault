@@ -102,12 +102,29 @@ func ValidateExecutable(path string) error {
 		if head[0] != 'M' || head[1] != 'Z' { // PE/COFF
 			return fmt.Errorf("downloaded file is not a Windows executable")
 		}
+	case "darwin":
+		if !isMachOMagic(head) {
+			return fmt.Errorf("downloaded file is not a macOS executable")
+		}
 	default:
 		if head[0] != 0x7F || head[1] != 'E' || head[2] != 'L' || head[3] != 'F' {
 			return fmt.Errorf("downloaded file is not a Linux executable")
 		}
 	}
 	return nil
+}
+
+func isMachOMagic(head []byte) bool {
+	if len(head) < 4 {
+		return false
+	}
+	magic := uint32(head[0])<<24 | uint32(head[1])<<16 | uint32(head[2])<<8 | uint32(head[3])
+	switch magic {
+	case 0xFEEDFACE, 0xCEFAEDFE, 0xFEEDFACF, 0xCFFAEDFE, 0xCAFEBABE, 0xBEBAFECA:
+		return true
+	default:
+		return false
+	}
 }
 
 // ExtractFromTarGz writes the first regular file whose base name matches

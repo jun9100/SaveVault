@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -23,7 +24,8 @@ var migrationsFS embed.FS
 // methods (see settings.go, games.go, branches.go, snapshots.go, peers.go,
 // cloudtokens.go).
 type Store struct {
-	db *sqlx.DB
+	db    *sqlx.DB
+	keyMu sync.Mutex
 }
 
 // Open creates (if needed) and opens the SQLite database at path, applying
@@ -32,7 +34,10 @@ func Open(path string) (*Store, error) {
 	// _pragma params ensure foreign keys are enforced (SQLite defaults them
 	// off per-connection) and busy_timeout avoids spurious SQLITE_BUSY
 	// errors from the watcher/api/p2p goroutines all touching the DB.
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", path)
+	// Escape URI-significant characters in path so folders containing ?, #, or %
+	// still open the intended SQLite file.
+	escapedPath := strings.NewReplacer("%", "%25", "?", "%3F", "#", "%23").Replace(path)
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", escapedPath)
 	db, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)

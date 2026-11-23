@@ -19,6 +19,9 @@ import com.jun9100.opensave.batch.BatchCenter
 import com.jun9100.opensave.ops.ready
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class AutoBackupScheduler(context: Context) {
     private val appContext = context.applicationContext
@@ -255,11 +258,11 @@ class AutoBackupWorker(
      * batch or a single backup waits for one game at most; a batch that
      * starts meanwhile ends this round.
      */
-    private suspend fun backUpChangedGames(): Result {
+    private suspend fun backUpChangedGames(): Result = withContext(Dispatchers.IO) {
         val config = GameSaveConfigStore(applicationContext).load()
         if (!config.ready) {
             record(AutoBackupPolicy.skippedEntry("SaveVault 云端未配置、未开启或此设备的云端凭据已失效"))
-            return Result.success()
+            return@withContext Result.success()
         }
 
         val storage = SafStorage(applicationContext)
@@ -278,7 +281,7 @@ class AutoBackupWorker(
             val retryable = (error as? GameSaveException)?.retryable ?: true
             val retrying = retryable && runAttemptCount < MAX_RETRIES
             record(AutoBackupPolicy.failedEntry("无法读取云端：${error.message ?: "未知错误"}", retrying))
-            return if (retrying) Result.retry() else Result.success()
+            return@withContext if (retrying) Result.retry() else Result.success()
         }
         val headReader = GameSaveHeadReader(applicationContext, config, client)
         val tombstones = ScopeTombstoneStore(applicationContext)
@@ -290,7 +293,9 @@ class AutoBackupWorker(
         val excluded = AutoBackupExclusions(applicationContext).excluded()
         val sources = backupSources(storage, rootStorage, installedGameCatalog)
         val scanDiagnostics = mutableListOf<String>()
-        for (source in sources) {
+        val authStore = GameSaveAuthStore(applicationContext)
+        sources@ for (source in sources) {
+            if (authStore.blocked().isNotEmpty()) break@sources
             val scan = scanSource(source.source, storage, rootStorage, androidGames)
             if (scan.isFailure) {
                 retryableFailure = true
@@ -307,9 +312,10 @@ class AutoBackupWorker(
                     if (report.detected.all { it.candidate }) "（全部待确认）" else ""
             }
             for (game in games) {
+                if (authStore.blocked().isNotEmpty()) break@sources
                 if (AutoBackupPolicy.shouldYield(BatchCenter.isRunning)) {
                     finishRun(tally, verdicts, repository, scanDiagnostics)
-                    return Result.success()
+                    return@withContext Result.success()
                 }
                 tally = tally.copy(games = tally.games + 1)
                 val name = game.presentation.primaryName
@@ -338,7 +344,10 @@ class AutoBackupWorker(
                             headReader = headReader,
                         )
                     }
-                }.getOrElse { error -> backupFailure(error) }) {
+                }.getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    backupFailure(error)
+                }) {
                     GameBackupOutcome.Skipped -> tally = tally.copy(unchanged = tally.unchanged + 1)
                     GameBackupOutcome.Uploaded -> tally = tally.copy(uploaded = tally.uploaded + 1)
                     GameBackupOutcome.Restored -> {
@@ -355,6 +364,10 @@ class AutoBackupWorker(
                     is GameBackupOutcome.UploadFailed -> {
                         retryableFailure = retryableFailure || outcome.error.retryable
                         tally = tally.copy(failed = tally.failed + (name to (outcome.error.message ?: "上传失败")))
+                        if (outcome.error is GameSaveAuthException || authStore.blocked().isNotEmpty()) {
+                            retryableFailure = false
+                            break@sources
+                        }
                     }
                     is GameBackupOutcome.CloudStopped -> {
                         // Reaching this branch means the tombstone was created in this round
@@ -392,7 +405,7 @@ class AutoBackupWorker(
             }
         }
         finishRun(tally, verdicts, repository, scanDiagnostics)
-        return if (retryableFailure && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
+        if (retryableFailure && runAttemptCount < MAX_RETRIES) Result.retry() else Result.success()
     }
 
     /** Writes the run's 动态 line and the cloud verdicts it found. */

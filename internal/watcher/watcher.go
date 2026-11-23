@@ -468,6 +468,11 @@ func (e *Engine) WatchWithLocations(gameID, savePath string, extra map[string]st
 		e.mu.Unlock()
 		existing.stop() // may wait on the old run goroutine — not under the lock
 		e.mu.Lock()
+		if e.closed {
+			e.mu.Unlock()
+			closeWatcher(fsw, fsw.Close, watchStopTimeout)
+			return ErrStopped
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

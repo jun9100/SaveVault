@@ -71,6 +71,7 @@ func (p webDAV) list() ([]CloudFile, error) {
 	}
 	req.Header.Set("Depth", "1")
 	req.Header.Set("Content-Type", "text/xml")
+	applyCustomHeaders(req, p.cfg.HeadersJSON)
 	applyBasicAuth(req, p.cfg.Username, p.cfg.Password)
 
 	resp, err := p.s.httpClient().Do(req)
@@ -131,6 +132,7 @@ func (p webDAV) download(fileName, localPath string) error {
 	if err != nil {
 		return err
 	}
+	applyCustomHeaders(req, p.cfg.HeadersJSON)
 	applyBasicAuth(req, p.cfg.Username, p.cfg.Password)
 	if err := p.s.fetchToFile(req, localPath); err != nil {
 		return fmt.Errorf("WebDAV: %w", err)

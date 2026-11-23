@@ -39,8 +39,10 @@ func (p webhook) upload(f *os.File, size int64, fileName string) error {
 	}()
 	req, err := http.NewRequest(http.MethodPost, p.cfg.URL, pr)
 	if err != nil {
+		_ = pr.Close()
 		return err
 	}
+	defer pr.Close()
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	applyCustomHeaders(req, p.cfg.HeadersJSON)
 	resp, err := p.s.doTransfer(req)

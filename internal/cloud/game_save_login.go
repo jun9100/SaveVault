@@ -52,7 +52,12 @@ func LoginGameSave(ctx context.Context, server, username, password string) (stri
 		return "", err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	client := http.Client{Timeout: 20 * time.Second}
+	client := http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("cannot reach the game-save service: %w", err)

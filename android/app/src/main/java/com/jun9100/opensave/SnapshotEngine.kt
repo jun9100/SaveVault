@@ -115,9 +115,15 @@ class SnapshotEngine {
         val root = target.canonicalFile
         val rootPrefix = root.path + File.separator
         val directoryTimes = mutableListOf<Pair<File, Long>>()
+        var entryCount = 0
+        var totalExtractedBytes = 0L
         ZipInputStream(BufferedInputStream(FileInputStream(archive))).use { input ->
             while (true) {
                 val entry = input.nextEntry ?: break
+                entryCount++
+                require(entryCount <= MAX_ARCHIVE_ENTRIES) {
+                    "Snapshot archive contains too many entries ($entryCount > $MAX_ARCHIVE_ENTRIES)"
+                }
                 val relative = entry.name.replace('\\', '/')
                 require(isSafeArchivePath(relative)) { "Unsafe snapshot path: ${entry.name}" }
                 val destination = File(root, relative).canonicalFile
@@ -139,6 +145,10 @@ class SnapshotEngine {
                             val read = input.read(buffer)
                             if (read < 0) break
                             if (read == 0) continue
+                            totalExtractedBytes += read
+                            require(totalExtractedBytes <= MAX_ARCHIVE_EXTRACT_BYTES) {
+                                "Snapshot archive exceeds maximum extracted size"
+                            }
                             output.write(buffer, 0, read)
                         }
                     }
@@ -165,6 +175,8 @@ class SnapshotEngine {
 
     private companion object {
         const val BUFFER_SIZE = 1024 * 1024
+        const val MAX_ARCHIVE_ENTRIES = 50_000
+        const val MAX_ARCHIVE_EXTRACT_BYTES = 2L * 1024L * 1024L * 1024L
     }
 }
 

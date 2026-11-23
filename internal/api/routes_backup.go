@@ -144,27 +144,33 @@ func extractSingleFile(zipPath, entryName, destRel, savePath string) error {
 		if strings.ReplaceAll(f.Name, "\\", "/") != want {
 			continue
 		}
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("file %q in this snapshot is a symlink, which is not permitted", entryName)
+		}
 		src, err := f.Open()
 		if err != nil {
 			return err
 		}
 		defer src.Close()
 
-		// The entry name decides where this is written, and a snapshot archive
-		// is not always this machine's own — it can arrive from a peer or
-		// inside an imported backup. An entry called "../x" wrote outside the
-		// save folder entirely.
-		//
-		// The same check the whole-archive path has always made; this one
-		// joined the name straight on. Matching an entry in the archive is not
-		// protection when the archive is what an attacker controls.
-		clean := filepath.Clean(filepath.FromSlash(want))
-		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || filepath.IsAbs(clean) {
+		// Validate and write using destRel (not want), so files belonging to an
+		// extra save location land in that location without the archive prefix,
+		// and never escape savePath.
+		rel := strings.ReplaceAll(destRel, "\\", "/")
+		if rel == "" {
+			rel = want
+		}
+		clean := filepath.Clean(filepath.FromSlash(rel))
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) ||
+			filepath.IsAbs(clean) || filepath.VolumeName(clean) != "" || strings.ContainsRune(rel, '\x00') {
 			return fmt.Errorf("file %q in this snapshot points outside the save folder", entryName)
 		}
 		destPath := filepath.Join(savePath, clean)
 		if info, statErr := os.Stat(savePath); statErr == nil && !info.IsDir() {
 			destPath = savePath // single-file save mode
+		} else if relCheck, relErr := filepath.Rel(savePath, destPath); relErr != nil ||
+			relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) || filepath.IsAbs(relCheck) {
+			return fmt.Errorf("file %q in this snapshot points outside the save folder", entryName)
 		}
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o777); err != nil {
 			return err

@@ -193,15 +193,20 @@ func inspectAndroidArchive(files []*zip.File, manifestFile *zip.File) (ForeignAr
 	return archive, nil
 }
 
+const maxForeignManifestBytes = 4 << 20
+
 func readForeignManifest(f *zip.File) (foreignManifest, error) {
 	rc, err := f.Open()
 	if err != nil {
 		return foreignManifest{}, fmt.Errorf("read %s: %w", ForeignManifestName, err)
 	}
 	defer rc.Close()
-	raw, err := io.ReadAll(rc)
+	raw, err := io.ReadAll(io.LimitReader(rc, maxForeignManifestBytes+1))
 	if err != nil {
 		return foreignManifest{}, fmt.Errorf("read %s: %w", ForeignManifestName, err)
+	}
+	if len(raw) > maxForeignManifestBytes {
+		return foreignManifest{}, fmt.Errorf("%s exceeds maximum manifest size", ForeignManifestName)
 	}
 
 	var manifest foreignManifest

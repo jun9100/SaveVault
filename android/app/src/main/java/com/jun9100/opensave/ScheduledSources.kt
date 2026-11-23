@@ -1,8 +1,6 @@
 package com.jun9100.opensave
 
 import android.content.Context
-import android.os.Build
-import android.os.Environment
 
 /**
  * The sources a background job may read without the UI: every selected SAF
@@ -45,12 +43,15 @@ internal object ScheduledSources {
         // worker read Android/data exactly like the in-app scan does, so the
         // scheduled round must not require root to see those sources.
         val onboarding = OnboardingStore(context)
-        val allFilesAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            Environment.isExternalStorageManager()
+        val allFilesAccess = rootStorage.hasAllFilesAccess()
         if (!onboarding.rootAllowed() && !allFilesAccess) return sources.values.toList()
-        val rootCheck = rootStorage.checkRootAccess()
+        val rootCheck = if (onboarding.rootAllowed()) {
+            rootStorage.checkRootAccess()
+        } else {
+            Result.failure(IllegalStateException("未启用 Root"))
+        }
         if (rootCheck.isFailure && !allFilesAccess) {
-            if (Onboarding.reportBackgroundRootFailure(rootAllowed = true, rootConfirmed = onboarding.rootConfirmed())) {
+            if (Onboarding.reportBackgroundRootFailure(rootAllowed = onboarding.rootAllowed(), rootConfirmed = onboarding.rootConfirmed())) {
                 onRootUnavailable?.invoke(rootCheck.exceptionOrNull()?.message ?: "su 未返回 uid 0")
             }
             return sources.values.toList()

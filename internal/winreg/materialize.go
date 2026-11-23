@@ -111,6 +111,20 @@ func CaptureToDir(keys []string, dir string) (warnings []string, err error) {
 // this feature existed, or of a game with no registry keys, simply has nothing
 // to put back.
 func RestoreFromDir(dir string) (warnings []string, err error) {
+	return restoreFromDir(dir, nil, false)
+}
+
+// RestoreFromDirAllowed applies a capture previously written to dir, restricting
+// every written key and subkey to the game's locally configured allowedKeys
+// allowlist (in addition to blocking dangerous system/autostart paths).
+//
+// An archive arriving from a remote peer or cloud server must never be able to
+// redirect registry writes outside the game's configured registry paths.
+func RestoreFromDirAllowed(dir string, allowedKeys []string) (warnings []string, err error) {
+	return restoreFromDir(dir, allowedKeys, true)
+}
+
+func restoreFromDir(dir string, allowedKeys []string, enforceAllowlist bool) (warnings []string, err error) {
 	raw, err := os.ReadFile(filepath.Join(dir, FileName))
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -125,12 +139,34 @@ func RestoreFromDir(dir string) (warnings []string, err error) {
 	if len(snap.Keys) == 0 {
 		return nil, nil
 	}
-	if !Available() {
-		return []string{fmt.Sprintf(
-			"this snapshot holds %d registry key(s), which cannot be restored here: %v",
-			len(snap.Keys), ErrUnsupported)}, nil
+
+	allowedCanon := make([]string, 0, len(allowedKeys))
+	for _, k := range allowedKeys {
+		canon := strings.ToLower(NormalizePath(k))
+		if canon != "" && !isDangerousRegistryPath(canon) {
+			allowedCanon = append(allowedCanon, canon)
+		}
 	}
+
+	var permitted []Key
 	for _, k := range snap.Keys {
+		filtered, rejected := filterRestorableKey(k, allowedCanon, enforceAllowlist)
+		for _, bad := range rejected {
+			warnings = append(warnings, fmt.Sprintf("refused to restore disallowed registry key %s", bad))
+		}
+		if filtered != nil {
+			permitted = append(permitted, *filtered)
+		}
+	}
+	if len(permitted) == 0 {
+		return warnings, nil
+	}
+	if !Available() {
+		return append(warnings, fmt.Sprintf(
+			"this snapshot holds %d registry key(s), which cannot be restored here: %v",
+			len(permitted), ErrUnsupported)), nil
+	}
+	for _, k := range permitted {
 		if restoreErr := Restore(k); restoreErr != nil {
 			// One key failing must not abandon the others: a partial restore
 			// of a save beats none of it.
@@ -138,6 +174,75 @@ func RestoreFromDir(dir string) (warnings []string, err error) {
 		}
 	}
 	return warnings, nil
+}
+
+// filterRestorableKey validates k and all its recursive Subkeys against both
+// the built-in dangerous-path denylist and (when enforceAllowlist is true)
+// the game's configured registry key allowlist.
+func filterRestorableKey(k Key, allowedCanon []string, enforceAllowlist bool) (*Key, []string) {
+	canon := strings.ToLower(NormalizePath(k.Path))
+	if canon == "" || strings.ContainsRune(canon, '\x00') || isDangerousRegistryPath(canon) {
+		return nil, []string{k.Path}
+	}
+	if enforceAllowlist && !matchesAllowedRegistryPath(canon, allowedCanon) {
+		return nil, []string{k.Path}
+	}
+	out := Key{
+		Path:   k.Path,
+		Values: k.Values,
+	}
+	var rejected []string
+	for _, sub := range k.Subkeys {
+		subCanon := strings.ToLower(NormalizePath(sub.Path))
+		// Every subkey must stay strictly inside its parent key path as well
+		// as passing the denylist and allowlist.
+		if subCanon != canon && !strings.HasPrefix(subCanon, canon+`\`) {
+			rejected = append(rejected, sub.Path)
+			continue
+		}
+		child, childRejected := filterRestorableKey(sub, allowedCanon, enforceAllowlist)
+		rejected = append(rejected, childRejected...)
+		if child != nil {
+			out.Subkeys = append(out.Subkeys, *child)
+		}
+	}
+	return &out, rejected
+}
+
+func matchesAllowedRegistryPath(canon string, allowedCanon []string) bool {
+	for _, allow := range allowedCanon {
+		if canon == allow || strings.HasPrefix(canon, allow+`\`) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDangerousRegistryPath blocks well-known Windows persistence, execution,
+// and security-policy keys even if an archive or misconfiguration names them.
+func isDangerousRegistryPath(canon string) bool {
+	if _, sub, err := splitHive(canon); err != nil || strings.TrimSpace(sub) == "" {
+		return true
+	}
+	dangerousFragments := []string{
+		`\currentversion\run`,
+		`\currentversion\runonce`,
+		`\currentversion\runservices`,
+		`\currentversion\policies\explorer\run`,
+		`\currentversion\winlogon`,
+		`\currentversion\image file execution options`,
+		`\command processor`,
+		`\shell\open\command`,
+		`\windows nt\currentversion\windows`,
+		`\control\session manager`,
+		`\environment`,
+	}
+	for _, frag := range dangerousFragments {
+		if strings.Contains(canon, frag) {
+			return true
+		}
+	}
+	return false
 }
 
 // dedupeKeys collapses spellings of one key and orders them, so two devices

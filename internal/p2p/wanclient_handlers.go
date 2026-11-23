@@ -307,6 +307,11 @@ func (w *WanClient) recordDiscovered(msg RelayMessage) {
 // serveRequest answers an HTTP-shaped RPC from a WAN peer — the relay-side
 // equivalent of the /api/p2p/* routes, with the same pairing guard.
 func (w *WanClient) serveRequest(ctx context.Context, msg RelayMessage) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.engine.Log("error", fmt.Sprintf("recovered panic serving WAN request %s from %s: %v", msg.Route, msg.From, r))
+		}
+	}()
 	// Decrypt before routing. The request's MAC is checked in routeRequest,
 	// after this, and that order is fine: the MAC covers the sealed bytes,
 	// which are left in place, and the seal is itself authenticated, so a
@@ -367,6 +372,7 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 		strings.HasPrefix(route, "/snapshot/") ||
 		strings.HasPrefix(route, "/sync/trigger/") ||
 		strings.HasPrefix(route, "/delete-file/") ||
+		strings.HasPrefix(route, "/app-binary") ||
 		route == "/games" ||
 		route == "/unpair" ||
 		route == "/untrack" ||
@@ -459,7 +465,18 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 		if err := json.Unmarshal(msg.Body, &body); err != nil || body.PeerID == "" {
 			return 400, map[string]string{"error": "peerId is required"}
 		}
-		if !w.engine.Pairing.ValidateConfirm(body.PeerID, "relay", body.Port, isPaired) {
+		if body.PeerID != from {
+			w.engine.Log("warn", fmt.Sprintf("blocked WAN approve-confirm claiming peer %s from sender %s", body.PeerID, from))
+			return 400, map[string]string{"error": "Pairing confirmation rejected: sender mismatch."}
+		}
+		if body.Port < 0 || body.Port > 65535 {
+			return 400, map[string]string{"error": "port must be between 0 and 65535"}
+		}
+		if isPaired && peer.PublicKey != "" && peer.PublicKey != body.PublicKey {
+			w.engine.Log("warn", "blocked WAN approve-confirm attempting to overwrite pinned key for "+body.PeerID)
+			return 403, map[string]string{"error": "Pairing confirmation rejected: peer already has a different pinned key."}
+		}
+		if !w.engine.Pairing.ValidateConfirm(body.PeerID, "", body.Port, isPaired) {
 			w.engine.Log("warn", "blocked unsolicited WAN approve-confirm from "+body.PeerID)
 			return 400, map[string]string{"error": "Pairing confirmation rejected: no matching handshake initiated."}
 		}

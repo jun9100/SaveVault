@@ -43,6 +43,9 @@
       // A newer refresh may have started while this one was in flight.
       if (current !== requestSeq) return;
       view = authStatusView(status);
+      if (view?.key === 'cloud.auth.error' && view.params?.error) {
+        view = { ...view, params: { ...view.params, error: trError(view.params.error) } };
+      }
       warning = !!status?.warning;
       warningError = '';
     } catch (e) {

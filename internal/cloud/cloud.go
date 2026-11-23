@@ -118,6 +118,10 @@ type Service struct {
 	// gameSaveAuthMu serialises reading and replacing the persisted game-save
 	// block so concurrent 401s log once rather than once each.
 	gameSaveAuthMu sync.Mutex
+
+	// refreshMu serialises OAuth access-token refreshes so concurrent uploads
+	// or checks do not race and invalidate rotating refresh tokens.
+	refreshMu sync.Mutex
 }
 
 // New creates a production Service.

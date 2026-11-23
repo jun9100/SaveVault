@@ -45,6 +45,7 @@
   async function load(keepProvider) {
     try {
       const s = await api.get('/api/settings');
+      settings.set(s);
       const next = s.cloudSync ?? {
         enabled: false, provider: 'local', url: '', username: '', password: '', headers: '{}', folderId: ''
       };
@@ -143,7 +144,7 @@
         </button>
       </div>
     {/if}
-    {#if savedConfig.provider === GAME_SAVE_PROVIDER}
+    {#if config.provider === GAME_SAVE_PROVIDER && savedConfig.provider === GAME_SAVE_PROVIDER}
       <AuthStatus {refreshKey} onPair={() => (pairOpen = true)} />
     {/if}
     <OAuthConnect {config} {connected} {busy} reload={() => load()} />

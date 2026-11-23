@@ -308,12 +308,26 @@ func UnzipTo(zipPath, targetPath string) error {
 		}
 	}
 
+	if len(r.File) > maxArchiveEntries {
+		return fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
+	}
+	budget := &extractBudget{remaining: maxArchiveExtractBytes}
 	for _, entry := range r.File {
-		if err := extractEntry(entry, destDir); err != nil {
+		if err := extractEntryAsLimited(entry, destDir, entry.Name, budget); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Bounds guarding ZIP extraction against decompression bombs.
+const (
+	maxArchiveExtractBytes int64 = 4 << 30 // 4 GiB total uncompressed bytes per archive
+	maxArchiveEntries            = 50_000
+)
+
+type extractBudget struct {
+	remaining int64
 }
 
 func extractEntry(entry *zip.File, destDir string) error {
@@ -326,12 +340,32 @@ func extractEntry(entry *zip.File, destDir string) error {
 // the name actually being written, since that is the one that decides where
 // bytes land.
 func extractEntryAs(entry *zip.File, destDir, relName string) error {
-	// Reject entries that would escape the destination (zip-slip).
-	cleanName := filepath.Clean(filepath.FromSlash(relName))
-	if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
+	return extractEntryAsLimited(entry, destDir, relName, nil)
+}
+
+func extractEntryAsLimited(entry *zip.File, destDir, relName string, budget *extractBudget) error {
+	// Refuse symlinks: a crafted archive must not plant a symlink inside a save
+	// directory that later writes or restores could traverse through.
+	if entry.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("zip entry %q is a symlink, which is not permitted", entry.Name)
+	}
+
+	// Reject entries that would escape the destination (zip-slip), including
+	// backslash separators, NUL bytes, and Windows drive prefixes.
+	normalized := strings.ReplaceAll(relName, `\`, "/")
+	if strings.ContainsRune(normalized, '\x00') {
+		return fmt.Errorf("zip entry %q contains a NUL byte", entry.Name)
+	}
+	cleanName := filepath.Clean(filepath.FromSlash(normalized))
+	if cleanName == ".." || strings.HasPrefix(cleanName, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(cleanName) || filepath.VolumeName(cleanName) != "" || hasWindowsDrivePrefix(normalized) {
 		return fmt.Errorf("zip entry %q escapes destination", entry.Name)
 	}
 	destPath := filepath.Join(destDir, cleanName)
+	if relCheck, err := filepath.Rel(destDir, destPath); err != nil ||
+		relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) || filepath.IsAbs(relCheck) {
+		return fmt.Errorf("zip entry %q escapes destination", entry.Name)
+	}
 
 	if entry.FileInfo().IsDir() {
 		return os.MkdirAll(destPath, 0o777)
@@ -350,8 +384,31 @@ func extractEntryAs(entry *zip.File, destDir, relName string) error {
 	if err != nil {
 		return err
 	}
-	defer dst.Close()
+	var copyErr error
+	if budget != nil {
+		n, err := io.Copy(dst, io.LimitReader(src, budget.remaining+1))
+		if err != nil {
+			copyErr = err
+		} else if n > budget.remaining {
+			copyErr = fmt.Errorf("zip archive exceeds maximum extracted size (%d bytes)", maxArchiveExtractBytes)
+		} else {
+			budget.remaining -= n
+		}
+	} else {
+		_, copyErr = io.Copy(dst, src)
+	}
+	closeErr := dst.Close()
+	if copyErr != nil {
+		_ = os.Remove(destPath)
+		return copyErr
+	}
+	return closeErr
+}
 
-	_, err = io.Copy(dst, src)
-	return err
+func hasWindowsDrivePrefix(p string) bool {
+	if len(p) < 2 || p[1] != ':' {
+		return false
+	}
+	c := p[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }

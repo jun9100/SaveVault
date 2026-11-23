@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -351,9 +352,13 @@ func (a *App) SelectSaveFile(title, defaultName string) string {
 	return file
 }
 
-// OpenExternal opens a URL in the system browser (Steam pages, OAuth).
-func (a *App) OpenExternal(url string) {
-	runtime.BrowserOpenURL(a.ctx, url)
+// OpenExternal opens an http(s) URL in the system browser (Steam pages, OAuth).
+func (a *App) OpenExternal(rawURL string) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return
+	}
+	runtime.BrowserOpenURL(a.ctx, u.String())
 }
 
 // OpenFolder reveals a save location in the system file manager (Explorer,

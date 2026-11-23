@@ -591,6 +591,10 @@ func (d *Daemon) checkNativeGameSaveScopes() bool {
 	if err != nil {
 		return true
 	}
+	existingOffers := make(map[string]CloudOffer)
+	for _, o := range d.CloudOffers() {
+		existingOffers[o.GameID] = o
+	}
 	var offers []CloudOffer
 	for _, game := range games {
 		if _, stopped := d.gameSaveScopeGone(game.ID); stopped {
@@ -612,15 +616,25 @@ func (d *Daemon) checkNativeGameSaveScopes() bool {
 				}
 				continue
 			}
-			if d.Log != nil && !cloud.IsNotConfigured(err) {
+			var authBlocked *cloud.GameSaveAuthBlockedError
+			if cloud.IsNotConfigured(err) || errors.As(err, &authBlocked) {
+				return true
+			}
+			if d.Log != nil {
 				d.Log.Log("warn", fmt.Sprintf("cloud: could not read game-save scope for %q: %v", game.Name, err))
 			}
-			return true
+			if prev, ok := existingOffers[game.ID]; ok {
+				offers = append(offers, prev)
+			}
+			continue
 		}
 		offer, err := d.reconcileNativeGameSaveScope(game, scope, settings.NodeID)
 		if err != nil {
 			if d.Log != nil {
 				d.Log.Log("warn", fmt.Sprintf("cloud: could not reconcile game-save scope for %q: %v", game.Name, err))
+			}
+			if prev, ok := existingOffers[game.ID]; ok {
+				offers = append(offers, prev)
 			}
 			continue
 		}
@@ -665,6 +679,9 @@ func (d *Daemon) reconcileNativeGameSaveScope(game store.Game, scope cloud.GameS
 			}
 			return nil, publishErr
 		}
+		return nil, nil
+	}
+	if record.Dismissed == head.ID {
 		return nil, nil
 	}
 

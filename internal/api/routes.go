@@ -175,16 +175,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var withCloud struct {
-		CloudSync *cloudSyncPatch `json:"cloudSync"`
-	}
-	_ = json.Unmarshal(raw, &withCloud)
-	if patch := withCloud.CloudSync; patch != nil {
-		if err := s.applyCloudPatch(patch); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
 	prevSyncCode := ""
 	prevRelayURL := ""
 	prevStartOnBoot := false
@@ -197,10 +187,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		prevAutoDelete, prevAutoDeleteDays = prev.AutoDeleteBackups, prev.AutoDeleteDays
 	}
 
-	// Refuse a cleartext relay before it is stored, not at the dial: only
-	// saves between two 2.4 devices are sealed, so ws:// to somewhere public
-	// puts older pairings' files, room codes and pairing requests on the wire
-	// in the clear.
+	// Refuse a cleartext relay before storing anything (including cloudSync),
+	// so a rejected settings update never partially persists cloud changes.
 	//
 	// Only when the address actually changes. This screen saves every field at
 	// once, so validating unconditionally would mean somebody who already has
@@ -211,6 +199,17 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if current.RelayURL != prevRelayURL {
 		if err := store.ValidateRelayURL(current.RelayURL); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	var withCloud struct {
+		CloudSync *cloudSyncPatch `json:"cloudSync"`
+	}
+	_ = json.Unmarshal(raw, &withCloud)
+	if patch := withCloud.CloudSync; patch != nil {
+		if err := s.applyCloudPatch(patch); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
@@ -252,7 +251,7 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	if err != nil {
 		return err
 	}
-	previousProvider, previousURL, previousPassword := cfg.Provider, cfg.URL, cfg.Password
+	previousProvider, previousURL, previousUsername, previousPassword := cfg.Provider, cfg.URL, cfg.Username, cfg.Password
 	if patch.Enabled != nil {
 		cfg.Enabled = *patch.Enabled
 	}
@@ -297,14 +296,20 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 		}
 		cfg.URL = normalized
 	}
+	switchedToGameSave := cfg.Provider == cloud.GameSaveProvider && previousProvider != cloud.GameSaveProvider
+	credentialsChanged := cfg.URL != previousURL || cfg.Password != previousPassword
+	// When replacing a game-save address or sync key manually (without setting
+	// a new account username), drop any stale account label from a prior login.
+	if cfg.Provider == cloud.GameSaveProvider && (switchedToGameSave || credentialsChanged) &&
+		(patch.Username == nil || *patch.Username == previousUsername) {
+		cfg.Username = ""
+	}
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {
 		return err
 	}
 	// A new address or key may be a fresh device token, so an old refusal no
 	// longer describes this configuration. The provider switch counts even
 	// when the address and key happen to match a previous game-save setup.
-	switchedToGameSave := cfg.Provider == cloud.GameSaveProvider && previousProvider != cloud.GameSaveProvider
-	credentialsChanged := cfg.URL != previousURL || cfg.Password != previousPassword
 	if cfg.Provider == cloud.GameSaveProvider && (switchedToGameSave || credentialsChanged) {
 		if err := s.Daemon.Store.SetGameSaveAuthBlock(""); err != nil {
 			return err

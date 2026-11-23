@@ -156,6 +156,9 @@ func (s *Store) SetVaultID(id string) error {
 // upgrading into this gets a working vault without a migration having to
 // invent a key no other device has seen.
 func (s *Store) EnsureVault() (*e2ee.Keyring, string, error) {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+
 	kr, err := s.LoadKeyring()
 	switch {
 	case err == nil:
@@ -209,6 +212,9 @@ func (s *Store) EnsureVault() (*e2ee.Keyring, string, error) {
 // key. Dropping that key is what would make those saves unreadable, so both
 // sides keep everything and only the current pointer moves.
 func (s *Store) JoinVault(vaultID string, theirs *e2ee.Keyring) (*e2ee.Keyring, error) {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+
 	if vaultID == "" {
 		return nil, errors.New("join vault: empty vault id")
 	}

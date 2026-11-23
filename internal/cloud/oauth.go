@@ -103,6 +103,12 @@ func (s *Service) tokenCreds(provider string) (clientID, secret string, viaProxy
 
 // AuthURL builds the provider's authorization page URL for the PKCE flow.
 func (s *Service) AuthURL(provider, codeChallenge string) (string, error) {
+	return s.AuthURLWithState(provider, codeChallenge, "")
+}
+
+// AuthURLWithState builds the provider's authorization page URL for the PKCE
+// flow, attaching an optional CSRF state parameter.
+func (s *Service) AuthURLWithState(provider, codeChallenge, state string) (string, error) {
 	clientID, err := s.clientID(provider)
 	if err != nil {
 		return "", err
@@ -114,6 +120,9 @@ func (s *Service) AuthURL(provider, codeChallenge string) (string, error) {
 		"redirect_uri":          {redirectURI},
 		"code_challenge":        {codeChallenge},
 		"code_challenge_method": {"S256"},
+	}
+	if state != "" {
+		params.Set("state", state)
 	}
 
 	switch provider {
@@ -217,6 +226,22 @@ func (s *Service) Disconnect() error {
 // persisting) when it expires within a minute.
 func (s *Service) getOrRefreshAccessToken(provider string) (string, error) {
 	cfg, err := s.Store.GetCloudConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.AccessToken == "" {
+		return "", fmt.Errorf("cloud sync not authenticated")
+	}
+	if cfg.ExpiryTimeMs > 0 && time.Now().UnixMilli() < cfg.ExpiryTimeMs-60_000 {
+		return cfg.AccessToken, nil
+	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	// Re-read under lock: a concurrent caller may have just refreshed and
+	// persisted a fresh access token (and rotated refresh token).
+	cfg, err = s.Store.GetCloudConfig()
 	if err != nil {
 		return "", err
 	}

@@ -5,6 +5,7 @@
 package pairing
 
 import (
+	"strconv"
 	"sync"
 	"time"
 )
@@ -100,24 +101,25 @@ func (m *Manager) RecordSent(keys ...string) {
 }
 
 // ValidateConfirm decides whether an /approve-confirm may be accepted:
-// we initiated a handshake to this peer/address within the grace window,
-// OR they have an active incoming handshake here (simultaneous initiation),
-// OR they're already paired (idempotent re-confirm). alreadyPaired is
-// supplied by the caller from the store. Valid confirms consume the sent
-// entries.
+// we must have initiated a handshake to this peer/address within the grace
+// window. Valid confirms consume the matching sent entries to prevent replay.
+//
+// Unauthenticated incoming handshakes and existing paired records are NOT
+// sufficient on their own: otherwise any LAN/room attacker could pair without
+// user approval (by sending /handshake followed by /approve-confirm) or
+// overwrite an existing paired peer's pinned key and address.
 func (m *Manager) ValidateConfirm(peerID, clientIP string, port int, alreadyPaired bool) bool {
+	if port < 0 || port > 65535 {
+		return false
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if alreadyPaired {
-		return true
-	}
-	if _, ok := m.incoming[peerID]; ok {
-		return true
-	}
-
 	now := m.now()
 	fresh := func(key string) bool {
+		if key == "" {
+			return false
+		}
 		t, ok := m.sent[key]
 		return ok && now.Sub(t) < graceWindow
 	}
@@ -138,37 +140,28 @@ func (m *Manager) ValidateConfirm(peerID, clientIP string, port int, alreadyPair
 // candidateKeys covers peer-id, plain-ip, ip:port, and the
 // localhost/127.0.0.1 alias cross-checks from the JS implementation.
 func candidateKeys(peerID, clientIP string, port int) []string {
-	keys := []string{
-		peerID,
-		clientIP,
-		hostPort(clientIP, port),
+	keys := make([]string, 0, 5)
+	if peerID != "" {
+		keys = append(keys, peerID)
 	}
-	switch clientIP {
-	case "localhost":
-		keys = append(keys, "127.0.0.1", hostPort("127.0.0.1", port))
-	case "127.0.0.1", "::1":
-		keys = append(keys, "localhost", hostPort("localhost", port))
+	if clientIP != "" {
+		keys = append(keys, clientIP)
+		if hp := hostPort(clientIP, port); hp != clientIP {
+			keys = append(keys, hp)
+		}
+		switch clientIP {
+		case "localhost":
+			keys = append(keys, "127.0.0.1", hostPort("127.0.0.1", port))
+		case "127.0.0.1", "::1":
+			keys = append(keys, "localhost", hostPort("localhost", port))
+		}
 	}
 	return keys
 }
 
 func hostPort(host string, port int) string {
-	if port <= 0 {
+	if port <= 0 || port > 65535 {
 		return host
 	}
-	return host + ":" + itoa(port)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [8]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
+	return host + ":" + strconv.Itoa(port)
 }

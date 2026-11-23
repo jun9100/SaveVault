@@ -22,6 +22,9 @@ import com.jun9100.opensave.SourceGameEntry
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Runs a network batch (上传待传 / 检查云端更新 / 安全恢复云端较新) outside the
@@ -39,13 +42,14 @@ class BatchWorker(
         return BatchNotifications.foregroundInfo(applicationContext, operation)
     }
 
-    override suspend fun doWork(): Result {
-        val id = inputData.getString(KEY_ID) ?: return Result.failure()
-        val request = BatchRequests.read(applicationContext, id) ?: return Result.success()
+    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val id = inputData.getString(KEY_ID) ?: return@withContext Result.failure()
+        val request = BatchRequests.read(applicationContext, id) ?: return@withContext Result.success()
         // Another batch of this process (e.g. a local backup) runs: come back later.
-        if (!BatchCenter.tryBegin(id, request.operation, request.keys.size)) return Result.retry()
+        if (!BatchCenter.tryBegin(id, request.operation, request.keys.size)) return@withContext Result.retry()
         try {
             runCatching { setForeground(BatchNotifications.foregroundInfo(applicationContext, request.operation)) }
+                .onFailure { if (it is CancellationException) throw it }
             val entries = BatchCenter.takeEntries(id)
                 ?: GameLibrary.sourceGames(ScheduledSources.scan(applicationContext))
             val byKey = GameLibrary.batchBackupEligibleEntries(entries).associateBy(SourceGameEntry::libraryKey)
@@ -58,7 +62,7 @@ class BatchWorker(
             // A stopped worker is re-run by WorkManager and needs its request again.
             if (!isStopped) BatchRequests.delete(applicationContext, id)
         }
-        return Result.success()
+        Result.success()
     }
 
     companion object {

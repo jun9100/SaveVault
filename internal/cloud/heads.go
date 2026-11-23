@@ -120,6 +120,11 @@ func ParseGameSaveArchiveName(name string) (gameID, branch, snapshotID string, o
 		!strings.Contains(parts[2], gameSaveDeviceSuffix) {
 		return "", "", "", false
 	}
+	for _, seg := range parts {
+		if seg == "." || seg == ".." || strings.ContainsAny(seg, `/\:`+"\x00") || strings.Contains(seg, "..") {
+			return "", "", "", false
+		}
+	}
 	return parts[0], parts[1], parts[2], true
 }
 

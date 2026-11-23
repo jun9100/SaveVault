@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -402,15 +403,22 @@ class SourceViewModel(
                 val entries = withContext(Dispatchers.IO) { runCatching { activityStore.list() }.getOrDefault(emptyList()) }
                 val verdicts = withContext(Dispatchers.IO) { runCatching { cloudVerdictStore.load() }.getOrNull() }
                 val snapshots = withContext(Dispatchers.IO) { runCatching { currentSnapshots() }.getOrNull() }
-                // A worker's 401 updates the auth store before it records its line; never ask whoami here.
+                // A worker's 401 updates the auth store (and drops a revoked token) before it records its line; never ask whoami here.
                 val auth = withContext(Dispatchers.IO) {
                     GameSaveAuthStore(app).let { store -> store.blocked() to store.sharedTokenWarning() }
                 }
+                val reloadedConfig = withContext(Dispatchers.IO) { runCatching { gameSaveStore.load() }.getOrNull() }
+                val reloadedUsername = withContext(Dispatchers.IO) { runCatching { gameSaveStore.username() }.getOrNull() }
                 updateState {
                     copy(
                         activity = entries,
                         rememberedCloudVerdicts = verdicts ?: rememberedCloudVerdicts,
                         snapshots = snapshots ?: this.snapshots,
+                        gameSaveEnabled = reloadedConfig?.enabled ?: gameSaveEnabled,
+                        gameSaveUrl = reloadedConfig?.serviceUrl ?: gameSaveUrl,
+                        gameSaveSyncKey = reloadedConfig?.syncKey ?: gameSaveSyncKey,
+                        gameSaveSaved = reloadedConfig?.let { it.serviceUrl.isNotBlank() && it.syncKey.isNotBlank() } ?: gameSaveSaved,
+                        gameSaveUsername = reloadedUsername ?: gameSaveUsername,
                         gameSaveAuth = gameSaveAuth.copy(blocked = auth.first, sharedWarning = auth.second),
                     )
                 }
@@ -3156,7 +3164,7 @@ class SourceViewModel(
     )
 
     private fun updateState(update: SourceUiState.() -> SourceUiState) {
-        state.value = state.value.update()
+        state.update(update)
     }
 
     /** Marks an operation started from [page]: clears that page's lines and shows [progress]. */

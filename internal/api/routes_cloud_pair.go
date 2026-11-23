@@ -141,6 +141,7 @@ func (s *Server) handleCloudPairClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.Provider = cloud.GameSaveProvider
 	cfg.URL = server
+	cfg.Username = ""
 	cfg.Password = result.Token
 	cfg.Enabled = true
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {

@@ -36,7 +36,7 @@
     {#if config.provider === GAME_SAVE_PROVIDER}
       <div class="field two-wide">
         <label for="cb-pass">{$t('cloud.fields.syncKey')}</label>
-        <input id="cb-pass" bind:value={config.password} autocomplete="off" />
+        <input id="cb-pass" type="password" bind:value={config.password} autocomplete="off" />
         <span class="hint">{$t('cloud.fields.syncKeyHint')}</span>
       </div>
     {:else}
@@ -46,7 +46,7 @@
     </div>
     <div class="field">
       <label for="cb-pass">{$t('cloud.fields.password')}</label>
-      <input id="cb-pass" bind:value={config.password} />
+      <input id="cb-pass" type="password" bind:value={config.password} autocomplete="off" />
     </div>
     {/if}
   </div>

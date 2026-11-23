@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"sync"
@@ -82,10 +84,14 @@ func (l *authListener) stop() {
 func (s *Server) handleBrowserCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	oauthErr := r.URL.Query().Get("error")
+	gotState := r.URL.Query().Get("state")
 
 	pendingPKCE.Lock()
-	provider, verifier := pendingPKCE.provider, pendingPKCE.verifier
-	pendingPKCE.provider, pendingPKCE.verifier = "", ""
+	provider, verifier, wantState := pendingPKCE.provider, pendingPKCE.verifier, pendingPKCE.state
+	stateOK := wantState == "" || (len(gotState) == len(wantState) && subtle.ConstantTimeCompare([]byte(gotState), []byte(wantState)) == 1)
+	if provider != "" && stateOK {
+		pendingPKCE.provider, pendingPKCE.verifier, pendingPKCE.state = "", "", ""
+	}
 	pendingPKCE.Unlock()
 
 	fail := func(msg string) {
@@ -96,6 +102,13 @@ func (s *Server) handleBrowserCallback(w http.ResponseWriter, r *http.Request) {
 
 	if provider == "" {
 		fail("This sign-in link has already been used or expired — start again from OpenSave.")
+		return
+	}
+	if !stateOK {
+		// Reject forged/stale redirects without consuming the legitimate flow's
+		// PKCE verifier or tearing down the callback listener.
+		w.WriteHeader(http.StatusBadRequest)
+		writeCallbackPage(w, false, "Sign-in state mismatch — please use the link opened by OpenSave.")
 		return
 	}
 	if oauthErr != "" {
@@ -122,9 +135,11 @@ func (s *Server) handleBrowserCallback(w http.ResponseWriter, r *http.Request) {
 // writeCallbackPage renders the little page the user's browser lands on.
 func writeCallbackPage(w http.ResponseWriter, ok bool, detail string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	icon, title, sub := "✅", "Connected to OpenSave", "Signed in as <strong>"+detail+"</strong>. You can close this tab and return to the app."
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	safeDetail := html.EscapeString(detail)
+	icon, title, sub := "✅", "Connected to OpenSave", "Signed in as <strong>"+safeDetail+"</strong>. You can close this tab and return to the app."
 	if !ok {
-		icon, title, sub = "⚠️", "Sign-in didn't complete", detail+" You can close this tab and try again from OpenSave."
+		icon, title, sub = "⚠️", "Sign-in didn't complete", safeDetail+" You can close this tab and try again from OpenSave."
 	}
 	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><title>%s</title></head>
 <body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0c0c0d;color:#e8e8ea;font-family:'Segoe UI',system-ui,sans-serif;">
@@ -132,5 +147,5 @@ func writeCallbackPage(w http.ResponseWriter, ok bool, detail string) {
 <div style="font-size:3rem;margin-bottom:12px;">%s</div>
 <h2 style="margin:0 0 10px;">%s</h2>
 <p style="color:#9a9aa3;font-size:0.95rem;line-height:1.5;">%s</p>
-</div></body></html>`, title, icon, title, sub)
+</div></body></html>`, html.EscapeString(title), icon, html.EscapeString(title), sub)
 }

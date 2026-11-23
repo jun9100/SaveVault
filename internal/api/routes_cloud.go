@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/opensave/opensave/internal/ignore"
@@ -17,12 +19,13 @@ import (
 	"github.com/opensave/opensave/internal/store"
 )
 
-// pendingPKCE holds verifier state between /api/auth/start and
+// pendingPKCE holds verifier and CSRF state between /api/auth/start and
 // /api/auth/callback (one flow at a time, like the JS popup model).
 var pendingPKCE = struct {
 	sync.Mutex
 	provider string
 	verifier string
+	state    string
 }{}
 
 func (s *Server) cloudRoutes(r chi.Router) {
@@ -324,7 +327,13 @@ func (s *Server) handleAuthStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	verifier, challenge := cloud.GeneratePKCE()
-	authURL, err := s.Daemon.Cloud.AuthURL(body.Provider, challenge)
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not generate OAuth state")
+		return
+	}
+	state := hex.EncodeToString(stateBytes)
+	authURL, err := s.Daemon.Cloud.AuthURLWithState(body.Provider, challenge, state)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -333,6 +342,7 @@ func (s *Server) handleAuthStart(w http.ResponseWriter, r *http.Request) {
 	pendingPKCE.Lock()
 	pendingPKCE.provider = body.Provider
 	pendingPKCE.verifier = verifier
+	pendingPKCE.state = state
 	pendingPKCE.Unlock()
 
 	// Try to catch the redirect automatically (the registered redirect URI
@@ -356,7 +366,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	pendingPKCE.Lock()
 	provider, verifier := pendingPKCE.provider, pendingPKCE.verifier
-	pendingPKCE.provider, pendingPKCE.verifier = "", ""
+	pendingPKCE.provider, pendingPKCE.verifier, pendingPKCE.state = "", "", ""
 	pendingPKCE.Unlock()
 	if provider == "" {
 		writeError(w, http.StatusBadRequest, "no auth flow in progress — call /api/auth/start first")

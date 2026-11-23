@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,15 +168,16 @@ func (e *Engine) DownloadPeerBinary(ctx context.Context, peerID, destPath string
 	if peer.Address == "relay" {
 		return e.downloadPeerBinaryWAN(ctx, peerID, destPath, progress)
 	}
-	return e.downloadPeerBinaryLAN(ctx, peer.Address, peer.Port, destPath, progress)
+	return e.downloadPeerBinaryLAN(ctx, peerID, peer.Address, peer.Port, destPath, progress)
 }
 
-func (e *Engine) downloadPeerBinaryLAN(ctx context.Context, address string, port int, destPath string, progress func(done, total int64)) (PeerBuild, error) {
+func (e *Engine) downloadPeerBinaryLAN(ctx context.Context, peerID, address string, port int, destPath string, progress func(done, total int64)) (PeerBuild, error) {
 	url := fmt.Sprintf("http://%s:%d/api/p2p/app-binary", address, port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return PeerBuild{}, err
 	}
+	e.signLANRequest(req, peerID, nil)
 	resp, err := (&http.Client{Timeout: 15 * time.Minute}).Do(req)
 	if err != nil {
 		return PeerBuild{}, err
@@ -223,8 +225,20 @@ func (e *Engine) downloadPeerBinaryLAN(ctx context.Context, address string, port
 	if err := out.Close(); err != nil {
 		return PeerBuild{}, err
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); wantSHA != "" && got != wantSHA {
+	wantSHA = strings.TrimSpace(wantSHA)
+	if wantSHA == "" {
+		_ = os.Remove(destPath)
+		return PeerBuild{}, fmt.Errorf("peer omitted binary checksum header")
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, wantSHA) {
+		_ = os.Remove(destPath)
 		return PeerBuild{}, fmt.Errorf("transfer corrupted: checksum mismatch")
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(destPath, 0o755); err != nil {
+			_ = os.Remove(destPath)
+			return PeerBuild{}, err
+		}
 	}
 	return build, nil
 }
@@ -279,8 +293,24 @@ func (e *Engine) downloadPeerBinaryWAN(ctx context.Context, peerID, destPath str
 			break
 		}
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); wantSHA != "" && got != wantSHA {
+	if err := out.Close(); err != nil {
+		_ = os.Remove(destPath)
+		return PeerBuild{}, err
+	}
+	wantSHA = strings.TrimSpace(wantSHA)
+	if wantSHA == "" {
+		_ = os.Remove(destPath)
+		return PeerBuild{}, fmt.Errorf("peer omitted binary checksum")
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, wantSHA) {
+		_ = os.Remove(destPath)
 		return PeerBuild{}, fmt.Errorf("transfer corrupted: checksum mismatch")
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(destPath, 0o755); err != nil {
+			_ = os.Remove(destPath)
+			return PeerBuild{}, err
+		}
 	}
 	return build, nil
 }

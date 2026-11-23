@@ -229,7 +229,11 @@ func (s *Server) Start(port int) (string, error) {
 		return "", fmt.Errorf("listen: %w", err)
 	}
 	s.listener = ln
-	s.httpServer = &http.Server{Handler: r}
+	s.httpServer = &http.Server{
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 
 	go func() {
 		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -352,7 +356,7 @@ func (s *Server) writeAddrFile(addr string) {
 	if _, port, err := net.SplitHostPort(addr); err == nil {
 		addr = "127.0.0.1:" + port
 	}
-	if err := os.WriteFile(s.addrFilePath(), []byte(addr), 0o666); err != nil {
+	if err := os.WriteFile(s.addrFilePath(), []byte(addr), 0o600); err != nil {
 		s.Daemon.Log.Log("warn", "could not publish daemon address: "+err.Error())
 	}
 }
@@ -429,7 +433,9 @@ func corsLocalhost(next http.Handler) http.Handler {
 }
 
 // localhostOnly rejects any request that didn't originate from the local
-// machine — the dashboard API must never be reachable from the network.
+// machine or carries a non-loopback Host header (DNS rebinding defence) —
+// the dashboard API must never be reachable from the network or a remote web
+// origin rebinding to 127.0.0.1.
 func localhostOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -437,8 +443,29 @@ func localhostOnly(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "external access denied")
 			return
 		}
+		if r.Host != "" && !isLoopbackHostHeader(r.Host) {
+			writeError(w, http.StatusForbidden, "invalid host header")
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isLoopbackHostHeader(hostHeader string) bool {
+	h := strings.TrimSpace(hostHeader)
+	if parsedHost, _, err := net.SplitHostPort(h); err == nil {
+		h = parsedHost
+	} else if strings.HasPrefix(h, "[") && strings.HasSuffix(h, "]") {
+		h = h[1 : len(h)-1]
+	}
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	// Accept loopback literals and unspecified bind addresses (0.0.0.0 / ::)
+	// used by local clients dialing ln.Addr(). External domain names used in
+	// DNS rebinding attacks are rejected.
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
 }
 
 func isLoopback(host string) bool {

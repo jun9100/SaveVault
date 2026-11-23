@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -157,6 +158,10 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	if body.Port == 0 {
 		body.Port = 8383
 	}
+	if body.Port < 1 || body.Port > 65535 {
+		writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
+		return
+	}
 	if err := s.Daemon.P2P.InitiatePair(r.Context(), body.Address, body.Port); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -231,9 +236,13 @@ func (s *Server) handleProbePeer(w http.ResponseWriter, r *http.Request) {
 	if body.Port == 0 {
 		body.Port = 8383
 	}
+	if body.Port < 1 || body.Port > 65535 {
+		writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
+		return
+	}
 
 	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + body.Address + ":" + itoa(body.Port) + "/api/p2p/ping")
+	resp, err := client.Get("http://" + net.JoinHostPort(body.Address, strconv.Itoa(body.Port)) + "/api/p2p/ping")
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"reachable": false, "error": err.Error()})
 		return
@@ -344,18 +353,4 @@ func (s *Server) handleResolveConflict(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "status": "applying", "resolution": body.Resolution})
-}
-
-func itoa(n int) string {
-	if n <= 0 {
-		return "0"
-	}
-	var b [8]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }

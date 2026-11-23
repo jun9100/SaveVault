@@ -13,6 +13,9 @@ import (
 // and generating it on demand means an install upgrading into this gets a key
 // without a migration having to invent one.
 func (s *Store) DeviceIdentity() (e2ee.Identity, error) {
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+
 	settings, err := s.GetSettings()
 	if err != nil {
 		return e2ee.Identity{}, err

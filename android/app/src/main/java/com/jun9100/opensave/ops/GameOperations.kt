@@ -601,8 +601,16 @@ internal class GameOperations(
                     }
                 }
                 val downloaded = remoteCacheFile(request.remote)
+                val expectedDigest = request.nativeHead?.snapshot?.contentDigest?.lowercase().orEmpty()
+                if (downloaded.isFile && expectedDigest.isNotBlank() && Hashing.sha256(downloaded) != expectedDigest) {
+                    downloaded.delete()
+                }
                 if (!downloaded.isFile) {
                     client(config).download(request.remote, downloaded).getOrThrow()
+                }
+                if (expectedDigest.isNotBlank() && Hashing.sha256(downloaded) != expectedDigest) {
+                    downloaded.delete()
+                    error("云端游戏快照校验失败")
                 }
                 downloaded
             }

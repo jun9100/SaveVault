@@ -20,6 +20,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -57,9 +58,13 @@ internal fun GameSaveEditorDialog(
 ) {
     var url by rememberSaveable { mutableStateOf(initial.serviceUrl) }
     var username by rememberSaveable { mutableStateOf(initialUsername) }
-    var password by rememberSaveable { mutableStateOf("") }
-    var visible by rememberSaveable { mutableStateOf(false) }
-    val submit = whenIdle(busy) { onLogin(url.trim(), username.trim(), password) }
+    var password by remember { mutableStateOf("") }
+    var visible by remember { mutableStateOf(false) }
+    val submit = whenIdle(busy) {
+        val secret = password
+        password = ""
+        onLogin(url.trim(), username.trim(), secret)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.consumeHandheldShortcuts(),
@@ -81,7 +86,11 @@ internal fun GameSaveEditorDialog(
                     onValueChange = { username = it },
                     label = { Text("账号") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Next,
+                    ),
                     modifier = Modifier.fillMaxWidth().dpadLeavesTextField(),
                 )
                 OutlinedTextField(
@@ -90,7 +99,11 @@ internal fun GameSaveEditorDialog(
                     label = { Text("密码") },
                     singleLine = true,
                     visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Done,
+                    ),
                     trailingIcon = {
                         IconButton(onClick = { visible = !visible }, modifier = Modifier.handheldFocusRing(CircleShape)) {
                             Icon(

@@ -344,14 +344,19 @@ func lanPeerID(r *http.Request) string {
 // let a captured request be replayed with different contents. LAN request
 // bodies are small — the bulk of a sync is in the responses — so buffering
 // costs little.
+// maxLANRequestBodyBytes bounds how much of an incoming LAN P2P request body
+// verifyLANRequest will buffer for HMAC verification, preventing an
+// unauthenticated LAN sender from exhausting memory.
+const maxLANRequestBodyBytes = 16 << 20
+
 func (e *Engine) verifyLANRequest(r *http.Request) (peerID string, body []byte, ok bool) {
 	claimed := strings.TrimSpace(r.Header.Get(lanAuthPeerHeader))
 	mac := strings.TrimSpace(r.Header.Get(lanAuthHeader))
 
 	if r.Body != nil {
-		raw, err := io.ReadAll(r.Body)
+		raw, err := io.ReadAll(io.LimitReader(r.Body, maxLANRequestBodyBytes+1))
 		r.Body.Close()
-		if err != nil {
+		if err != nil || len(raw) > maxLANRequestBodyBytes {
 			return "", nil, false
 		}
 		body = raw

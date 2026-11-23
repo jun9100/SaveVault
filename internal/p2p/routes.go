@@ -273,12 +273,21 @@ func (e *Engine) handleApproveConfirm(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "peerId is required")
 		return
 	}
+	if body.Port <= 0 || body.Port > 65535 {
+		jsonError(w, http.StatusBadRequest, "port must be between 1 and 65535")
+		return
+	}
 	ip := clientIP(r)
 
-	_, alreadyPaired := func() (store.Peer, bool) {
+	existingPeer, alreadyPaired := func() (store.Peer, bool) {
 		p, err := e.Store.GetPeer(body.PeerID)
 		return p, err == nil
 	}()
+	if alreadyPaired && existingPeer.PublicKey != "" && existingPeer.PublicKey != body.PublicKey {
+		e.Log("warn", fmt.Sprintf("blocked approve-confirm attempting to overwrite pinned key for peer %s from %s", body.PeerID, ip))
+		jsonError(w, http.StatusForbidden, "Pairing confirmation rejected: peer already has a different pinned key.")
+		return
+	}
 
 	if !e.Pairing.ValidateConfirm(body.PeerID, ip, body.Port, alreadyPaired) {
 		e.Log("warn", fmt.Sprintf("blocked unsolicited approve-confirm from %s (peer %s)", ip, body.PeerID))
@@ -405,6 +414,7 @@ func (e *Engine) FetchPeerGames(ctx context.Context, peerID string) ([]PeerGame,
 	if err != nil {
 		return nil, err
 	}
+	e.signLANRequest(req, peer.ID, nil)
 	resp, err := lanClient.Do(req)
 	if err != nil {
 		return nil, err
