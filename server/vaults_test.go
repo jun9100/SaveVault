@@ -81,7 +81,7 @@ func TestVaultsDoNotSeeEachOtherSaves(t *testing.T) {
 		handler.ServeHTTP(recorder, request)
 		return recorder.Code
 	}
-	if code := put("acme-token", "/v1/opensave/files/emulator-android/"+archive, archiveBytes, nil); code != http.StatusCreated {
+	if code := put("acme-token", "/v1/savevault/files/emulator-android/"+archive, archiveBytes, nil); code != http.StatusCreated {
 		t.Fatalf("archive upload status = %d", code)
 	}
 	candidate, _ := json.Marshal(map[string]any{
@@ -91,7 +91,7 @@ func TestVaultsDoNotSeeEachOtherSaves(t *testing.T) {
 		"contentDigest": hex.EncodeToString(digest[:]),
 		"createdAt":     time.Now().UTC().Format(time.RFC3339Nano),
 	})
-	snapshotRequest := httptest.NewRequest(http.MethodPut, "/v1/opensave/scopes/emulator-android/"+game+"/snapshots/snap_1", bytes.NewReader(candidate))
+	snapshotRequest := httptest.NewRequest(http.MethodPut, "/v1/savevault/scopes/emulator-android/"+game+"/snapshots/snap_1", bytes.NewReader(candidate))
 	snapshotRequest.Header.Set("Authorization", "Bearer acme-token")
 	snapshotRequest.Header.Set("If-Match", `""`)
 	snapshotRequest.Header.Set("Content-Type", "application/json")
@@ -101,27 +101,27 @@ func TestVaultsDoNotSeeEachOtherSaves(t *testing.T) {
 		t.Fatalf("snapshot status = %d body=%s", snapshotRecorder.Code, snapshotRecorder.Body.String())
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/opensave/scopes/emulator-android/"+game, nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/savevault/scopes/emulator-android/"+game, nil)
 	request.Header.Set("Authorization", "Bearer acme-token")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("scope read status = %d", recorder.Code)
 	}
-	var scope openSaveScopeResponse
+	var scope saveVaultScopeResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &scope); err != nil {
 		t.Fatalf("decode scope: %v", err)
 	}
 	// The same request in the default vault must be empty: a tenant never sees
 	// another tenant's head.
-	request = httptest.NewRequest(http.MethodGet, "/v1/opensave/scopes/emulator-android/"+game, nil)
+	request = httptest.NewRequest(http.MethodGet, "/v1/savevault/scopes/emulator-android/"+game, nil)
 	request.Header.Set("Authorization", "Bearer default-token")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("default scope read status = %d", recorder.Code)
 	}
-	var other openSaveScopeResponse
+	var other saveVaultScopeResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &other); err != nil {
 		t.Fatalf("decode other scope: %v", err)
 	}

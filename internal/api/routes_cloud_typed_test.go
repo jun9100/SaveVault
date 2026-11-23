@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/watcher"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/watcher"
 )
 
 func TestNativeCloudRoutesKeepSameNamedSaveTypesSeparate(t *testing.T) {
@@ -23,7 +23,7 @@ func TestNativeCloudRoutesKeepSameNamedSaveTypesSeparate(t *testing.T) {
 	var deletedPath string
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/files":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/files":
 			_ = json.NewEncoder(w).Encode(map[string]any{"files": []map[string]any{
 				{"type": "pc", "name": name, "sizeBytes": 10, "createdTime": time.Now().UTC()},
 				{"type": "switch", "name": name, "sizeBytes": 20, "createdTime": time.Now().UTC()},
@@ -133,9 +133,9 @@ func TestNativeCloudStatusShowsConflictAndBlocksOrdinaryRestore(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/pc/"+gameID {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/pc/"+gameID {
 			scopeReads++
-			if got := r.Header.Get("X-OpenSave-Device-ID"); got != "" {
+			if got := r.Header.Get("X-SaveVault-Device-ID"); got != "" {
 				t.Errorf("read-only status sent device ID %q", got)
 			}
 			now := time.Now().UTC()
@@ -143,13 +143,13 @@ func TestNativeCloudStatusShowsConflictAndBlocksOrdinaryRestore(t *testing.T) {
 				GameSaveScopeCandidate: cloud.GameSaveScopeCandidate{
 					ID: headID, Archive: archiveName, CreatedAt: now.Add(-time.Minute),
 				},
-				Device: "desktop", DeviceName: "Desktop", Platform: "opensave-windows", ReceivedAt: now,
+				Device: "desktop", DeviceName: "Desktop", Platform: "savevault-windows", ReceivedAt: now,
 			}
 			conflict := cloud.GameSaveScopeSnapshot{
 				GameSaveScopeCandidate: cloud.GameSaveScopeCandidate{
 					ID: conflictID, Archive: "same-game__main__snap_2--dev-handheld.zip", Parent: headID, CreatedAt: now,
 				},
-				Device: "handheld", DeviceName: "Handheld", Platform: "opensave-android", ReceivedAt: now,
+				Device: "handheld", DeviceName: "Handheld", Platform: "savevault-android", ReceivedAt: now,
 				Conflict: true, ConflictOf: headID,
 			}
 			_ = json.NewEncoder(w).Encode(cloud.GameSaveScope{
@@ -234,7 +234,7 @@ func TestNativeCloudRestoreOnlyAcceptsAuthoritativeHead(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/pc/"+gameID {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/pc/"+gameID {
 			scopeReads++
 			now := time.Now().UTC()
 			old := cloud.GameSaveScopeSnapshot{
@@ -344,7 +344,7 @@ func TestNativeCloudPublishReportsCASConflictInsteadOfSuccess(t *testing.T) {
 			return
 		}
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/pc/"+gameID:
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/pc/"+gameID:
 			scopeReads++
 			response := cloud.GameSaveScope{
 				Type: "pc", GameID: gameID, Head: &baseRemote,
@@ -358,17 +358,17 @@ func TestNativeCloudPublishReportsCASConflictInsteadOfSuccess(t *testing.T) {
 				response.Conflicts = []cloud.GameSaveScopeSnapshot{conflict}
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/opensave/files/pc/"):
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/savevault/files/pc/"):
 			archiveWrites++
 			w.WriteHeader(http.StatusCreated)
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/pc/"+gameID+"/snapshots/"):
-			// The server accepted another device's head after OpenSave read the
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/pc/"+gameID+"/snapshots/"):
+			// The server accepted another device's head after SaveVault read the
 			// preflight scope. The candidate must become a conflict, not a success.
 			raced = true
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(map[string]string{"head": racedHead.ID})
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/pc/"+gameID+"/conflicts/"):
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/pc/"+gameID+"/conflicts/"):
 			var candidate cloud.GameSaveScopeCandidate
 			if err := json.NewDecoder(r.Body).Decode(&candidate); err != nil {
 				w.WriteHeader(http.StatusBadRequest)

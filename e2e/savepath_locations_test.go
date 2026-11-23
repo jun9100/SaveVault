@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Changing a game's save folder is now an edit anyone can make from the Manage

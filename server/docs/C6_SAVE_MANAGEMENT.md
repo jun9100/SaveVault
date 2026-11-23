@@ -2,7 +2,7 @@
 
 [`SAVEVAULT_CLOUD_PLAN.md`](SAVEVAULT_CLOUD_PLAN.md) 的 C6 阶段，服务端方案。其中的错误码和客户端行为是 Android、PC 两端要依赖的约定。2026-11-09 已确认，决定见文末“已确认的决定”。
 
-基线是 v1.8.0。本文只涉及 SaveVault（OpenSave）原生范围，即 `opensave-native/` 和 `opensave-native-state.json`；Eden 的加密范围和 WebDAV 兼容目录 `opensave/` 都不变。
+基线是 v1.8.0。本文只涉及 SaveVault（SaveVault）原生范围，即 `savevault-native/` 和 `savevault-native-state.json`；Eden 的加密范围和 WebDAV 兼容目录 `savevault/` 都不变。
 
 ## 要解决的问题
 
@@ -15,7 +15,7 @@
 
 ## 原则
 
-- **不改现有文件格式**。C6 的所有新状态放在一个新文件 `opensave-manage.json` 里，`opensave-native-state.json`、`opensave-native.json`、`opensave-meta.json` 都不加字段。回滚时旧版本完全不认识这个文件，也不会改写它（见“升级与回滚”）；
+- **不改现有文件格式**。C6 的所有新状态放在一个新文件 `savevault-manage.json` 里，`savevault-native-state.json`、`savevault-native.json`、`savevault-meta.json` 都不加字段。回滚时旧版本完全不认识这个文件，也不会改写它（见“升级与回滚”）；
 - **删除可以撤销一段时间**。删除先把归档移进回收区，7 天后再由维护任务真正删除；
 - **不让客户端悄悄重建**。被删除或被合并的范围留下记录，所有客户端接口对它返回带 `code` 的 410，客户端在上传归档之前就会停下；
 - **当前版本、冲突副本、冲突副本指向的版本、锁定的版本，任何自动规则都不删**；
@@ -27,8 +27,8 @@
 
 v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态里删掉，PC（`internal/daemon/game_save_native.go`）和 Android（`GameSaveNativeSync.kt`）的同步流程都是：
 
-1. `GET /v1/opensave/scopes/{type}/{game}`，范围不存在时返回 200、`head` 为 `null`；
-2. 先上传归档（`PUT /v1/opensave/files/...`）；
+1. `GET /v1/savevault/scopes/{type}/{game}`，范围不存在时返回 200、`head` 为 `null`；
+2. 先上传归档（`PUT /v1/savevault/files/...`）；
 3. 如果本机记得一个已确认的头，而云端 `head` 为空，就报错“云端当前版本丢失，已拒绝自动创建替代版本”并停下；
 4. 本机没有已确认的头时，直接以空父版本写入，**范围被重建**。
 
@@ -41,7 +41,7 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 ### 墓碑
 
-删除或合并后，`opensave-manage.json` 里给这个范围留一条记录：
+删除或合并后，`savevault-manage.json` 里给这个范围留一条记录：
 
 ```json
 {
@@ -74,11 +74,11 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 | 接口 | 已删除（`deleted`） | 已合并（`retired`） |
 | --- | --- | --- |
-| `GET /v1/opensave/scopes/{type}/{game}`、`…/head` | 410，`code: "scope_deleted"` | 410，`code: "scope_retired"`，带 `successor` |
+| `GET /v1/savevault/scopes/{type}/{game}`、`…/head` | 410，`code: "scope_deleted"` | 410，`code: "scope_retired"`，带 `successor` |
 | `PUT …/snapshots/{id}`、`…/conflicts/{id}`、`…/identity` | 同上 | 同上 |
-| `PUT /v1/opensave/files/{type}/{gameId}__…` | 同上（归档名以 `gameId__` 开头的都拦） | 同上 |
-| `GET /v1/opensave/files/{type}/{gameId}__…` | 404（已移进回收区） | 200（数据还在，可以下载） |
-| `GET /v1/opensave/games` | 不再出现 | 作为成员出现在后继游戏下，带 `"retired": true` |
+| `PUT /v1/savevault/files/{type}/{gameId}__…` | 同上（归档名以 `gameId__` 开头的都拦） | 同上 |
+| `GET /v1/savevault/files/{type}/{gameId}__…` | 404（已移进回收区） | 200（数据还在，可以下载） |
+| `GET /v1/savevault/games` | 不再出现 | 作为成员出现在后继游戏下，带 `"retired": true` |
 
 410 的响应体：
 
@@ -115,7 +115,7 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 ### “合并”的语义
 
-归档名必须以范围的 `gameId` 开头（`openSaveArchiveMatchesScope`），客户端恢复时也按自己的范围读归档，所以把版本从 `forza-horizon-5-2` 搬进 `forza-horizon-5` 需要改名，还要改写归档引用。几种做法的比较：
+归档名必须以范围的 `gameId` 开头（`saveVaultArchiveMatchesScope`），客户端恢复时也按自己的范围读归档，所以把版本从 `forza-horizon-5-2` 搬进 `forza-horizon-5` 需要改名，还要改写归档引用。几种做法的比较：
 
 | 做法 | 做什么 | 数据 | 风险 | 结论 |
 | --- | --- | --- | --- | --- |
@@ -145,7 +145,7 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 #### 导出
 
-`GET /admin/api/opensave/scopes/{type}/{game}/export` 返回一个 ZIP：
+`GET /admin/api/savevault/scopes/{type}/{game}/export` 返回一个 ZIP：
 
 - 每个版本的原始归档原样放进去（`versions/<归档名>`），不解压、不重新压缩；
 - 附一个 `manifest.json`：范围、头、每个版本的 ID、父版本、设备、时间、摘要、是否冲突副本；
@@ -153,10 +153,10 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 #### 删除接口
 
-`DELETE /admin/api/opensave/scopes/{type}/{game}`，请求头 `If-Match: "<网页上看到的头>"`：
+`DELETE /admin/api/savevault/scopes/{type}/{game}`，请求头 `If-Match: "<网页上看到的头>"`：
 
 1. 头不符返回 412（期间有新的上传），网页刷新后重新确认；
-2. 先写墓碑（`opensave-manage.json`），再从 `opensave-native-state.json` 删掉范围，再把 `opensave-native/{type}/{gameId}__*` 全部移到 `opensave-trash/{type}/{gameId}/{删除时间}/`，同时存一份删除前的范围状态 `scope.json`；
+2. 先写墓碑（`savevault-manage.json`），再从 `savevault-native-state.json` 删掉范围，再把 `savevault-native/{type}/{gameId}__*` 全部移到 `savevault-trash/{type}/{gameId}/{删除时间}/`，同时存一份删除前的范围状态 `scope.json`；
 3. 任何一步失败都按顺序回退，不留下“墓碑写了、范围还在”以外的中间态（这个中间态是安全的：客户端被拦住，网页显示“删除未完成，可重试”）；
 4. 记一条 `delete_scope` 事件，`detail` 写类型、gameId、版本数和字节数。
 
@@ -164,9 +164,9 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 #### 恢复与清除
 
-- `POST /admin/api/opensave/scopes/{type}/{game}/restore`：7 天内可用。把归档和 `scope.json` 移回原处，去掉墓碑。如果期间这个范围被重新创建过（只可能发生在墓碑被解除之后），返回 409，不覆盖；
+- `POST /admin/api/savevault/scopes/{type}/{game}/restore`：7 天内可用。把归档和 `scope.json` 移回原处，去掉墓碑。如果期间这个范围被重新创建过（只可能发生在墓碑被解除之后），返回 409，不覆盖；
 - 维护任务删除 `purgeAfter` 已过的回收区目录，墓碑保留，状态里去掉 `head`、`purgeAfter` 等回收信息；
-- `DELETE /admin/api/opensave/tombstones/{type}/{game}`：解除墓碑，之后客户端可以重新上传，作为新范围从头开始。
+- `DELETE /admin/api/savevault/tombstones/{type}/{game}`：解除墓碑，之后客户端可以重新上传，作为新范围从头开始。
 
 ### 冲突副本
 
@@ -185,10 +185,10 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| `PUT` | `/admin/api/opensave/scopes/{type}/{game}/snapshots/{id}/lock` | `{"note": "通关前"}`，锁定或更新备注 |
+| `PUT` | `/admin/api/savevault/scopes/{type}/{game}/snapshots/{id}/lock` | `{"note": "通关前"}`，锁定或更新备注 |
 | `DELETE` | 同上 | 解锁 |
 
-客户端的范围接口（`GET /v1/opensave/scopes/...`）给锁定的版本加 `"locked": true`。客户端可以显示一个锁的标记，第一版不提供客户端锁定。
+客户端的范围接口（`GET /v1/savevault/scopes/...`）给锁定的版本加 `"locked": true`。客户端可以显示一个锁的标记，第一版不提供客户端锁定。
 
 ### 自动保留策略
 
@@ -209,7 +209,7 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 - 按 C1 的**游戏键**设置，作用于这个游戏的所有成员范围（每个范围单独计算）；没有单独设置的游戏用 `default`；
 - `keepVersions`：每个范围保留最近 N 个普通版本（1–1000）；`keepDays`：保留最近 D 天内收到的普通版本（0 表示不按天数）；
 - **两个条件满足一个就保留**（取并集，宁可多留）。只设一个时就是那一个；
-- 无论设置如何，永远保留：当前版本、所有冲突副本、冲突副本指向的版本（`ConflictOf`）、锁定的版本。这和 v1.7.0 的手动清理（`openSavePruneScope`）是同一套规则，代码复用它，只是把“锁定”加进保留集合；
+- 无论设置如何，永远保留：当前版本、所有冲突副本、冲突副本指向的版本（`ConflictOf`）、锁定的版本。这和 v1.7.0 的手动清理（`saveVaultPruneScope`）是同一套规则，代码复用它，只是把“锁定”加进保留集合；
 - 由维护任务执行（默认每 6 小时），默认关闭；
 - 已合并（只读）的范围也按规则清理，已删除的范围不参与。
 
@@ -217,7 +217,7 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 ### 孤立归档清理
 
-客户端上传了归档、但写版本失败时，会在 `opensave-native/` 里留下没有任何版本引用的归档。
+客户端上传了归档、但写版本失败时，会在 `savevault-native/` 里留下没有任何版本引用的归档。
 
 - **单独的开关 `orphanCleanup`，默认关闭**，不跟随自动保留的开关；
 - 开关关闭时，维护任务只统计：维护页显示孤立归档的数量和占用空间（可以展开看文件名、所属范围、上传时间），管理员看过之后再决定打开；
@@ -228,8 +228,8 @@ v1.8.0 没有删除 SaveVault 范围的接口。假设直接把范围从状态�
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| `GET`、`PUT` | `/admin/api/opensave/retention` | 读写上面的设置 |
-| `POST` | `/admin/api/opensave/retention/preview` | 按当前设置试算，返回每个范围会删的版本数和释放空间，以及孤立归档的数量、占用和列表，不改任何东西 |
+| `GET`、`PUT` | `/admin/api/savevault/retention` | 读写上面的设置 |
+| `POST` | `/admin/api/savevault/retention/preview` | 按当前设置试算，返回每个范围会删的版本数和释放空间，以及孤立归档的数量、占用和列表，不改任何东西 |
 
 维护任务每次执行后记一条 `retention` 事件（删了几个版本、几个归档、几个孤立归档、释放多少空间）；什么都没删就不记。
 
@@ -250,7 +250,7 @@ Eden 范围已经有全局的 `keep_snapshots` / `keep_days` 和“固定”快�
 
 ## 新文件与回滚
 
-### `opensave-manage.json`
+### `savevault-manage.json`
 
 ```json
 {
@@ -264,7 +264,7 @@ Eden 范围已经有全局的 `keep_snapshots` / `keep_days` 和“固定”快�
 ```
 
 - 第一次需要时才创建，权限 0600，先复制、写盘成功再替换，`clone()` 复制所有 map；
-- 回收区目录 `opensave-trash/` 也只在第一次删除时创建；
+- 回收区目录 `savevault-trash/` 也只在第一次删除时创建；
 - 引用了已不存在的范围或版本的锁，加载时保留、不报错，网页上不显示。
 
 ### 从 v1.8.0 升级
@@ -274,7 +274,7 @@ Eden 范围已经有全局的 `keep_snapshots` / `keep_days` 和“固定”快�
 
 ### 回滚到 v1.8.0
 
-- v1.8.0 不认识 `opensave-manage.json` 和 `opensave-trash/`，会忽略它们，也不会改写它们；
+- v1.8.0 不认识 `savevault-manage.json` 和 `savevault-trash/`，会忽略它们，也不会改写它们；
 - **已删除的范围**：状态里已经没有它，v1.8.0 对它返回 `head: null`。确认过头的客户端会报“云端当前版本丢失”并在每次同步时上传一个孤立归档；没确认过头的客户端会重建范围。升级后的客户端在收到 410 时已经清掉了已确认头，回滚后会把它当作新范围**重建**。回滚前应先在网页上确认没有设备还在跟踪已删除的范围，或接受它们被重建；
 - **已合并的范围**：v1.8.0 把它当作普通范围，又可以写入了。C1 的手动关联还在，所以网页上仍归在同一个游戏下；
 - **锁定**：v1.8.0 的手动“清理旧版本”不知道锁定，会删掉超出保留数的锁定版本。回滚期间不要手动清理；
@@ -284,16 +284,16 @@ Eden 范围已经有全局的 `keep_snapshots` / `keep_days` 和“固定”快�
 
 ### 备份
 
-`opensave-manage.json` 和 `opensave-trash/` 与其他状态一起备份。
+`savevault-manage.json` 和 `savevault-trash/` 与其他状态一起备份。
 
 ## 实现要点
 
-- 新文件 `opensave_manage.go`：状态、加载和持久化、墓碑检查、删除/恢复/合并、锁定、保留设置；
-- 墓碑检查放在 `openSaveScopeFromRequest` 之后、所有客户端范围接口和 `PUT /v1/opensave/files/...` 的最前面；
-- 锁顺序：`openSaveMu` → `manageMu`，`manageMu` 是叶子锁；删除时文件移动在持有 `openSaveMu` 期间完成（与归档写入互斥），网络无关；
-- `openSavePruneScope` 增加“额外保留集合”参数，手动清理和自动保留都传入锁定集合；
+- 新文件 `savevault_manage.go`：状态、加载和持久化、墓碑检查、删除/恢复/合并、锁定、保留设置；
+- 墓碑检查放在 `saveVaultScopeFromRequest` 之后、所有客户端范围接口和 `PUT /v1/savevault/files/...` 的最前面；
+- 锁顺序：`saveVaultMu` → `manageMu`，`manageMu` 是叶子锁；删除时文件移动在持有 `saveVaultMu` 期间完成（与归档写入互斥），网络无关；
+- `saveVaultPruneScope` 增加“额外保留集合”参数，手动清理和自动保留都传入锁定集合；
 - 导出用 `archive/zip`，每个归档以 Store 方式（不再压缩）写入，边读边写，`manifest.json` 最后写；
-- 指标：`game_save_opensave_tombstones{state="deleted|retired"}`、`game_save_opensave_locked_snapshots`、`game_save_opensave_retention_removed_total`。
+- 指标：`game_save_savevault_tombstones{state="deleted|retired"}`、`game_save_savevault_locked_snapshots`、`game_save_savevault_retention_removed_total`。
 
 ## 必须覆盖的测试
 
@@ -316,7 +316,7 @@ Eden 范围已经有全局的 `keep_snapshots` / `keep_days` 和“固定”快�
 | 自动保留（N 与 D 同时设置） | 满足任一条件就保留 |
 | 孤立归档（开关关闭） | 只统计数量和占用，不删 |
 | 孤立归档（开关打开） | 超过 24 小时且无引用的删除，24 小时内的保留；开关与自动保留互不影响 |
-| 没用过 C6 功能 | 数据目录里不出现 `opensave-manage.json` 和 `opensave-trash/` |
+| 没用过 C6 功能 | 数据目录里不出现 `savevault-manage.json` 和 `savevault-trash/` |
 | 回滚后重新上传、再升级 | 墓碑不自动执行，网页标出 |
 | 任何 C6 操作 | 不改变其他范围的头、版本、冲突副本 |
 

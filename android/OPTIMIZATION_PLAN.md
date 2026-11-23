@@ -1,16 +1,16 @@
-# OpenSave Android 掌机体验优化方案（修订版）
+# SaveVault Android 掌机体验优化方案（修订版）
 
-> 适用版本：OpenSave Android 0.3.16（`com.jun9100.opensave`），计划升到 0.4.x
+> 适用版本：SaveVault Android 0.3.16（`com.jun9100.savevault`），计划升到 0.4.x
 > 目标设备：AYN Odin2（Android 13 / API 33，1920×1080，Magisk Root，内置手柄）。主要横屏使用，偶尔竖屏。
 > 原则：在现有 Android/PC 代码上改进，不重写；与 PC 端（Go + Wails）和 game-save 协议保持一致。
 > 说明：本方案来自只读代码调研和 Odin2 实机截图，没有改代码，也没有构建。行号以当前 `main` 分支为准；修订时重新核对过关键行号。
 
 路径简写约定：
 
-- `A/` = `/Volumes/Date/Coding/OpenSave/android/app/src/main/java/com/jun9100/opensave/`
-- `Res/` = `/Volumes/Date/Coding/OpenSave/android/app/src/main/res/`
-- `FE/` = `/Volumes/Date/Coding/OpenSave/cmd/opensave-app/frontend/src/`
-- `Go/` = `/Volumes/Date/Coding/OpenSave/internal/`
+- `A/` = `/Volumes/Date/Coding/SaveVault/android/app/src/main/java/com/jun9100/savevault/`
+- `Res/` = `/Volumes/Date/Coding/SaveVault/android/app/src/main/res/`
+- `FE/` = `/Volumes/Date/Coding/SaveVault/cmd/savevault-app/frontend/src/`
+- `Go/` = `/Volumes/Date/Coding/SaveVault/internal/`
 
 ---
 
@@ -92,7 +92,7 @@
 | L6 | 现有的横屏适配只换了封面 | `:1068` 用 `orientation == LANDSCAPE` 判断，只是把 96dp 通栏封面换成 56dp 缩略图（`:1086-1112`），其他结构没动 | 中 |
 | L7 | 竖屏是单列，每卡约 300dp，首屏约 1 张 | 470dp 宽下 Adaptive(280) 只能排 1 列 | 中 |
 | L8 | 设置页是一根长条 | `SourceManagementPage` 是 `Column.verticalScroll`，竖着堆 6 张卡（`:572-624`）。来源行约 53dp，共约 29 个来源，总长约 1500dp | 中 |
-| L9 | 系统栏是浅色的，夹在深色界面中间 | `Res/values/styles.xml` 继承 `Theme.Material.Light.NoActionBar`，写死 `#F6F8FA`，`windowLightStatusBar=true`；`OpenSaveTheme.kt:27` 跟随系统深色；`MainActivity.onCreate`（`:93-100`）没有调用 `enableEdgeToEdge()`；targetSdk=35 | 低 |
+| L9 | 系统栏是浅色的，夹在深色界面中间 | `Res/values/styles.xml` 继承 `Theme.Material.Light.NoActionBar`，写死 `#F6F8FA`，`windowLightStatusBar=true`；`SaveVaultTheme.kt:27` 跟随系统深色；`MainActivity.onCreate`（`:93-100`）没有调用 `enableEdgeToEdge()`；targetSdk=35 | 低 |
 | L10 | UI 全在一个 1399 行的文件里，没有预览和 Compose UI 测试 | `MainActivity.kt` 包含外壳、两个页面、9 张卡和 2 个对话框；代码里 `@Preview` 有 0 个；`androidTest` 只有 `AppSmokeTest.kt` | 低（但影响改造效率） |
 
 ### 2.2 手柄操作
@@ -141,21 +141,21 @@
 | B9 | 自动备份 Worker 整次运行都持全局锁，有被系统中途停掉的风险，UI 也没有提示 | `StorageOperationLock.kt:7-11` 是进程内 Mutex；Worker 整次运行持锁（`AutoBackup.kt:88`），UI 卡在"批量备份 1/N"。Worker 没有前台服务，处理约 90 款时可能超过约 10 分钟的执行上限，被系统停止，而且是在持锁中途被取消。这个风险**现在就存在** | 中 |
 | B10 | 每张卡的大号备份按钮喧宾夺主，批量工具条又会被滚走 | `:1159-1168`、`:398-414` | 中 |
 | B11 | 快照索引写入不是原子的，存在两个实例并发写 | `writeRecords`（`SnapshotRepository.kt:60-72`）先 `delete()` 旧索引再 `renameTo`，进程在两步之间被杀，整个索引就丢了。ViewModel（`SourceViewModel.kt:102`）和 Worker（`AutoBackup.kt:97`）各自 new 一个实例，`@Synchronized` 只锁实例本身 | 高（数据安全） |
-| B12 | Root 命令的超时和中断残留 | `RootCommand.execute` 每条命令单独起一个 `su -mm -c` 进程，超时 60 秒（`RootStorage.kt:16-42`），大存档的 `cp -a` 可能超时；`destroyForcibly` 只杀 su 客户端，Magisk 那边的 shell 可能还在执行，随后清理 prepared 的 `rm -rf`（`:229-235`）会和它竞争。进程被杀时，模拟器目录里可能残留 `.opensave-game-new-*` 或 `.opensave-game-old-*`（`:177-178`）。脚本只做了 chown/chmod（`:199-200`），没有处理 SELinux 上下文 | 中 |
+| B12 | Root 命令的超时和中断残留 | `RootCommand.execute` 每条命令单独起一个 `su -mm -c` 进程，超时 60 秒（`RootStorage.kt:16-42`），大存档的 `cp -a` 可能超时；`destroyForcibly` 只杀 su 客户端，Magisk 那边的 shell 可能还在执行，随后清理 prepared 的 `rm -rf`（`:229-235`）会和它竞争。进程被杀时，模拟器目录里可能残留 `.savevault-game-new-*` 或 `.savevault-game-old-*`（`:177-178`）。脚本只做了 chown/chmod（`:199-200`），没有处理 SELinux 上下文 | 中 |
 
 ### 2.5 与 PC 端的一致性
 
 | # | 问题 | 证据 | 影响 |
 |---|---|---|---|
 | C1 | Switch 命名空间不一致：PC 大多写入 `pc`，Android 写入 `switch` | PC：`Go/daemon/daemon.go:762-767` 只改了 gameId，没设 SaveType；`Go/store/games.go:90-92` 默认值是 `pc`；`migrations/0038_game_save_type.sql:3`；`FE/views/home/ScanDialog.svelte:42,198` 默认 `'pc'`；`AddGameCard.svelte:97-104`；retrack、offered、import、CLI 入口（`daemon.go:1317`、`routes_offered_games.go:69-75`、`routes_backup.go:843-845`、`cliapp.go:621`）。Android：`GameSaveTypes.kt:69, 96-97, 157-158`。scope 由类型决定（`Go/cloud/game_save_scopes.go:66-69`、`GameSaveClient.kt:348-349`）。结论：**同一个 TitleID 跨端同步不通** | 高（单独立项） |
-| C2 | Android 上非 Switch 游戏的 gameId 把来源路径算了进去 | 非 desktopCompatible 时 gameId = `android-<family>-` + `sha256("$sourceId\|${game.gameKey}")` 的前 16 位（`GameSaveTypes.kt:157-166`），sourceId 来自路径或 SAF URI。后果：两台 Android 设备之间也不能互通；同一款游戏的来源路径一变（例如 Eden 内部数据和外部数据），gameId 也跟着变。`portableSource` 只认 Root 来源（`GameSaveTypes.kt:140-141`），所以 SAF 来源的 Switch 存档也不会是 desktopCompatible。PC 用的是名称 slug（`SlugifyGameID`，`games.go:20-24`），前端只有 eden/yuzu/ryujinx/generic 几种类型。多位置归档的布局也不同（`.opensave-locations/` 对 `location-NNNN/`，见 `zip_roots.go:26`、`GameSnapshotManifest.kt:42,70`） | 高 |
+| C2 | Android 上非 Switch 游戏的 gameId 把来源路径算了进去 | 非 desktopCompatible 时 gameId = `android-<family>-` + `sha256("$sourceId\|${game.gameKey}")` 的前 16 位（`GameSaveTypes.kt:157-166`），sourceId 来自路径或 SAF URI。后果：两台 Android 设备之间也不能互通；同一款游戏的来源路径一变（例如 Eden 内部数据和外部数据），gameId 也跟着变。`portableSource` 只认 Root 来源（`GameSaveTypes.kt:140-141`），所以 SAF 来源的 Switch 存档也不会是 desktopCompatible。PC 用的是名称 slug（`SlugifyGameID`，`games.go:20-24`），前端只有 eden/yuzu/ryujinx/generic 几种类型。多位置归档的布局也不同（`.savevault-locations/` 对 `location-NNNN/`，见 `zip_roots.go:26`、`GameSnapshotManifest.kt:42,70`） | 高 |
 | C3 | 同一 TitleID 出现在多个 Android 来源时，会共用一份 head 状态 | 状态键是 `saveType+gameId`（`GameSaveHeadSync.kt:444-445`），会互相判定为 CHANGED 或冲突（`GameSaveNativeSync.kt:123-127, 225-229`）；PC 遇到这种情况会明确拒绝（`Go/p2p/switchmatch.go:45-52`） | 中 |
 | C4 | 自动拉取不对称：PC 默认自动恢复，Android 从不自动恢复 | PC：`0026_cloud_heads.sql:34`、`Go/daemon/game_save_native.go:560-575`、`cloudsync.go:501-516`；Android：`AutoBackup.kt:225-231`、`GameSaveNativeSync.kt:144` | 中 |
 | C5 | 冲突副本：PC 能看到但没法解决，Android 根本不显示 | PC：`Go/daemon/game_save_native.go:374-381`、`CloudTab.svelte:251-267`，没有 resolve 路由；Android：`GameSaveClient.kt:268` 解析了冲突，但 UI 没用 | 中 |
 | C6 | 保留策略：PC 有自动 20 份、手动、固定三类，Android 从不清理 | `daemon.go:796-806`、`store/snapshots.go:20-23,132`；`SnapshotRepository.kt` | 中 |
 | C7 | 术语和中文化：PC 很多界面还是英文，两端叫法不同 | `Sidebar.svelte:40-45`、`GameDetail.svelte:25-28`、`cloudproviders.js:27-44`；zh-CN.json 与 Android 的说法对比见 §3.2 | 中 |
 | C8 | 批量和手柄模型：PC 有选择模式和 controller.js，Android 都没有 | `FE/views/home/LibraryGrid.svelte:133-226`、`FE/lib/controller.js`、`spatial.js`。PC 读取了 `back`（Select）键（`controller.js:30, :109`），但没有分支处理 | 中 |
-| C9 | 游戏名来源和指纹：Android 只有 13 条硬编码名称，而且指纹里包含游戏名 | `GameCatalog.kt:166-180`；`AutoBackupPolicy.fingerprint`（`AutoBackup.kt:62-79`）在 `:77` 把 `opensave-game.json` 也算进去，清单里有 `gameName`（`GameSnapshotManifest.kt:23`）。`manifestHash` 同时是 head 状态的比较依据（`GameSaveNativeSync.kt:124-125`、`GameSaveHeadSync.kt:359-360`），不能直接改算法。PC 读模拟器自己的缓存（`Go/presets/switchtitles.go:17-40`） | 中（会阻塞去重） |
+| C9 | 游戏名来源和指纹：Android 只有 13 条硬编码名称，而且指纹里包含游戏名 | `GameCatalog.kt:166-180`；`AutoBackupPolicy.fingerprint`（`AutoBackup.kt:62-79`）在 `:77` 把 `savevault-game.json` 也算进去，清单里有 `gameName`（`GameSnapshotManifest.kt:23`）。`manifestHash` 同时是 head 状态的比较依据（`GameSaveNativeSync.kt:124-125`、`GameSaveHeadSync.kt:359-360`），不能直接改算法。PC 读模拟器自己的缓存（`Go/presets/switchtitles.go:17-40`） | 中（会阻塞去重） |
 | C10 | 设备名、URL 规范化、分支有细节差异；两边实现没有共享的测试数据 | `GameSaveHeadSync.kt:528`（Build.MODEL）；`GameSaveClient.kt:386-388` 对比 `provider_game_save.go:53-57`；branch 固定为 main（`GameSaveNativeSync.kt:69,103`）；`mobilecore/mobilecore.go:16-98` 没被 Android 用上 | 低 |
 
 ---
@@ -273,7 +273,7 @@
 
 ```
 ┌──────────────────────────┐   ┌──────────────────────────┐   ┌──────────────────────────┐
-│ OpenSave        ⟳  ⋮     │收起│ ← 塞尔达传说 王国之泪     │   │ ✕ 已选 3        全选     │
+│ SaveVault        ⟳  ⋮     │收起│ ← 塞尔达传说 王国之泪     │   │ ✕ 已选 3        全选     │
 │[全部][PC][Switch][模拟器]│吸顶│ [封面]  Eden · Switch     │   │ ☑ 塞尔达…   ● 已同步     │
 │ ⚠ 3 新版本 ▸  [备份有变更]│   │ ● 已同步   Root 可读写     │   │ ☑ 宝可梦…   ▲ 待上传     │
 │ 塞尔达…    ● 已同步      │   │ [  备份  ] [  恢复…  ]    │   │ ☐ Beholder  ○ 未备份     │
@@ -313,7 +313,7 @@
 
 ### 4.2 实现要点（新增 `A/ui/input/HandheldInput.kt`、`A/ui/input/HandheldFocus.kt`）
 
-1. **全局键在 Activity 层分发**：在 `MainActivity` 重写 `dispatchKeyEvent`（现在只有 `onCreate`，`:93-100`）。只拦截 X/Y/Start/Select/L1/R1/L2/R2，并且 **Down 和 Up 都要消费**，否则会触发 kcm 回退：按 Generic.kcm，X/Start 会回退成 DPAD_CENTER 误点当前按钮，Y 会回退成 BACK，Select 会回退成 MENU。具体以阶段 0 的实测为准。拦下来的键发到 `SharedFlow<HandheldCommand>`，由 `OpenSaveScreen` 按当前页面和模式消费。
+1. **全局键在 Activity 层分发**：在 `MainActivity` 重写 `dispatchKeyEvent`（现在只有 `onCreate`，`:93-100`）。只拦截 X/Y/Start/Select/L1/R1/L2/R2，并且 **Down 和 Up 都要消费**，否则会触发 kcm 回退：按 Generic.kcm，X/Start 会回退成 DPAD_CENTER 误点当前按钮，Y 会回退成 BACK，Select 会回退成 MENU。具体以阶段 0 的实测为准。拦下来的键发到 `SharedFlow<HandheldCommand>`，由 `SaveVaultScreen` 按当前页面和模式消费。
    - 不挂在 Compose 根节点：没有任何节点有焦点时（刚从触屏切到手柄，或 busy 期间焦点被清掉），内容树里的 `onPreviewKeyEvent` 收不到事件。
    - **A、B 和方向键一律放行**：Compose 1.7 的 `clickable` 只认 DPAD_CENTER/ENTER/NUMPAD_ENTER；A 能用，靠的是没被消费时 Generic.kcm 生成的回退键。B 回退成 BACK 后走 `OnBackPressedDispatcher`。返回逻辑只有 `BackHandler` 这一条链。
    - 只处理非方向键 `repeatCount == 0` 的事件。文本框有焦点时全部放行，等同于 PC `shortcuts.js:36-40` 的 isTyping。
@@ -331,7 +331,7 @@
 | R4 busy 时不禁用 | 去掉大面积的 `enabled = !state.busy`，改为点击时检查冲突并提示"正在批量备份，稍后再试"，焦点不会丢。结束后按 `lastFocusedKey` 恢复焦点 | I6、B 系列 |
 | R5 返回栈 | `BackHandler` 按优先级叠加（§4.1 B 键那一行），**阶段 1 就要做**；manifest 加 `android:enableOnBackInvokedCallback="true"` | I5 |
 | R6 对话框 | 破坏性对话框（恢复、写回、删除）初始焦点在"取消"；普通确认框在主操作上；长内容区可聚焦，D-pad 或右摇杆可以滚动。命令面板和菜单用 `BasicAlertDialog`/`Dialog` 加 FocusRequester，**不用 `ModalBottomSheet`**：M3 1.3 的底部弹层在 D-pad 下初始焦点和焦点困住的问题不稳定 | I9 |
-| R7 文本框 | 连接配置平时只显示摘要行，A 打开编辑对话框；`KeyboardOptions(imeAction=Next/Done)`；密钥用 `PasswordVisualTransformation` 加显示切换；Root 路径提供预设列表；优先用"从剪贴板导入 `opensave://` 配置串"（见 A15） | I7 |
+| R7 文本框 | 连接配置平时只显示摘要行，A 打开编辑对话框；`KeyboardOptions(imeAction=Next/Done)`；密钥用 `PasswordVisualTransformation` 加显示切换；Root 路径提供预设列表；优先用"从剪贴板导入 `savevault://` 配置串"（见 A15） | I7 |
 | R8 最小目标尺寸 | 所有可交互控件 ≥ 48dp，去掉 `Modifier.size(32.dp)`（`MainActivity.kt:304-313`） | — |
 | R9 滚动可见 | 焦点移动时把整行滚进视口，并留出 1 行余量（BringIntoViewSpec），不能裁掉 | I3 |
 
@@ -367,7 +367,7 @@
 去重要提前做，但要先解决 P10/C9。否则即使搬过 `AutoBackup.kt:283-293` 的复用逻辑，也很难命中。
 
 1. **统一三条备份路径的输入**：抽出 `GameLibrary.backupLocations(game, mode)`，单游戏、批量、自动三条路径共用同一个位置集合（是否包含 `android-app` 和 `relativePath == "."` 作为显式参数，默认值三者一致）。传给清单的 presentation 也统一：要么都补全，要么都不补全。
-2. **新增 `contentHash`（v2）专门用于去重**：只对存档数据文件计算哈希，**排除 `opensave-game.json`**。`SnapshotRecord` 增加 `contentHash` 和 `hashVersion` 字段，旧记录在首次需要时重算或惰性补齐。**`manifestHash` 保持原算法不变**，因为它同时是 head 状态的比较依据（`GameSaveNativeSync.kt:124-125`、`GameSaveHeadSync.kt:359-360`），直接改会让所有游戏变成 UNKNOWN/CHANGED，可能被判成需要确认。
+2. **新增 `contentHash`（v2）专门用于去重**：只对存档数据文件计算哈希，**排除 `savevault-game.json`**。`SnapshotRecord` 增加 `contentHash` 和 `hashVersion` 字段，旧记录在首次需要时重算或惰性补齐。**`manifestHash` 保持原算法不变**，因为它同时是 head 状态的比较依据（`GameSaveNativeSync.kt:124-125`、`GameSaveHeadSync.kt:359-360`），直接改会让所有游戏变成 UNKNOWN/CHANGED，可能被判成需要确认。
 3. **把 `AutoBackup.kt:283-293` 提取成 `findReusableRecord(sourceId, gameKey, contentHash)`**。命中时结果为 `SKIPPED("无变化")`；如果命中的记录还没上传，只补上传。"强制新建版本"是一个显式选项。
 4. **head 协议的哈希什么时候换**：放在阶段 5 跟进，带版本号，并对 `GameSaveHeadStore` 里的旧状态做一次重算迁移。
 
@@ -412,7 +412,7 @@ GameOperations（新增 A/ops/GameOperations.kt）
 2. **执行方式（简化）**：
    - 纯本地批量（备份、检查变更）：在 ViewModel 里用一个保存下来的协程 Job 执行，项与项之间 `ensureActive()`，可以取消。
    - 中断后的处理：备份因为去重是幂等的，用户"再跑一次"即可补齐，**不做持久化队列，也不弹"继续/放弃"提示**。
-   - 含网络的批量（上传、恢复云端较新）：用 `BatchWorker`（`enqueueUniqueWork("opensave_batch", KEEP)`），进程被杀后由 WorkManager 自动续跑，UI 只展示进度，不再询问。`KEEP` 会静默丢掉第二个请求，所以已有任务在跑时，UI 必须明确提示"已有批量任务在运行"并拒绝新请求。
+   - 含网络的批量（上传、恢复云端较新）：用 `BatchWorker`（`enqueueUniqueWork("savevault_batch", KEEP)`），进程被杀后由 WorkManager 自动续跑，UI 只展示进度，不再询问。`KEEP` 会静默丢掉第二个请求，所以已有任务在跑时，UI 必须明确提示"已有批量任务在运行"并拒绝新请求。
 3. **Android 13 前台服务约束**：
    - `setForeground(ForegroundInfo(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC))` 必须在 `doWork` 一开始、应用还在前台时调用；通知渠道要先创建。
    - WorkManager 在后台重新拉起时调用 `setForeground` 会抛 `ForegroundServiceStartNotAllowedException`。要 catch 住，降级为非前台运行；这时受约 10 分钟执行上限约束，被停掉后会重排，因为幂等可以接着跑。
@@ -423,7 +423,7 @@ GameOperations（新增 A/ops/GameOperations.kt）
 5. **错误策略**：单项失败就继续下一项；401/403 中止整个批次；网络失败只记入报告，不暂停整批。
 6. **数据安全前提（阶段 0 就做）**：
    - `SnapshotRepository` 改为进程单例（ViewModel 和 Worker 共用一个实例），`writeRecords` 改用 `AtomicFile`，或直接 `renameTo` 覆盖（POSIX 上 rename 是原子的），去掉先 `delete()` 再 rename 的写法。`BatchReportStore` 照同样方式写。
-   - 启动时扫描模拟器目录下的 `.opensave-game-new-*`/`.opensave-game-old-*` 残留（`RootStorage.kt:177-178`），能回滚的回滚，否则提示用户。
+   - 启动时扫描模拟器目录下的 `.savevault-game-new-*`/`.savevault-game-old-*` 残留（`RootStorage.kt:177-178`），能回滚的回滚，否则提示用户。
    - 大存档的 Root 复制按体积放宽超时，或拆分命令；超时后先确认远端 shell 已经结束，再做清理。
 
 ### 5.6 进度、取消与汇总
@@ -453,7 +453,7 @@ GameOperations（新增 A/ops/GameOperations.kt）
 | # | 对齐项 | 改哪一端 | 做法 | 优先级 |
 |---|---|---|---|---|
 | A1 | Switch 命名空间 | **PC 为主**，Android 兜底（单独立项） | PC：在 `TrackGame` 中，只要 `switchtitle.FromSavePath` 不为空就强制 `SaveType="switch"`（`Go/daemon/daemon.go:763` 附近，offered/import/retrack/CLI 都经过这里）；`ScanDialog.svelte` 按 TitleID 自动判定，对 TitleID 存档隐藏 emulator-eden/yuzu/ryujinx；新增迁移，把匹配 switchtitle 的游戏改为 `save_type='switch'`，并清空 `cloud_heads.native_head`（否则 `Go/daemon/game_save_native.go:149-153` 会拒绝发布），旧 scope 按"需要确认"处理。Android：`switch` scope 为空时只读探测一次 `pc/<同 gameId>`，有内容就提示"PC 端仍在用旧命名空间"，**绝不跨命名空间写入**。只适用于 Root 来源（SAF 来源不是 desktopCompatible，`GameSaveTypes.kt:140-141`） | 跨端 P0 |
-| A2 | 游戏身份规则 | 两端 | 写一份共享的《游戏身份规则》：Switch = `switch/switch-<tid小写>`；模拟器按存档自身标识（PPSSPP 用 SAVEDATA 目录名，Dolphin 用游戏代码，RetroArch 用 ROM 基名…），**不再把 sourceId 算进 gameId**；PC 游戏不自动猜，改为显式"关联"（PC 已有 `Go/store/aliases.go`、`LinkPicker.svelte`，Android 新增"关联到云端游戏"选择器）。多位置归档统一用 PC 的 `.opensave-locations/<name>/` 布局。**Android 端需要做 gameId 迁移**：旧的 `android-*-<hash>` scope 映射到新 gameId（记录别名，旧 scope 只读，不删除） | 跨端 P1 |
+| A2 | 游戏身份规则 | 两端 | 写一份共享的《游戏身份规则》：Switch = `switch/switch-<tid小写>`；模拟器按存档自身标识（PPSSPP 用 SAVEDATA 目录名，Dolphin 用游戏代码，RetroArch 用 ROM 基名…），**不再把 sourceId 算进 gameId**；PC 游戏不自动猜，改为显式"关联"（PC 已有 `Go/store/aliases.go`、`LinkPicker.svelte`，Android 新增"关联到云端游戏"选择器）。多位置归档统一用 PC 的 `.savevault-locations/<name>/` 布局。**Android 端需要做 gameId 迁移**：旧的 `android-*-<hash>` scope 映射到新 gameId（记录别名，旧 scope 只读，不删除） | 跨端 P1 |
 | A3 | 模拟器类型列表 | PC | PC 前端补齐 Android 的 `emulator-*`（`GameSaveTypes.kt:21-35`），按 preset ID 自动带出 saveType | 跨端 P1 |
 | A4 | 重复 TitleID 和卡片合并 | Android | 先做（不依赖 A2）：每个 (saveType, gameId) 只有一个"同步来源"（默认选 Root、非候选、最近修改的那个），其他来源只做本地备份，避免 C3 的互相误判。卡片合并：Switch（desktopCompatible）在 A1 后可以合并；非 Switch 游戏**在 A2 落地前不能按 gameId 合并**（gameId 含 sourceId，本来就不会相同），合并时通过 key 映射表迁移选择集、排除表和历史 | P1（同步来源）/ A2 之后（合并） |
 | A5 | 自动拉取 | Android | 新增与 PC 同名的设置"自动恢复其他设备的续接更新"，默认值对齐 PC，先只对 Root 单目录 Switch 生效；恢复前生成安全快照，写入动态日志并发通知；旧 head 协议的后台覆盖行为与原生协议统一（见 Q7） | P2 |
@@ -463,10 +463,10 @@ GameOperations（新增 A/ops/GameOperations.kt）
 | A9 | 批量和选择模型 | 两端 | Android 采用 PC 的选择模式（§5.1）；筛选对齐"全部 / PC / Switch / 模拟器"（`Home.svelte:118-121`），模拟器内部再细分；汇总参照 PC 的 bulkPartial。PC 可以补"批量检查跨设备更新"（`/api/cloud/check` 已存在）和任务面板 | P1 |
 | A10 | 手柄语义 | 两端 | §4.1 的映射表；设置项同名。PC 可以考虑同样给 Start 绑定"备份有变更" | P1 |
 | A11 | 游戏名和指纹 | Android | 去重用的 `contentHash` 排除清单文件（**阶段 1 随去重一起做**，见 §5.3）；head 协议的 `manifestHash` 换算法放到阶段 5，带版本号并迁移旧状态；移植 `Go/presets/switchtitles.go:17-40` 的缓存读取逻辑 | P1（contentHash）/ P2（其余） |
-| A12 | 设备名、URL、分支 | Android | game-save 卡增加可编辑的"设备名称"（默认 Build.MODEL）；URL 规范化补上去掉 `/opensave` 结尾；明确原生同步只同步 main | P3 |
+| A12 | 设备名、URL、分支 | Android | game-save 卡增加可编辑的"设备名称"（默认 Build.MODEL）；URL 规范化补上去掉 `/savevault` 结尾；明确原生同步只同步 main | P3 |
 | A13 | 共享测试数据 | 两端 | 仓库新增 `testdata/identity-fixtures.json`（路径或游戏 → saveType/gameId/archiveName/parent 判定），PC 的 `go test` 和 Android 的单元测试都读它（Gradle 里把仓库根目录的 `testdata/` 配成 test resources），在 CI 里保证两端一致 | 跨端 P1 |
 | A14 | 安全快照是否上传 | 两端 | 建议两端都上传，带 safety 标记，不推进 head（见 Q9） | P3 |
-| A15 | 配置导入 | 两端 | PC 端提供"复制 Android 配置"，生成一段 `opensave://config?...` 配置串（含地址、密钥，提醒用户不要外传）；Android 端"从剪贴板导入"一步完成。局域网发现需要 game-save 支持，列为待确认（Q19） | P1 |
+| A15 | 配置导入 | 两端 | PC 端提供"复制 Android 配置"，生成一段 `savevault://config?...` 配置串（含地址、密钥，提醒用户不要外传）；Android 端"从剪贴板导入"一步完成。局域网发现需要 game-save 支持，列为待确认（Q19） | P1 |
 
 ---
 
@@ -496,10 +496,10 @@ GameOperations（新增 A/ops/GameOperations.kt）
 |---|---|
 | 前置 | Compose BOM 从 2024.12.01 升级到 1.8 以上（`focusRestorer` 在 1.8 改为 `fallback: FocusRequester` 签名，`LocalBringIntoViewSpec` 在 1.7 还是 Experimental）；先补 `@Preview` 和基础 Compose 测试，再拆分 `MainActivity.kt`（这部分已算进工期） |
 | 范围 | `AdaptiveLayoutInfo`（`BoxWithConstraints`）三种模式；横屏用 NavigationRail，去掉 TopAppBar；固定工具条（筛选 / 统计 / 横幅 / "备份有变更 (N)" / 选择 / 扫描）移到网格之外；底部状态条只在任务运行时出现，按键提示放在 Rail 底部；`GameLibraryCard` 改为 56–60dp 紧凑行（标题一行；副行显示来源、最近备份时间、`本地 N · 已上传/未上传`；去掉每卡的备份按钮和重复的"详情"按钮）；横屏双栏，焦点跟随详情（150ms 防抖），详情先复用 `:1170-1228` 的内容，标签为"版本 / 存档位置"；竖屏用触屏优先的单列紧凑行、吸顶工具条、全屏详情页；**BackHandler 返回栈**；`enableEdgeToEdge()`，系统栏跟随主题；UI 状态迁到 ViewModel 和 SavedStateHandle；**§5.3 的去重（统一三条路径的输入，加 `contentHash`，加 `findReusableRecord`）**；后台只读刷新云端（节流 5 分钟） |
-| 涉及文件 | 拆分 `A/MainActivity.kt`，业务逻辑不动：新增 `A/ui/AdaptiveLayoutInfo.kt`、`A/ui/AdaptiveShell.kt`、`A/ui/library/LibraryToolbar.kt`、`A/ui/library/GameListRow.kt`、`A/ui/library/GameDetailPane.kt`、`A/ui/StatusStrip.kt`；修改 `A/SourceViewModel.kt`（`SourceUiState` 增加 `selectedGameKey/selection/selectionMode/filter`；`:598, :632-750`）、`A/GameLibrary.kt:93-94`、`A/AutoBackup.kt:56-60, :62-79, :283-293`、`A/SnapshotRepository.kt`（`contentHash/hashVersion` 字段）、`A/OpenSaveTheme.kt`、`Res/values/styles.xml`。不引入 adaptive 依赖，手写 Rail 和双栏（Q5） |
+| 涉及文件 | 拆分 `A/MainActivity.kt`，业务逻辑不动：新增 `A/ui/AdaptiveLayoutInfo.kt`、`A/ui/AdaptiveShell.kt`、`A/ui/library/LibraryToolbar.kt`、`A/ui/library/GameListRow.kt`、`A/ui/library/GameDetailPane.kt`、`A/ui/StatusStrip.kt`；修改 `A/SourceViewModel.kt`（`SourceUiState` 增加 `selectedGameKey/selection/selectionMode/filter`；`:598, :632-750`）、`A/GameLibrary.kt:93-94`、`A/AutoBackup.kt:56-60, :62-79, :283-293`、`A/SnapshotRepository.kt`（`contentHash/hashVersion` 字段）、`A/SaveVaultTheme.kt`、`Res/values/styles.xml`。不引入 adaptive 依赖，手写 Rail 和双栏（Q5） |
 | 验收 | S1（≥ 340dp）、S2（≥ 5）、S3（≥ 7）、S8 达标；工具条在任何滚动位置都可见；竖屏详情按返回键回到列表；系统栏颜色和应用主题一致；字体缩放 1.3 时紧凑行单行省略、不换行；**内容不变时连续两次"备份有变更"，第二次全部是"无变化跳过"，快照数不变**；单游戏、批量、自动三条路径对同一内容得到相同的 `contentHash`；旧记录能正常解码 |
 | 自动化 | `@Preview` 覆盖 835×470、960×540、470×835，各配 fontScale 1.0 和 1.3；新增 `androidTest/AdaptiveShellTest.kt`（`createAndroidComposeRule`，断言横屏有 Rail、工具条一直存在、旋转后 `selectedGameKey` 保留）；单元测试覆盖 `contentHash` 和 `findReusableRecord` |
-| Odin2 测试 | `adb install -r app-debug.apk`（如果用 `deviceTest` 构建类型，包名是 `com.jun9100.opensave.test`，见 `android/app/build.gradle.kts:27`）；锁定横屏：`adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1`（竖屏用 0）；截图：`adb exec-out screencap -p > land.png`，数出可见行数；字体：`adb shell settings put system font_scale 1.3`；深色：`adb shell cmd uimode night yes`；在真实的 90 款游戏库上横竖屏来回切 10 次，确认选择和滚动位置不丢；快照数对比：`adb shell "su -c 'ls /data/data/com.jun9100.opensave/files/snapshots \| wc -l'"` |
+| Odin2 测试 | `adb install -r app-debug.apk`（如果用 `deviceTest` 构建类型，包名是 `com.jun9100.savevault.test`，见 `android/app/build.gradle.kts:27`）；锁定横屏：`adb shell settings put system accelerometer_rotation 0; adb shell settings put system user_rotation 1`（竖屏用 0）；截图：`adb exec-out screencap -p > land.png`，数出可见行数；字体：`adb shell settings put system font_scale 1.3`；深色：`adb shell cmd uimode night yes`；在真实的 90 款游戏库上横竖屏来回切 10 次，确认选择和滚动位置不丢；快照数对比：`adb shell "su -c 'ls /data/data/com.jun9100.savevault/files/snapshots \| wc -l'"` |
 
 ### 阶段 2：手柄与焦点（约 1 周）
 
@@ -519,16 +519,16 @@ GameOperations（新增 A/ops/GameOperations.kt）
 | 涉及文件 | 新增 `A/library/GameStatusResolver.kt`、`A/ops/GameOperations.kt`、`A/batch/BatchReportStore.kt`、`A/batch/BatchWorker.kt`、`A/ui/batch/BatchProgressBar.kt`、`A/ui/batch/BatchReportSheet.kt`、`A/ui/batch/BatchPlanDialog.kt`；修改 `A/SourceViewModel.kt`（`:539-594, :632-750, :821-873, :968-1114, :1293-1296`）、`A/AutoBackup.kt`（`:88, :103, :117, :380-456`）、`A/StorageOperationLock.kt`、`A/GameLibrary.kt`、`android/app/build.gradle.kts`（`androidx.work:work-testing`）、`AndroidManifest.xml` |
 | 验收 | S6（首批 4 种 + 自动备份开关）、S7、S9；自动备份运行时 UI 显示"等待自动备份完成"；已有网络批量在跑时，再发起会明确提示；`GameStatusResolver`、去重、Worker 让路都有单元测试 |
 | 自动化 | 用 `TestListenableWorkerBuilder` 测 `BatchWorker` 和 `AutoBackupWorker`（包括 `setForeground` 抛异常时的降级路径）；把 `RootCommand` 抽成接口，用假实现测恢复脚本的回滚分支 |
-| Odin2 测试 | 对 87 款执行"备份有变更"，到 30/87 时：① 点"取消"，检查报告；② 再跑一次，中途执行 `adb shell "su -c 'kill -9 \$(pidof com.jun9100.opensave)'"`，重开后再跑一次，确认快照数没有重复增长；③ 执行"上传待传"，中途 kill，确认 WorkManager 自动续跑、UI 只展示进度；④ 关闭通知权限后跑网络批量，确认应用内进度正常；⑤ 断开 Wi-Fi 跑上传，确认失败项进入报告，可以"重试失败项"；⑥ 用 `adb shell dumpsys jobscheduler \| grep -i opensave` 查 WorkManager 的 jobId，或用 `adb shell am broadcast -a androidx.work.diagnostics.REQUEST_DIAGNOSTICS -p com.jun9100.opensave` 导出诊断 |
+| Odin2 测试 | 对 87 款执行"备份有变更"，到 30/87 时：① 点"取消"，检查报告；② 再跑一次，中途执行 `adb shell "su -c 'kill -9 \$(pidof com.jun9100.savevault)'"`，重开后再跑一次，确认快照数没有重复增长；③ 执行"上传待传"，中途 kill，确认 WorkManager 自动续跑、UI 只展示进度；④ 关闭通知权限后跑网络批量，确认应用内进度正常；⑤ 断开 Wi-Fi 跑上传，确认失败项进入报告，可以"重试失败项"；⑥ 用 `adb shell dumpsys jobscheduler \| grep -i savevault` 查 WorkManager 的 jobId，或用 `adb shell am broadcast -a androidx.work.diagnostics.REQUEST_DIAGNOSTICS -p com.jun9100.savevault` 导出诊断 |
 
 ### 阶段 4：信息架构与流程梳理（约 2 周）
 
 | 项 | 内容 |
 |---|---|
-| 范围 | `OpenSavePage` 改为 游戏库 / 来源 / 设置 三个一级页，加"同步与任务"二级页；游戏库顶部状态横幅；`cloudUpdates` 持久化，每项提供"用云端覆盖 / 保留本机并发布 / 稍后"，原因文案取自 `GameSaveNativeSync.kt:141-150`；来源页横屏双栏分组（不存在的折叠并禁止勾选），改动暂存后统一"应用并重新扫描"；去掉存储模式分段开关，整来源快照和写回移入"高级"；首次启动向导（3 步，含 Magisk"永久授权"引导，没有 Root 时引导走 SAF）和按原因区分的空状态；合并自动化设置并写明依赖；动态日志（Worker 结果持久化，需要确认的项发通知）；配置改为"测试并保存"一步完成，所有操作统一用已保存的配置（修 `:307, :823`），刷新不再覆盖草稿；从剪贴板导入 `opensave://` 配置（A15）；术语按 §3.2 替换；延后的批量操作（恢复本地最新、下载云端、清理旧版本）按需加入 |
+| 范围 | `SaveVaultPage` 改为 游戏库 / 来源 / 设置 三个一级页，加"同步与任务"二级页；游戏库顶部状态横幅；`cloudUpdates` 持久化，每项提供"用云端覆盖 / 保留本机并发布 / 稍后"，原因文案取自 `GameSaveNativeSync.kt:141-150`；来源页横屏双栏分组（不存在的折叠并禁止勾选），改动暂存后统一"应用并重新扫描"；去掉存储模式分段开关，整来源快照和写回移入"高级"；首次启动向导（3 步，含 Magisk"永久授权"引导，没有 Root 时引导走 SAF）和按原因区分的空状态；合并自动化设置并写明依赖；动态日志（Worker 结果持久化，需要确认的项发通知）；配置改为"测试并保存"一步完成，所有操作统一用已保存的配置（修 `:307, :823`），刷新不再覆盖草稿；从剪贴板导入 `savevault://` 配置（A15）；术语按 §3.2 替换；延后的批量操作（恢复本地最新、下载云端、清理旧版本）按需加入 |
 | 涉及文件 | `A/SourceViewModel.kt`（拆出 `SyncInbox`、`ActivityLog`、`Selection` 三块持久状态）、`A/SourceSelection.kt`（`:112-113, :175-189`）、`A/AutoBackup.kt`（`:91-92, :131-136, :224-269`）、`A/SnapshotRepository.kt`（`removeAll`、保留字段）；新增 `A/ui/sync/SyncTasksPage.kt`、`A/ui/sources/SourcesPage.kt`、`A/ui/settings/SettingsPanes.kt`、`A/ui/onboarding/FirstRunWizard.kt`、`A/activity/ActivityLogStore.kt`；`Res/values/strings.xml`（把文案从代码迁出，方便统一术语） |
 | 验收 | 冲突项在"同步与任务"里有三个明确选项；后台自动备份的每次运行都能在动态日志里查到；新用户没有 Root 时能被引导走 SAF；来源页首屏只显示可用来源；从剪贴板导入后无需手动输入就能连通 |
-| Odin2 测试 | 清除数据（`adb shell pm clear com.jun9100.opensave`）走首次启动；在 Magisk 里拒绝 su 再走一遍；选"仅此一次"授权，然后触发后台 Worker，确认会提示需要永久授权；在 PC 端制造一个跨设备更新和一个冲突，到 Odin2 上处理；Worker 用 `dumpsys jobscheduler` 查到的 jobId 执行 `adb shell cmd jobscheduler run -f com.jun9100.opensave <jobId>` 触发，然后检查动态日志；Root 恢复后执行 `adb shell "su -c 'ls -lZ <目标目录>'"`，检查 owner 和 SELinux 上下文，确认模拟器能读到存档 |
+| Odin2 测试 | 清除数据（`adb shell pm clear com.jun9100.savevault`）走首次启动；在 Magisk 里拒绝 su 再走一遍；选"仅此一次"授权，然后触发后台 Worker，确认会提示需要永久授权；在 PC 端制造一个跨设备更新和一个冲突，到 Odin2 上处理；Worker 用 `dumpsys jobscheduler` 查到的 jobId 执行 `adb shell cmd jobscheduler run -f com.jun9100.savevault <jobId>` 触发，然后检查动态日志；Root 恢复后执行 `adb shell "su -c 'ls -lZ <目标目录>'"`，检查 owner 和 SELinux 上下文，确认模拟器能读到存档 |
 
 ### 阶段 5（单独立项，与阶段 1–4 并行）：跨端协议与体验对齐
 

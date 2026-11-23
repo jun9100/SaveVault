@@ -33,7 +33,7 @@ func TestResolve_MigratesLegacySavesyncDir(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	oldHome := filepath.Join(home, oldHomeDirName)
+	oldHome := filepath.Join(home, legacySavesyncDirName)
 	if err := os.MkdirAll(oldHome, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -55,12 +55,38 @@ func TestResolve_MigratesLegacySavesyncDir(t *testing.T) {
 	}
 }
 
+func TestResolve_MigratesLegacyOpenSaveDirAndSQLiteDB(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	oldHome := filepath.Join(home, legacyOpenSaveDirName)
+	if err := os.MkdirAll(oldHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldHome, "opensave.db"), []byte("sqlite-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	if _, err := os.Stat(oldHome); !os.IsNotExist(err) {
+		t.Errorf("old home dir %q should no longer exist, stat err = %v", oldHome, err)
+	}
+	if _, err := os.Stat(paths.SQLiteDB); err != nil {
+		t.Errorf("expected migrated sqlite db at %q: %v", paths.SQLiteDB, err)
+	}
+}
+
 func TestResolve_DoesNotOverwriteExistingNewHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	oldHome := filepath.Join(home, oldHomeDirName)
+	oldHome := filepath.Join(home, legacyOpenSaveDirName)
 	newHome := filepath.Join(home, homeDirName)
 	if err := os.MkdirAll(oldHome, 0o777); err != nil {
 		t.Fatal(err)

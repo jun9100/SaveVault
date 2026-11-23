@@ -5,8 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // scopeGoneItem is the local API view of store.CloudScopeGone. The JSON

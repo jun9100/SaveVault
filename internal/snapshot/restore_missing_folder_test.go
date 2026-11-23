@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // A game is uninstalled and its save folder goes with it. That is precisely

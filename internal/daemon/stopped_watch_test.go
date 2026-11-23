@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
-// `opensave add` tracks a game on a daemon of its own that is gone by the time
+// `savevault add` tracks a game on a daemon of its own that is gone by the time
 // the watch would start — and tells the running daemon to take the game on.
 // Nothing failed, so nothing should say "could not watch".
 func TestTrackingOnAStoppingDaemonLogsNoWatchFailure(t *testing.T) {

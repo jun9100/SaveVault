@@ -15,7 +15,7 @@ import (
 // handled by scanProtonCompat. Everything else — Heroic, Lutris, Bottles, a
 // bare ~/.wine — is where non-Steam and cracked games end up on Linux and on
 // a Steam Deck, and none of it was being scanned. A game launched through any
-// of those had its saves sitting in a prefix OpenSave never looked inside.
+// of those had its saves sitting in a prefix SaveVault never looked inside.
 //
 // Kept bounded for the same reason as the rest of the scanner: only known
 // launcher locations are visited, never a blind walk of $HOME.

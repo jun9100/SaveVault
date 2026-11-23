@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Goodbyes to devices this one has unpaired.

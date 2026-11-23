@@ -2,7 +2,7 @@
 // paired devices exchange save data without the network — or a relay — being
 // able to read it.
 //
-// The problem it solves: nothing in OpenSave encrypted a save. LAN sync is
+// The problem it solves: nothing in SaveVault encrypted a save. LAN sync is
 // plain HTTP, so anything on the same network sees the bytes; relay sync is
 // wss://, but that encryption terminates AT the relay, so whoever runs the
 // relay sees them too. Both paths carry the save file itself.
@@ -46,7 +46,7 @@ const KeySize = 32
 // purpose later; binding the derivation to a purpose string means a key minted
 // here can never be mistaken for one minted elsewhere, even if the same pair
 // of identities is involved.
-const hkdfInfo = "opensave/e2ee/save-payload/v1"
+const hkdfInfo = "savevault/e2ee/save-payload/v1"
 
 // Identity is one device's long-lived key pair.
 //

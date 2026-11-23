@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // An unpair has to reach the other device even when the goodbye does not.

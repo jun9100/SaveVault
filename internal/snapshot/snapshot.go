@@ -21,10 +21,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/drain"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/drain"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // UploadHook is called after each snapshot is created, with the local zip
@@ -523,7 +523,7 @@ func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
 }
 
 // PruneOlderThan deletes the automatic snapshots older than the given number
-// of days — the ones OpenSave took on its own: before a sync replaced files,
+// of days — the ones SaveVault took on its own: before a sync replaced files,
 // on a save, at a conflict, mirrored from a peer. It is the "auto-delete old
 // backups" setting, which was stored and shown for a long time and enforced
 // by nothing.
@@ -838,7 +838,7 @@ func copyToTempZip(src string) (string, error) {
 		return "", err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp("", "opensave-restore-*.zip")
+	tmp, err := os.CreateTemp("", "savevault-restore-*.zip")
 	if err != nil {
 		return "", err
 	}

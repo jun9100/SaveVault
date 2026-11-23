@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func TestCrossRestoreErrorStatus(t *testing.T) {
@@ -81,7 +81,7 @@ func TestCrossRestorePlanRoute(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/v1/opensave/games":
+		case "/v1/savevault/games":
 			_ = json.NewEncoder(w).Encode(map[string]any{"games": []cloud.GameSaveGame{{
 				Key: "switch/test", Type: "switch",
 				Scopes: []cloud.GameSaveGameMember{
@@ -89,7 +89,7 @@ func TestCrossRestorePlanRoute(t *testing.T) {
 					{Type: "switch", GameID: "member-1", Link: "auto"},
 				},
 			}}})
-		case "/v1/opensave/scopes/switch/member-1":
+		case "/v1/savevault/scopes/switch/member-1":
 			_ = json.NewEncoder(w).Encode(cloud.GameSaveScope{
 				Type: "switch", GameID: "member-1",
 				Snapshots: []cloud.GameSaveScopeSnapshot{{
@@ -104,7 +104,7 @@ func TestCrossRestorePlanRoute(t *testing.T) {
 					ReceivedAt: time.Now().UTC(),
 				}},
 			})
-		case "/v1/opensave/files/switch/" + archiveName:
+		case "/v1/savevault/files/switch/" + archiveName:
 			_, _ = w.Write(raw)
 		default:
 			w.WriteHeader(http.StatusNotFound)

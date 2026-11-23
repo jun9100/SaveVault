@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/watcher"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/watcher"
 )
 
 // Reading the cloud mirror back.
@@ -995,7 +995,7 @@ func (d *Daemon) setCloudOffers(offers []CloudOffer) {
 	for _, o := range offers {
 		if !before[o.GameID+"/"+o.SnapshotID] {
 			changed = true
-			d.Log.Log("info", fmt.Sprintf("cloud: %s has a newer save for %q — open OpenSave to bring it here", o.DeviceName, o.GameName))
+			d.Log.Log("info", fmt.Sprintf("cloud: %s has a newer save for %q — open SaveVault to bring it here", o.DeviceName, o.GameName))
 		}
 	}
 	d.cloudRd.offers = append([]CloudOffer{}, offers...)

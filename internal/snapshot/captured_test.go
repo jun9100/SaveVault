@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // The recorded hash and the manifest hash are compared against each other to

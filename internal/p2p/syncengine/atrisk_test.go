@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 func manifestOf(paths ...string) delta.Manifest {

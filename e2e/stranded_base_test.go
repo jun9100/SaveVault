@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // The mechanism behind the reported "it says the other person changed it when

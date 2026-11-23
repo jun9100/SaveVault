@@ -1,6 +1,6 @@
 # Isolated Save Regression Matrix
 
-This is the P5 acceptance checklist for `game-save`, OpenSave, and Eden. It is
+This is the P5 acceptance checklist for `game-save`, SaveVault, and Eden. It is
 deliberately designed around disposable test data. Do not substitute a player's
 only game save, an active Eden profile, a production NAS data directory, or an
 existing cloud scope for any fixture below.
@@ -33,8 +33,8 @@ files; no game binary is needed.
 | PC save | `pc/regression-pc` | `PC-REV-A` |
 | Switch emulator save | `switch/010000000000BEEF` | `SWITCH-REV-A` |
 | Another emulator save | `emulator-ppsspp/regression-ppsspp` | `PSP-REV-A` |
-| Android SAF source | SAF-selected `OpenSave-Regression` tree | `SAF-REV-A` |
-| Android Root source | `/data/local/tmp/opensave-regression` | `ROOT-REV-A` |
+| Android SAF source | SAF-selected `SaveVault-Regression` tree | `SAF-REV-A` |
+| Android Root source | `/data/local/tmp/savevault-regression` | `ROOT-REV-A` |
 
 The Switch and emulator roots must use the directory layout recognized by the
 tested client. The point is an isolated title ID and source root, not a real
@@ -52,13 +52,13 @@ export GAME_SAVE_ADMIN_TOKEN="$(openssl rand -hex 32)"
 go run . --data-dir "$TEST_DATA" --listen 127.0.0.1:18787
 ```
 
-Verify the unauthenticated health route and an authenticated empty OpenSave
+Verify the unauthenticated health route and an authenticated empty SaveVault
 scope before pointing any client at the service:
 
 ```sh
 curl -fsS http://127.0.0.1:18787/healthz
 curl -fsS -H "Authorization: Bearer $GAME_SAVE_TOKEN" \
-  http://127.0.0.1:18787/v1/opensave/scopes/switch/010000000000BEEF
+  http://127.0.0.1:18787/v1/savevault/scopes/switch/010000000000BEEF
 ```
 
 The first request returns `{"status":"ok"}`. The second returns a successful
@@ -73,8 +73,8 @@ contact a user service.
 | ID | Component | Check | Expected result |
 | --- | --- | --- | --- |
 | AUTO-1 | game-save | `go test ./...` | CAS, restart, conflict retention, integrity, metrics, and Bark failure checks pass. |
-| AUTO-2 | OpenSave desktop | `go test ./...` | Native typed scopes and conflict/recovery behavior pass. |
-| AUTO-3 | OpenSave Android | `cd android && ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` | Capability labels, source isolation, and Android debug build pass. |
+| AUTO-2 | SaveVault desktop | `go test ./...` | Native typed scopes and conflict/recovery behavior pass. |
+| AUTO-3 | SaveVault Android | `cd android && ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` | Capability labels, source isolation, and Android debug build pass. |
 | AUTO-4 | Eden core | Build `core` from a clean CMake build directory. | The read-only title-status implementation compiles. |
 | AUTO-5 | Eden Android | Build the release APK in CI or locally. | The status dialog and JNI boundary compile. |
 
@@ -88,11 +88,11 @@ credentials.
 | GS-01 | Start an empty local service, run the two shared-fixture requests, then restart it with the same temporary data directory. | Health remains successful; the empty scope remains empty; no device is recorded by either read. |
 | GS-02 | Upload a test archive, publish snapshot `A` with `If-Match: ""`, restart the service, and query its typed scope head. | The head remains `A` with the same digest and type; it is not selected by timestamp. |
 | GS-03 | Publish `B` as child of `A`, then attempt stale candidate `C` with parent `A`; retain `C` via the conflict endpoint. | Head remains `B`; `C` is an immutable conflict copy and retention does not remove it. |
-| GS-04 | Enable Bark only for `upload` against a disposable endpoint that returns HTTP 502. Publish `A`, then read the head. | The write returns success and head `A` remains readable despite the failed notification. The automated equivalent is `TestBarkFailureDoesNotBlockOpenSaveScopeUpload`. |
-| GS-05 | Copy the complete temporary data directory to a new temporary location, start a new local service on it, and query Eden/OpenSave test scopes. | Heads, conflicts, native archive state, dashboard metadata, and read-only status survive. Never run two containers against the same directory. |
+| GS-04 | Enable Bark only for `upload` against a disposable endpoint that returns HTTP 502. Publish `A`, then read the head. | The write returns success and head `A` remains readable despite the failed notification. The automated equivalent is `TestBarkFailureDoesNotBlockSaveVaultScopeUpload`. |
+| GS-05 | Copy the complete temporary data directory to a new temporary location, start a new local service on it, and query Eden/SaveVault test scopes. | Heads, conflicts, native archive state, dashboard metadata, and read-only status survive. Never run two containers against the same directory. |
 | GS-06 | Use the dashboard maintenance view or its test API against the disposable service to run integrity verification and inspect metrics. | Integrity identifies only intentionally corrupted fixture data; disk, archive, and retention signals are visible. |
 
-## Windows OpenSave Rows
+## Windows SaveVault Rows
 
 | ID | Procedure | Expected state |
 | --- | --- | --- |
@@ -103,13 +103,13 @@ credentials.
 | WIN-05 | Stop the app normally after a fixture update, then repeat with a forced process exit using only the test root. Reopen the same test client before another client opens that scope. | Normal shutdown completes its pending state. After forced exit, the local client either resumes/reports a pending/conflict state; it never promotes a stale root based on modification time. |
 | WIN-06 | Choose an explicit restore only for a disposable root with existing marker data. | The pre-restore marker is retained in the documented recovery location before replacement; the restored digest matches the selected cloud object. |
 
-## Android OpenSave Rows
+## Android SaveVault Rows
 
 | ID | Procedure | Expected state |
 | --- | --- | --- |
-| AND-01 | On a non-root device, select only the Android SAF fixture through the system picker. Reopen OpenSave after a restart. | The source shows `SAF 已授权`; read-only access allows backup only, while read/write access is required for restore. |
+| AND-01 | On a non-root device, select only the Android SAF fixture through the system picker. Reopen SaveVault after a restart. | The source shows `SAF 已授权`; read-only access allows backup only, while read/write access is required for restore. |
 | AND-02 | Revoke the SAF tree permission or select a nonexistent test path, then scan. | The source displays `不可访问` with a reason; it is not reported as a source with zero saves. |
-| AND-03 | On a rooted test device, grant Magisk access to OpenSave and select only `/data/local/tmp/opensave-regression`. | The source shows `仅 Root 可访问`; the test fixture is discoverable and restorable without scanning unrelated app directories. |
+| AND-03 | On a rooted test device, grant Magisk access to SaveVault and select only `/data/local/tmp/savevault-regression`. | The source shows `仅 Root 可访问`; the test fixture is discoverable and restorable without scanning unrelated app directories. |
 | AND-04 | Deny Root access and scan the same selected Root source. | The source displays `不可访问 · 需要 Root` or `Root 未授权`; no backup or restore attempt occurs. |
 | AND-05 | Put the app in background during a test backup, then return foreground and inspect the library/state. | The worker retries a temporary failure; no write occurs outside the selected test root and source capability labels remain accurate. |
 | AND-06 | Repeat the type-filter and batch-selection sequence using the Switch and another-emulator fixtures. | All selected entries retain their own type; Android never uploads an emulator save into `pc` or `switch` by inference. |

@@ -9,18 +9,18 @@
   - 认不出来的范围，可以在范围页的“所属游戏”卡片里手动关联到同类型的游戏，也可以取消关联。
   - 分组只影响显示：不改动任何版本，不跨存档类型合并，也不会自动跨设备恢复。
   - 新接口：
-    - `PUT /v1/opensave/scopes/{type}/{game}/identity`（客户端上报游戏信息）
-    - `GET /v1/opensave/games`
-    - `GET /v1/opensave/games/{key}`
-    - 管理端 `GET /admin/api/opensave/games`
-    - 管理端 `PUT /admin/api/opensave/scopes/{type}/{game}/game`
+    - `PUT /v1/savevault/scopes/{type}/{game}/identity`（客户端上报游戏信息）
+    - `GET /v1/savevault/games`
+    - `GET /v1/savevault/games/{key}`
+    - 管理端 `GET /admin/api/savevault/games`
+    - 管理端 `PUT /admin/api/savevault/scopes/{type}/{game}/game`
 - **网页下载 SaveVault 版本（C4）。** 范围页的每个版本（包括冲突副本）和存档审计里的每个存档都能直接下载成 ZIP。只有登录管理员才能下载，同步 token 不能下载。
 
 已有接口、环境变量和错误信息都没有变。旧客户端照常工作，只是不上报游戏信息；SaveVault 2.5.0 之后的客户端遇到旧服务端，会自动跳过上报。
 
 ## 数据格式
 
-范围条目里新增两个可选字段：`opensave-native-state.json` 中的 `identity` 和 `gameLink`。`v1.5.0` 读取时会忽略这两个字段，所以可以随时回滚。
+范围条目里新增两个可选字段：`savevault-native-state.json` 中的 `identity` 和 `gameLink`。`v1.5.0` 读取时会忽略这两个字段，所以可以随时回滚。
 
 ## 升级（NAS / 群晖）
 

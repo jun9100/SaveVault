@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Restoring a cloud backup made by the other device, when the two tracked the

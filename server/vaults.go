@@ -16,7 +16,7 @@ import (
 )
 
 // Vaults are independent tenants: one directory, one set of tokens, one store
-// for Eden scopes and one for OpenSave archives. A vault never sees another
+// for Eden scopes and one for SaveVault archives. A vault never sees another
 // vault's bytes, heads or tombstones.
 //
 // Phase 1 keeps a single "default" vault so an existing deployment behaves
@@ -35,12 +35,23 @@ var legacyStateNames = []string{
 	"events.json",
 	"settings.json",
 	"catalog.json",
+	"savevault-native-state.json",
+	"savevault-native.json",
+	"savevault-manage.json",
+	"savevault-meta.json",
+	"savevault-native",
+	"savevault-meta",
+	"savevault-trash",
 	"opensave-native-state.json",
 	"opensave-native.json",
 	"opensave-manage.json",
 	"opensave-meta.json",
+	"opensave-native",
+	"opensave-meta",
+	"opensave-trash",
 	"scope.json",
 	"objects",
+	"savevault",
 	"opensave",
 }
 

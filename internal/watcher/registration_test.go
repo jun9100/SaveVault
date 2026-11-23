@@ -20,7 +20,7 @@ import (
 // the whole tree before the loop that drains events had started.
 
 // A save folder that is busy while its watch starts — the game running when
-// OpenSave launches — must not hang Watch. The walk registers the root first,
+// SaveVault launches — must not hang Watch. The walk registers the root first,
 // so its events are already being produced while the rest of the tree is
 // still being added.
 func TestWatch_ReturnsWhileTheFolderIsBusyDuringRegistration(t *testing.T) {

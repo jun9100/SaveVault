@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // snapshotOf takes a snapshot and returns its id.

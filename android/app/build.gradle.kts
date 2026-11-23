@@ -17,11 +17,11 @@ val releaseKeystore = (System.getenv("SAVEVAULT_KEYSTORE_PROPERTIES")
     ?.let { file -> Properties().apply { file.inputStream().use(::load) } }
 
 android {
-    namespace = "com.jun9100.opensave"
+    namespace = "com.jun9100.savevault"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.jun9100.opensave"
+        applicationId = "com.jun9100.savevault"
         minSdk = 26
         targetSdk = 35
         // CI 从 tag 传入（-PversionCode / -PversionName）；本地不传时用下面的默认值。

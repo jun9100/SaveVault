@@ -1,38 +1,37 @@
 <div align="center">
 
-<img src="cmd/opensave-app/build/appicon.png" alt="SaveVault" width="120" />
+<img src="cmd/savevault-app/build/appicon.png" alt="SaveVault" width="120" />
 
 # SaveVault
 
 ### Steam Cloud for every game you own.
 
-> SaveVault（存档库）是 [jun9100/SaveVault](https://github.com/jun9100/SaveVault) 对 [OpenSave](https://github.com/Liquid-co/OpenSave)（作者 Siva Prakash，MIT）的分支，采用 Monorepo 统一维护 **SaveVault PC**（根目录）、**SaveVault Android**（[`android/`](android/)）、**SaveVault Decky**（[`opensave-decky-plugin/`](opensave-decky-plugin/)）与自建云端 **SaveVault Server**（[`server/`](server/)，Docker 镜像 `jun9100/game-save`）。与原版 OpenSave 设备协议兼容；程序文件名（自更新资产名、CLI 命令）、配置目录（`~/.opensave`）与同步协议（`/v1/opensave/*`）仍沿用 OpenSave 的标识，已安装的用户可以直接升级。
+> **SaveVault（存档库）**（[jun9100/SaveVault](https://github.com/jun9100/SaveVault)）采用 Monorepo 统一维护 **SaveVault PC**（根目录）、**SaveVault Android**（[`android/`](android/)）、**SaveVault Decky**（[`savevault-decky-plugin/`](savevault-decky-plugin/)）与自建云端 **SaveVault Server**（[`server/`](server/)，Docker 镜像 `jun9100/savevault-server` / `jun9100/game-save`）。主配置目录为 `~/.savevault`、同步协议为 `/v1/savevault/*`，同时兼容旧版数据自动迁移与平滑升级。
 
 **SaveVault** syncs your game saves between devices, peer-to-peer — no Steam required, no accounts, no subscriptions. Point it at a folder, pair your devices, and your saves follow you everywhere.
 
-[![Release](https://img.shields.io/github/v/release/Liquid-co/OpenSave?sort=semver)](https://github.com/Liquid-co/OpenSave/releases)
+[![Release](https://img.shields.io/github/v/release/jun9100/SaveVault?sort=semver)](https://github.com/jun9100/SaveVault/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/hvBv92DZvn)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
-![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Steam%20Deck%20%7C%20macOS-lightgrey)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Steam%20Deck%20%7C%20macOS%20%7C%20Android-lightgrey)
 
-*A complete Go rewrite of the original Node.js/Electron app: one small native binary, no runtime to install, and wire-compatible with existing peers.*
+*One small native Go binary with no runtime to install, plus Android, Steam Deck Decky, and self-hosted Cloud Server support.*
 
-**[简体中文说明 / Chinese guide](USER_GUIDE.zh-CN.md)** · [Install](#install) · [Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [CLI](#command-line) · [Self-host the relay](#self-hosting-the-relay) · [FAQ](#faq) · [**Discord**](https://discord.gg/hvBv92DZvn)
+**[简体中文说明 / Chinese guide](USER_GUIDE.zh-CN.md)** · [Install](#install) · [Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [CLI](#command-line) · [Self-host the relay](#self-hosting-the-relay) · [FAQ](#faq)
 
 <br>
 
-<img src="docs/screenshots/home-library.png" alt="OpenSave library — tracked games with cover art, branches, and snapshot counts" width="850" />
+<img src="docs/screenshots/home-library.png" alt="SaveVault library — tracked games with cover art, branches, and snapshot counts" width="850" />
 
 </div>
 
 ---
 
-## Why OpenSave
+## Why SaveVault
 
 Steam Cloud only covers games bought on Steam — and only when the developer opts in. Everything else (emulators, GOG, Epic, single-player games with no cloud support) is on you: manually copying save folders between your desktop, laptop, and Steam Deck, and hoping you grabbed the newest one.
 
-OpenSave gives **every** game the Steam Cloud experience:
+SaveVault gives **every** game the Steam Cloud experience:
 
 - **You own it.** Saves sync directly between *your* devices. No account to create, nothing stored on someone else's server.
 - **It's automatic.** Auto-detects hundreds of games, watches for changes, and syncs the moment a save is written.
@@ -51,8 +50,8 @@ OpenSave gives **every** game the Steam Cloud experience:
 - **Smart conflict handling** — diverged saves are detected by **sync lineage**, not wall-clock timestamps. Keep yours, keep theirs, or keep both on a new branch.
 - **Cloud backup and hand-off** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder. Each device also reads the others' backups: a newer save that carries on from yours is brought over, and one that would replace progress made here is asked about first. Any OAuth provider can use your own app credentials instead of the built-in ones — required for OneDrive, and the fix for Google Drive's weekly re-login.
 - **Cross-device game matching** — the same title tracked under different names on two machines (a Steam install here, a differently-named folder there) can be matched by Steam App ID or linked by hand. App-ID matching is opt-in, so two separate copies of a game are never merged without asking.
-- **A full command line** — `opensave` does everything the app does, for a Steam Deck in Game Mode or a headless server. See [Command line](#command-line).
-- **In-app updates** — one-click update from GitHub releases, pull a newer build straight from a paired device, or `opensave update` from the terminal.
+- **A full command line** — `savevault` does everything the app does, for a Steam Deck in Game Mode or a headless server. See [Command line](#command-line).
+- **In-app updates** — one-click update from GitHub releases, pull a newer build straight from a paired device, or `savevault update` from the terminal.
 - **Privacy-first** — no accounts, no telemetry. As of v2.4.0, saves sent through the relay are encrypted end to end between your own two devices: the relay routes frames it cannot read and writes nothing to disk. You can self-host it so nobody else is on the path at all.
 
 ## Screenshots
@@ -84,21 +83,21 @@ OpenSave gives **every** game the Steam Cloud experience:
 
 | Platform | Download | Run |
 |---|---|---|
-| **Windows** | `OpenSave.Setup.exe` (installer) or portable `OpenSave.exe` | Double-click |
-| **Linux** | `opensave-linux-amd64.tar.gz` | extract, then `./opensave` |
-| **Steam Deck / SteamOS** | `OpenSave.flatpak` | see [Steam Deck install](#steam-deck-install) |
-| **macOS** (2.4.0 onward) | `OpenSave-macos.dmg`, or `opensave-macos-arm64.tar.gz` / `-amd64` for the CLI | open the `.dmg` and drag OpenSave to Applications — it isn't signed yet, so macOS asks you to allow it under **Privacy & Security** |
+| **Windows** | `SaveVault.Setup.exe` (installer) or portable `SaveVault.exe` | Double-click |
+| **Linux** | `savevault-linux-amd64.tar.gz` | extract, then `./savevault` |
+| **Steam Deck / SteamOS** | `SaveVault.flatpak` | see [Steam Deck install](#steam-deck-install) |
+| **macOS** (2.4.0 onward) | `SaveVault-macos.dmg`, or `savevault-macos-arm64.tar.gz` / `-amd64` for the CLI | open the `.dmg` and drag SaveVault to Applications — it isn't signed yet, so macOS asks you to allow it under **Privacy & Security** |
 
-Grab the latest from the [**Releases**](https://github.com/Liquid-co/OpenSave/releases) page.
+Grab the latest from the [**Releases**](https://github.com/jun9100/SaveVault/releases) page.
 
-> **macOS says OpenSave "is damaged and can't be opened"?** That is
+> **macOS says SaveVault "is damaged and can't be opened"?** That is
 > 2.4.0-beta.2, whose Mac app really was broken: its Info.plist was not valid,
 > and nothing in it was signed. Nothing you can do opens it — download a later
 > build, which macOS asks about instead; allow it under **Privacy & Security**.
 
 ### Steam Deck install
 
-> **Use `OpenSave.flatpak`, not `opensave-linux-amd64.tar.gz`.** The tarball's
+> **Use `SaveVault.flatpak`, not `savevault-linux-amd64.tar.gz`.** The tarball's
 > desktop app will not start on a stock Deck: SteamOS ships no WebKitGTK, which
 > it needs to draw its window. This trips people up because the tarball's name
 > reads like the Steam Deck build.
@@ -108,18 +107,18 @@ WebKitGTK and wipes manually-installed system packages on OS updates; the
 Flatpak bundles everything and survives updates.
 
 1. Switch to **Desktop Mode** (Steam button → Power → Switch to Desktop).
-2. Download `OpenSave.flatpak` from the [Releases](https://github.com/Liquid-co/OpenSave/releases) page.
+2. Download `SaveVault.flatpak` from the [Releases](https://github.com/jun9100/SaveVault/releases) page.
 3. Double-click it to install via Discover, or run
-   `flatpak install --user OpenSave.flatpak` in Konsole.
-4. Launch OpenSave from the application menu. Optional: add it to Steam
+   `flatpak install --user SaveVault.flatpak` in Konsole.
+4. Launch SaveVault from the application menu. Optional: add it to Steam
    (right-click → *Add to Steam*) to open it from Game Mode.
 
 If you only want background syncing and no window, the **command line has no
 such constraint** — it needs no WebKitGTK and runs anywhere:
 
 ```bash
-curl -fsSL https://opensave.org/install.sh | sh
-opensave scan && opensave service install
+curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.sh | sh
+savevault scan && savevault service install
 sudo loginctl enable-linger $USER
 ```
 
@@ -128,7 +127,7 @@ the app), and Proton game saves are detected inside their `compatdata`
 prefixes. The plain Linux tarball also works on the Deck if you install
 `webkit2gtk-4.1` yourself, but SteamOS updates can remove it — the
 Flatpak is the supported path. A Decky plugin for Game Mode lives in
-[`opensave-decky-plugin/`](opensave-decky-plugin/).
+[`savevault-decky-plugin/`](savevault-decky-plugin/).
 
 **Other handhelds / Arch-based distros (CachyOS, Bazzite-likes):** if
 your distro is *not* immutable (CachyOS isn't), the plain Linux tarball
@@ -145,14 +144,14 @@ for immutable systems like stock SteamOS.
   from Game Mode) — running it from a bare terminal session shows no
   window.
 
-> **Upgrading from the original (JS) OpenSave?** Your data migrates automatically on first launch — tracked games, snapshots, pairings, and cloud settings are imported from `~/.opensave/opensave-db.json` (kept as a backup, never deleted). Go and JS devices can pair and sync with each other during the transition.
+> **Upgrading from the original (JS) SaveVault?** Your data migrates automatically on first launch — tracked games, snapshots, pairings, and cloud settings are imported from `~/.savevault/savevault-db.json` (kept as a backup, never deleted). Go and JS devices can pair and sync with each other during the transition.
 
 ## Quick start
 
-1. **Launch OpenSave** on your first device. It scans for installed games and shows one cover-art tile per game, with what each folder holds and when it was last written.
+1. **Launch SaveVault** on your first device. It scans for installed games and shows one cover-art tile per game, with what each folder holds and when it was last written.
 2. **Track a game** — click a tile, or add any folder / save file manually. A game found in several places says **found in N folders**; open that to see which is which.
 3. **Pair a second device.** On the same network, the other device appears automatically under **Devices** — approve the request. Remote? One device creates a **room code** under **Internet Sync**; the other joins with it.
-4. **Play.** When a save changes, OpenSave snapshots it and syncs it to every paired device. There's nothing else to do.
+4. **Play.** When a save changes, SaveVault snapshots it and syncs it to every paired device. There's nothing else to do.
 
 Need to undo something? Open a game's **history** and roll back a snapshot — the whole save or a single file.
 
@@ -185,7 +184,7 @@ The app is in English and Simplified Chinese, following the system language; swi
 
 ## Command line
 
-`opensave` is a complete client, not a companion to the app: auto-detect saves,
+`savevault` is a complete client, not a companion to the app: auto-detect saves,
 pair devices, sync, resolve conflicts, manage snapshots and branches, back up
 to the cloud, and run as a background service. A headless box — a NAS, a home
 server, or a Steam Deck that lives in Game Mode — never needs the desktop app.
@@ -194,10 +193,10 @@ No account, no token, no server to sign up to.
 
 <p align="center">
   <img src="docs/screenshots/cli-status.png" width="825"
-       alt="The OpenSave CLI status panel: the OpenSave wordmark in white and purple, then the version, whether the daemon is running, the device name, tracked games, paired devices, relay and cloud backup status, followed by suggested next commands.">
+       alt="The SaveVault CLI status panel: the SaveVault wordmark in white and purple, then the version, whether the daemon is running, the device name, tracked games, paired devices, relay and cloud backup status, followed by suggested next commands.">
 </p>
 
-Run `opensave` on its own and it tells you what is happening right now, and what
+Run `savevault` on its own and it tells you what is happening right now, and what
 to do next.
 
 **[→ Full CLI guide](docs/CLI.md)** — the daemon model, which machine each
@@ -211,13 +210,13 @@ summary; that is the walkthrough. There is also one on the
 **Linux & Steam Deck**
 
 ```bash
-curl -fsSL https://opensave.org/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.sh | sh
 ```
 
 **Windows** (PowerShell)
 
 ```powershell
-irm https://opensave.org/install.ps1 | iex
+irm https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.ps1 | iex
 ```
 
 Installs to your user folder — no root, no admin — puts it on your `PATH`, and
@@ -225,40 +224,40 @@ shows the status panel when it is done. Downloads are verified against the
 `SHA256SUMS` published with each release; piping a script into a shell is enough
 trust on its own.
 
-Three names, one program: **`opensave`**, **`os`** as a short alias, and
-`opensave-cli` (the name the Steam Deck plugin and the Linux packages use
+Three names, one program: **`savevault`**, **`os`** as a short alias, and
+`savevault-cli` (the name the Steam Deck plugin and the Linux packages use
 internally). If something on your system already answers to `os`, the installer
 leaves it alone and says so.
 
 To choose where it lands or pin a version:
 
 ```bash
-OPENSAVE_INSTALL_DIR=/usr/local/bin OPENSAVE_VERSION=v2.2.0 sh install.sh
+SAVEVAULT_INSTALL_DIR=/usr/local/bin SAVEVAULT_VERSION=v2.2.0 sh install.sh
 ```
 
-To remove it, the same script reverses exactly what it and `opensave service
+To remove it, the same script reverses exactly what it and `savevault service
 install` put down — binaries, aliases, the service, the autostart entry, the
 PATH line — and **leaves your settings and backups where they are**:
 
 ```bash
-curl -fsSL https://opensave.org/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.sh | sh -s -- --uninstall
 ```
 
-Add `--purge` to delete `~/.opensave` as well; it says what it is about to
+Add `--purge` to delete `~/.savevault` as well; it says what it is about to
 delete, counts your backup files, and asks you to type a confirmation first.
 
-On Windows, `opensave install --uninstall` does the same for what
-`install.ps1` put down — the binary, the `os` and `opensave-cli` shims, and the
+On Windows, `savevault install --uninstall` does the same for what
+`install.ps1` put down — the binary, the `os` and `savevault-cli` shims, and the
 `PATH` entry — and never touches your data. The desktop app's own uninstaller
 offers to run it for you.
 
-Or build it: `go build -o opensave ./cmd/opensave-cli`
+Or build it: `go build -o savevault ./cmd/savevault`
 
 ### Keeping it current
 
 ```bash
-opensave update            # replace this binary with the latest release
-opensave update --check    # just report whether a newer one exists
+savevault update            # replace this binary with the latest release
+savevault update --check    # just report whether a newer one exists
 ```
 
 Pre-releases are never offered automatically — install those yourself from the
@@ -267,14 +266,14 @@ releases page.
 ### Getting started
 
 ```bash
-opensave scan                          # what is on this machine
-opensave add "Elden Ring" ~/.local/share/EldenRing
-opensave daemon start &                # the sync service
-opensave pair 192.168.1.42             # pair another device on the LAN
-opensave sync --all
+savevault scan                          # what is on this machine
+savevault add "Elden Ring" ~/.local/share/EldenRing
+savevault daemon start &                # the sync service
+savevault pair 192.168.1.42             # pair another device on the LAN
+savevault sync --all
 ```
 
-Different networks instead of a LAN? Run `opensave relay join <code>` with the
+Different networks instead of a LAN? Run `savevault relay join <code>` with the
 same made-up code on both devices — no port forwarding. As of v2.4.0 the relay
 passes data it cannot read: saves are encrypted end to end between your two
 devices, and nothing is stored on the way.
@@ -282,8 +281,8 @@ devices, and nothing is stored on the way.
 ### Run it permanently
 
 ```bash
-opensave service install
-systemctl --user enable --now opensave-daemon
+savevault service install
+systemctl --user enable --now savevault-daemon
 sudo loginctl enable-linger $USER     # Steam Deck: survive Game Mode switches
 ```
 
@@ -384,15 +383,15 @@ entirely from the terminal.
 ### Scripting
 
 ```bash
-opensave daemon status --json | jq .gameCount
-opensave snapshots elden-ring --json | jq -r '.[0].id'
-opensave conflicts --json | jq 'keys'
+savevault daemon status --json | jq .gameCount
+savevault snapshots elden-ring --json | jq -r '.[0].id'
+savevault conflicts --json | jq 'keys'
 
 # Scan results carry what is in each folder and which rows are one game.
 # Everything found in more than one place:
-opensave scan --json | jq -r 'group_by(.groupId)[] | select(length > 1) | .[0].name'
+savevault scan --json | jq -r 'group_by(.groupId)[] | select(length > 1) | .[0].name'
 # Track the freshest folder of every game found, by its listed number:
-opensave scan --json | jq -r 'to_entries[] | select(.value.role=="primary") | .key + 1'
+savevault scan --json | jq -r 'to_entries[] | select(.value.role=="primary") | .key + 1'
 ```
 
 `scan --json` lists results in the same order the printed listing numbers them,
@@ -404,8 +403,8 @@ be read — not that it is empty.
 
 Failures exit non-zero and, with `--json`, print `{"error": "..."}`.
 
-Full details: `man opensave` (shipped in the Linux tarball), or
-[`packaging/man/opensave.1`](packaging/man/opensave.1).
+Full details: `man savevault` (shipped in the Linux tarball), or
+[`packaging/man/savevault.1`](packaging/man/savevault.1).
 
 The daemon exposes a local REST + WebSocket API (P2P on port `8383`) that the
 desktop UI, the CLI and the Steam Deck plugin all drive, so anything the app
@@ -416,13 +415,13 @@ can do is scriptable.
 ```bash
 # Desktop app (needs Go 1.26+, Node 18+, and the Wails CLI)
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
-cd cmd/opensave-app && wails build
+cd cmd/savevault-app && wails build
 
 # Headless daemon + CLI
-go build ./cmd/opensave-cli
+go build ./cmd/savevault
 
 # Relay server (self-host)
-go build ./cmd/opensave-relay
+go build ./cmd/savevault-relay
 ```
 
 Run the test suite:
@@ -440,24 +439,24 @@ reads like a crash rather than a clock running out. CI uses the same 2700s.
 
 ## Self-hosting the relay
 
-The relay is stateless — it brokers room codes and proxies OAuth, and writes no save to disk. As of v2.4.0, what it forwards is encrypted end to end: saves are sealed with a key only your two devices hold, so a relay operator cannot read what passes through. What a relay can still see is that two devices are talking, roughly how much data moves, and which games by id. Ours is `wss://relay.opensave.org`; run your own to keep even that to yourself:
+The relay is stateless — it brokers room codes and proxies OAuth, and writes no save to disk. As of v2.4.0, what it forwards is encrypted end to end: saves are sealed with a key only your two devices hold, so a relay operator cannot read what passes through. What a relay can still see is that two devices are talking, roughly how much data moves, and which games by id. Ours is `wss://relay.example.com`; run your own to keep even that to yourself:
 
 ```bash
-./opensave-relay                     # listens on :8386
-PORT=10000 ./opensave-relay          # custom port
+./savevault-relay                     # listens on :8386
+PORT=10000 ./savevault-relay          # custom port
 docker build -f relay/Dockerfile .   # or as a container
 ```
 
-Point **Internet Sync → Relay server (self-hostable)** at your instance, on each device, then join the same room code on all of them. `opensave upnp 8386` forwards the port on UPnP-capable routers.
+Point **Internet Sync → Relay server (self-hostable)** at your instance, on each device, then join the same room code on all of them. `savevault upnp 8386` forwards the port on UPnP-capable routers.
 
 **The relay itself never joins a room** — it has no such command, and nothing to configure beyond the port. Rooms come into existence when your devices ask for them. Full walkthrough, including TLS and the reverse-proxy settings WebSockets need: **[docs/RELAY.md](docs/RELAY.md)**.
 
 ## Architecture
 
 ```
-cmd/opensave-app       Wails desktop app (daemon embedded + Svelte UI)
-cmd/opensave-cli       Headless daemon & CLI
-cmd/opensave-relay     Stateless WAN relay (room broker + OAuth proxy)
+cmd/savevault-app       Wails desktop app (daemon embedded + Svelte UI)
+cmd/savevault       Headless daemon & CLI
+cmd/savevault-relay     Stateless WAN relay (room broker + OAuth proxy)
 internal/
   store                SQLite persistence + legacy JSON import
   delta                Block hashing, manifest diff, patching
@@ -469,21 +468,21 @@ internal/
   api                  Local REST + WebSocket dashboard API
   daemon               Long-running service orchestration
   sysintegration       Tray, notifications, autostart
-opensave-decky-plugin  Steam Deck Game Mode plugin (Decky Loader)
+savevault-decky-plugin  Steam Deck Game Mode plugin (Decky Loader)
 ```
 
 The daemon speaks the same REST/WebSocket API and P2P wire protocol as the original JS app, so old and new versions interoperate during a rollout.
 
 ## Data & privacy
 
-Everything lives under `~/.opensave/`:
+Everything lives under `~/.savevault/`:
 
 | Path | What |
 |---|---|
-| `opensave.db` | SQLite store — tracked games, snapshots, pairings, settings |
+| `savevault.db` | SQLite store — tracked games, snapshots, pairings, settings |
 | `snapshots/` | Versioned save snapshots |
-| `opensave.log` | Activity log for diagnostics |
-| `opensave-db.json` | Legacy JS database (kept as an import backup) |
+| `savevault.log` | Activity log for diagnostics |
+| `savevault-db.json` | Legacy JS database (kept as an import backup) |
 
 No accounts, no telemetry, no analytics. See [PRIVACY.md](PRIVACY.md) for the full statement.
 
@@ -498,10 +497,10 @@ Over the relay, yes — end to end as of v2.4.0: save data is sealed with a key 
 LAN sync is direct, involves no relay, and is **not** encrypted: anything on the same network can read a save as it transfers. Treat a network you do not control as one that can see your saves.
 
 **What if two devices change the same save while offline?**
-OpenSave detects the divergence by sync lineage and asks you to keep yours, theirs, or both (on a new branch). It never silently overwrites.
+SaveVault detects the divergence by sync lineage and asks you to keep yours, theirs, or both (on a new branch). It never silently overwrites.
 
 **Does it work with non-Steam or emulated games?**
-Yes. If it writes a save to disk, OpenSave can track it — Steam, emulators, GOG, Epic, and repacks are auto-detected; anything else you can add by path.
+Yes. If it writes a save to disk, SaveVault can track it — Steam, emulators, GOG, Epic, and repacks are auto-detected; anything else you can add by path.
 
 **Can old (JS) and new (Go) versions talk to each other?**
 Yes, during the transition. They share the same wire protocol and your data migrates automatically.
@@ -512,13 +511,13 @@ Issues and pull requests are welcome. Please run `go test ./... -timeout 2700s` 
 
 ## Documentation
 
-- [Getting Started](GETTING_STARTED.md) — start here if OpenSave is new to you. The whole thing from a fresh install, in plain language
+- [Getting Started](GETTING_STARTED.md) — start here if SaveVault is new to you. The whole thing from a fresh install, in plain language
 - [User Guide](USER_GUIDE.md) — the reference: every feature, what each setting does, troubleshooting
 - [使用手册（简体中文）](USER_GUIDE.zh-CN.md) — 安装、添加游戏与模拟器、快照与恢复、云端备份（WebDAV 与 game-save）、批量操作
 - [Command line](docs/CLI.md) — the CLI end to end: the daemon model, which machine each command runs on, task-by-task sequences, scripting
 - [Running your own relay](docs/RELAY.md) — self-hosting, TLS, and the reverse-proxy settings WebSockets need
 - [Changelog](CHANGELOG.md) — release notes
-- [Privacy](PRIVACY.md) — what OpenSave does and doesn't do with your data
+- [Privacy](PRIVACY.md) — what SaveVault does and doesn't do with your data
 
 ## License
 

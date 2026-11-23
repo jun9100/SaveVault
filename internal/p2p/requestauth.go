@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Verification of relay request authentication.
@@ -272,11 +272,23 @@ func (e *Engine) verifyResponseAuth(peerID string, msg RelayMessage) bool {
 // plain HTTP — but the MAC underneath is the same construction, so a device
 // proves itself the same way whichever route a sync takes.
 const (
-	lanAuthPeerHeader  = "X-Opensave-Peer"
-	lanAuthNonceHeader = "X-Opensave-Nonce"
-	lanAuthTimeHeader  = "X-Opensave-Auth-Ms"
-	lanAuthHeader      = "X-Opensave-Auth"
+	lanAuthPeerHeader  = "X-SaveVault-Peer"
+	lanAuthNonceHeader = "X-SaveVault-Nonce"
+	lanAuthTimeHeader  = "X-SaveVault-Auth-Ms"
+	lanAuthHeader      = "X-SaveVault-Auth"
+
+	legacyLANAuthPeerHeader  = "X-Opensave-Peer"
+	legacyLANAuthNonceHeader = "X-Opensave-Nonce"
+	legacyLANAuthTimeHeader  = "X-Opensave-Auth-Ms"
+	legacyLANAuthHeader      = "X-Opensave-Auth"
 )
+
+func lanRequestHeader(r *http.Request, primary, legacy string) string {
+	if v := strings.TrimSpace(r.Header.Get(primary)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(r.Header.Get(legacy))
+}
 
 // localNodeID is this device's own id, as peers know it.
 func (e *Engine) localNodeID() string {
@@ -350,8 +362,8 @@ func lanPeerID(r *http.Request) string {
 const maxLANRequestBodyBytes = 16 << 20
 
 func (e *Engine) verifyLANRequest(r *http.Request) (peerID string, body []byte, ok bool) {
-	claimed := strings.TrimSpace(r.Header.Get(lanAuthPeerHeader))
-	mac := strings.TrimSpace(r.Header.Get(lanAuthHeader))
+	claimed := lanRequestHeader(r, lanAuthPeerHeader, legacyLANAuthPeerHeader)
+	mac := lanRequestHeader(r, lanAuthHeader, legacyLANAuthHeader)
 
 	if r.Body != nil {
 		raw, err := io.ReadAll(io.LimitReader(r.Body, maxLANRequestBodyBytes+1))
@@ -382,7 +394,7 @@ func (e *Engine) verifyLANRequest(r *http.Request) (peerID string, body []byte, 
 		return "", body, true
 	}
 
-	at, err := strconv.ParseInt(strings.TrimSpace(r.Header.Get(lanAuthTimeHeader)), 10, 64)
+	at, err := strconv.ParseInt(lanRequestHeader(r, lanAuthTimeHeader, legacyLANAuthTimeHeader), 10, 64)
 	if err != nil {
 		return "", body, false
 	}
@@ -396,7 +408,7 @@ func (e *Engine) verifyLANRequest(r *http.Request) (peerID string, body []byte, 
 		return "", body, false
 	}
 
-	nonce := strings.TrimSpace(r.Header.Get(lanAuthNonceHeader))
+	nonce := lanRequestHeader(r, lanAuthNonceHeader, legacyLANAuthNonceHeader)
 	if nonce == "" {
 		return "", body, false
 	}

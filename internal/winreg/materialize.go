@@ -19,15 +19,15 @@ import (
 // Measured before building this: a save folder holding nothing hashes to
 // e3b0c442… on every machine, which is exactly that failure.
 //
-// So a capture is written to a file in a directory OpenSave owns, and that
+// So a capture is written to a file in a directory SaveVault owns, and that
 // directory is registered as one of the game's extra save locations. From
 // there the existing machinery does the rest: the file is hashed, changes to it
 // move the game's content hash, and it is archived into the snapshot under
-// .opensave-locations/ — inside the zip, alongside the game's files.
+// .savevault-locations/ — inside the zip, alongside the game's files.
 //
 // The file is deliberately NOT dot-prefixed. A dot-named entry is excluded from
 // every manifest (delta.isDotEntry), which is the property that makes
-// .opensave-locations/ safe for an older build to extract — and the exact
+// .savevault-locations/ safe for an older build to extract — and the exact
 // property that would stop a registry capture from ever syncing.
 
 // FileName is what a materialised capture is called inside its location.

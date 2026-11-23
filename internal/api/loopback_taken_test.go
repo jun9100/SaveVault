@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
-// Another program listening on 127.0.0.1 at OpenSave's port. On Windows the
+// Another program listening on 127.0.0.1 at SaveVault's port. On Windows the
 // daemon's own listen on 0.0.0.0 still succeeds — the more specific address
 // wins — so the app, the CLI and the port check all dialled 127.0.0.1 and
 // reached that other program. Its web page came back where settings, games
@@ -61,6 +61,6 @@ func TestStartRefusesAPortAnotherProgramAnswersOnLoopback(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(resp.Header.Get("Content-Type"), "json") {
-		t.Errorf("the fallback port does not answer as OpenSave: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		t.Errorf("the fallback port does not answer as SaveVault: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 }

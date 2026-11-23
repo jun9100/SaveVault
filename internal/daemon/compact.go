@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/snapshot"
+	"github.com/jun9100/savevault/internal/snapshot"
 )
 
 // Older snapshots sharing the files they have in common (see
 // snapshot/shared.go): every few hours in the background, and on request
-// from Settings → Storage or `opensave storage --compact`.
+// from Settings → Storage or `savevault storage --compact`.
 
 const (
 	// compactFirst is how long after start the first pass runs, out of the

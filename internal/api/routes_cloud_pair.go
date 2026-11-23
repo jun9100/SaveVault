@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // normalizePairingTarget applies the same address rules as the provider and
@@ -109,7 +109,7 @@ func (s *Server) handleCloudPairClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	deviceName := strings.TrimSpace(settings.DeviceName)
 	if deviceName == "" {
-		deviceName = "OpenSave " + runtime.GOOS
+		deviceName = "SaveVault " + runtime.GOOS
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -117,7 +117,7 @@ func (s *Server) handleCloudPairClaim(w http.ResponseWriter, r *http.Request) {
 	result, err := s.Daemon.Cloud.ClaimPairing(ctx, server, code, cloud.PairDevice{
 		DeviceID:   deviceID,
 		DeviceName: deviceName,
-		Platform:   "opensave-" + runtime.GOOS,
+		Platform:   "savevault-" + runtime.GOOS,
 		Version:    version.Version,
 	})
 	if err != nil {

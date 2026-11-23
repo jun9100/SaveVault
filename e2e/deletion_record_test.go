@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A deleted save must stay deleted even when the shared lineage no longer

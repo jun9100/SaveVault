@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // halfWrittenPull sets up the case served.go exists for: both devices agreed

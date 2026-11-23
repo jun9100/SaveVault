@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // TrackGame checks that an id is free and then inserts; a peer's auto-track

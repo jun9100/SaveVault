@@ -13,7 +13,7 @@ import (
 	"github.com/huin/goupnp/dcps/internetgateway2"
 )
 
-const mappingDescription = "OpenSave Relay"
+const mappingDescription = "SaveVault Relay"
 
 // portMapper is the subset of IGD service methods we need, satisfied by
 // both WANIPConnection and WANPPPConnection clients across IGD v1/v2.

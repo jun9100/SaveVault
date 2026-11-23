@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.opensave.org/sitemap.xml
+Sitemap: https://jun9100.github.io/SaveVault/sitemap.xml

@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
-// NormalizeGameSaveURL validates a game-save service address. Native
-// OpenSave endpoints live below /v1/opensave and are appended by the client.
+// NormalizeGameSaveURL validates a SaveVault cloud service address. Native
+// endpoints live below /v1/savevault and are appended by the client.
 func NormalizeGameSaveURL(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -46,13 +46,15 @@ func NormalizeGameSaveURL(value string) (string, error) {
 			return "", fmt.Errorf("game-save service address cannot contain relative path segments")
 		}
 	}
-	// Accept both the service root and a copied native endpoint. Older builds
-	// used a WebDAV collection ending in /opensave, while current API examples
-	// often include /v1/opensave. Both must resolve to the service root before
-	// this provider appends its native endpoint.
-	if strings.HasSuffix(strings.ToLower(basePath), "/v1/opensave") {
+	// Accept the service root as well as copied native or WebDAV endpoint URLs
+	// (including legacy /v1/opensave or /opensave paths during upgrades).
+	lowerPath := strings.ToLower(basePath)
+	switch {
+	case strings.HasSuffix(lowerPath, "/v1/savevault"):
+		basePath = basePath[:len(basePath)-len("/v1/savevault")]
+	case strings.HasSuffix(lowerPath, "/v1/opensave"):
 		basePath = basePath[:len(basePath)-len("/v1/opensave")]
-	} else if strings.EqualFold(path.Base(basePath), "opensave") {
+	case strings.EqualFold(path.Base(basePath), "savevault"), strings.EqualFold(path.Base(basePath), "opensave"):
 		basePath = path.Dir(basePath)
 	}
 	parsed.Path = strings.TrimRight(basePath, "/")
@@ -88,7 +90,7 @@ func (p gameSave) fileType(name string) string {
 }
 
 func (p gameSave) endpoint(kind, name string) string {
-	return strings.TrimRight(p.cfg.URL, "/") + "/v1/opensave/files/" + url.PathEscape(kind) + "/" + url.PathEscape(name)
+	return strings.TrimRight(p.cfg.URL, "/") + "/v1/savevault/files/" + url.PathEscape(kind) + "/" + url.PathEscape(name)
 }
 
 // authorizeReadOnly intentionally omits device headers. A native archive or
@@ -106,20 +108,17 @@ func (p gameSave) authorizeReadOnly(req *http.Request) error {
 func (p gameSave) authorize(req *http.Request) error {
 	settings, err := p.s.Store.GetSettings()
 	if err != nil {
-		return fmt.Errorf("read OpenSave device identity: %w", err)
+		return fmt.Errorf("read SaveVault device identity: %w", err)
 	}
 	deviceID := strings.TrimSpace(settings.NodeID)
 	deviceName := strings.TrimSpace(settings.DeviceName)
 	if deviceName == "" {
-		deviceName = "OpenSave " + runtime.GOOS
+		deviceName = "SaveVault " + runtime.GOOS
 	}
-	platform := "opensave-" + runtime.GOOS
+	platform := "savevault-" + runtime.GOOS
 	encodedDeviceName := encodeDeviceNameHeader(deviceName)
 	req.Header.Set("Authorization", "Bearer "+p.token())
-	// Send both header families while clients and servers upgrade independently.
-	// game-save prefers X-OpenSave-*; released eden-syncd-compatible services
-	// only recognize the X-Eden-* equivalents.
-	for _, header := range []string{"X-OpenSave", "X-Eden"} {
+	for _, header := range []string{"X-SaveVault", "X-Eden"} {
 		req.Header.Set(header+"-Device-ID", deviceID)
 		req.Header.Set(header+"-Device-Name", encodedDeviceName)
 		req.Header.Set(header+"-Platform", platform)
@@ -173,7 +172,7 @@ func (p gameSave) list() ([]CloudFile, error) {
 	if p.token() == "" {
 		return nil, fmt.Errorf("game-save sync key is required")
 	}
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(p.cfg.URL, "/")+"/v1/opensave/files", nil)
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(p.cfg.URL, "/")+"/v1/savevault/files", nil)
 	if err != nil {
 		return nil, err
 	}

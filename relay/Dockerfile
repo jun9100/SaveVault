@@ -3,12 +3,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /opensave-relay ./cmd/opensave-relay
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /savevault-relay ./cmd/savevault-relay
 
 FROM alpine:3.20
 RUN adduser -D relay
 USER relay
-COPY --from=build /opensave-relay /usr/local/bin/opensave-relay
+COPY --from=build /savevault-relay /usr/local/bin/savevault-relay
 ENV PORT=10000
 EXPOSE 10000
-CMD ["opensave-relay"]
+CMD ["savevault-relay"]

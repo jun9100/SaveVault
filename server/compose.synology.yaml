@@ -3,7 +3,7 @@
 #
 # Synology Container Manager deployment. Copy this file as compose.yaml and create
 # a .env file beside it containing GAME_SAVE_TOKEN and GAME_SAVE_ADMIN_TOKEN.
-# Add GAME_SAVE_OPENSAVE_USERNAME and GAME_SAVE_OPENSAVE_PASSWORD to enable /opensave/.
+# Add GAME_SAVE_SAVEVAULT_USERNAME and GAME_SAVE_SAVEVAULT_PASSWORD to enable /savevault/.
 
 services:
   game-save:

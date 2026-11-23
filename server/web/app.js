@@ -13,21 +13,21 @@ const timeZone = (() => {
 
 const store = {
   overview: null,
-  overviewOpenSaveGames: null,
+  overviewSaveVaultGames: null,
   scopeDetail: null,
   events: null,
-  openSaveFiles: null,
-  openSaveScopes: null,
-  openSaveGames: null,
-  openSaveScopeDetail: null,
-  openSaveRetention: null,
-  openSaveTombstones: null,
-  openSaveRetentionPreview: null,
+  saveVaultFiles: null,
+  saveVaultScopes: null,
+  saveVaultGames: null,
+  saveVaultScopeDetail: null,
+  saveVaultRetention: null,
+  saveVaultTombstones: null,
+  saveVaultRetentionPreview: null,
   metaSettings: null,
   deviceTokens: null,
   pairings: null,
-  openSaveQuery: "",
-  openSaveType: "all",
+  saveVaultQuery: "",
+  saveVaultType: "all",
   savesQuery: "",
   savesSort: "recent",
   savesFilter: "all",
@@ -232,8 +232,8 @@ function storageSet(key, value) {
 function scopeByID(id) {
   return store.overview?.scopes.find((s) => s.id === id);
 }
-function openSaveGameNameForScope(type, gameId) {
-  const games = store.openSaveGames?.length ? store.openSaveGames : (store.overviewOpenSaveGames || []);
+function saveVaultGameNameForScope(type, gameId) {
+  const games = store.saveVaultGames?.length ? store.saveVaultGames : (store.overviewSaveVaultGames || []);
   const game = games.find((item) => (item.scopes || []).some((member) =>
     member.type === type && member.gameId === gameId));
   return game ? gameTitle(game) : "";
@@ -249,7 +249,7 @@ function gameCoverURL(game) {
 
 function gameKeyPath(gameKey, suffix = "") {
   const encoded = String(gameKey || "").split("/").map((part) => encodeURIComponent(part)).join("/");
-  return `opensave/games/${encoded}${suffix}`;
+  return `savevault/games/${encoded}${suffix}`;
 }
 
 function gameKeyIsFetchable(gameKey) {
@@ -261,36 +261,36 @@ function gameNameSourceLabel(source) {
   return { custom: "自定义", table: "名称表", client: "客户端", key: "游戏键" }[source] || source || "未知";
 }
 
-function allOpenSaveGames() {
-  return store.openSaveGames?.length ? store.openSaveGames : (store.overviewOpenSaveGames || []);
+function allSaveVaultGames() {
+  return store.saveVaultGames?.length ? store.saveVaultGames : (store.overviewSaveVaultGames || []);
 }
 
-function openSaveGameNameForKey(gameKey) {
-  const game = allOpenSaveGames().find((item) => item.key === gameKey);
+function saveVaultGameNameForKey(gameKey) {
+  const game = allSaveVaultGames().find((item) => item.key === gameKey);
   return game ? gameTitle(game, gameKey) : "";
 }
 
-function openSaveGameKeyForScope(type, gameId) {
-  const game = allOpenSaveGames().find((item) => (item.scopes || []).some((member) =>
+function saveVaultGameKeyForScope(type, gameId) {
+  const game = allSaveVaultGames().find((item) => (item.scopes || []).some((member) =>
     member.type === type && member.gameId === gameId));
   return game?.key || "";
 }
 
-function openSaveEventScope(item) {
-  const match = /^opensave:([^/]+)\/(.+)$/.exec(item.scope || "");
+function saveVaultEventScope(item) {
+  const match = /^(?:savevault|opensave):([^/]+)\/(.+)$/.exec(item.scope || "");
   if (!match) return null;
   return {
     type: match[1],
     gameId: match[2],
-    gameName: openSaveGameNameForScope(match[1], match[2]) || match[2],
+    gameName: saveVaultGameNameForScope(match[1], match[2]) || match[2],
   };
 }
 
 function scopeTitle(id) {
-  const openSave = /^opensave:([^/]+)\/(.+)$/.exec(id || "");
-  if (openSave) {
-    const name = openSaveGameNameForScope(openSave[1], openSave[2]);
-    return `SaveVault ${openSaveTypeLabel(openSave[1])} · ${name || openSave[2]}`;
+  const saveVault = /^(?:savevault|opensave):([^/]+)\/(.+)$/.exec(id || "");
+  if (saveVault) {
+    const name = saveVaultGameNameForScope(saveVault[1], saveVault[2]);
+    return `SaveVault ${saveVaultTypeLabel(saveVault[1])} · ${name || saveVault[2]}`;
   }
   const scope = scopeByID(id);
   return scope?.title || (id ? `存档 ${shortID(id, 8)}` : "未知存档");
@@ -364,8 +364,8 @@ function translateError(message) {
     "invalid retention policy": "保留策略无效",
     "a game link must be a key of the scope's own type": "只能关联到同一类型的游戏",
     "invalid game link": "游戏关联无效",
-    "OpenSave scope head changed": "当前版本已变化，请刷新后再试",
-    "OpenSave archive is missing for this snapshot": "该版本的归档文件已缺失，无法设为当前版本",
+    "SaveVault scope head changed": "当前版本已变化，请刷新后再试",
+    "SaveVault archive is missing for this snapshot": "该版本的归档文件已缺失，无法设为当前版本",
     "keep must be between 1 and 1000": "保留数量必须在 1 到 1000 之间",
     "name is too long": "名称过长（最多 80 个字符）",
     "device token limit reached": "设备令牌数量已达上限",
@@ -377,31 +377,31 @@ function translateError(message) {
     "only revoked device tokens can be deleted": "只能删除已吊销的设备令牌",
     "cover fetch is disabled": "上游封面抓取已关闭",
     "cover fetch is set by GAME_SAVE_COVER_FETCH": "抓取开关由环境变量 GAME_SAVE_COVER_FETCH 控制",
-    "OpenSave game key has no upstream cover": "这个游戏键没有可抓取的上游封面",
-    "invalid OpenSave game key": "游戏键无效",
-    "OpenSave scope not found": "SaveVault 范围不存在，可能已被删除",
-    "OpenSave snapshot not found": "这个版本不存在，可能已被清理",
-    "OpenSave tombstone not found": "找不到删除或合并记录",
-    "If-Match must contain the current OpenSave head": "缺少当前版本信息，请刷新后重试",
-    "OpenSave scope has merged members; unretire them first": "这个范围里还有已合并的存档位置，请先取消合并再删除",
-    "OpenSave scope already exists": "这个范围已经存在，无法恢复",
-    "OpenSave restore window has expired": "7 天恢复期已过，无法恢复",
-    "only a deleted OpenSave scope can be restored": "只有已删除的范围可以恢复",
-    "OpenSave trash directory not found": "回收区里找不到这个范围的数据",
-    "OpenSave archive already exists in the live directory": "原目录里已经存在同名归档，无法恢复",
+    "SaveVault game key has no upstream cover": "这个游戏键没有可抓取的上游封面",
+    "invalid SaveVault game key": "游戏键无效",
+    "SaveVault scope not found": "SaveVault 范围不存在，可能已被删除",
+    "SaveVault snapshot not found": "这个版本不存在，可能已被清理",
+    "SaveVault tombstone not found": "找不到删除或合并记录",
+    "If-Match must contain the current SaveVault head": "缺少当前版本信息，请刷新后重试",
+    "SaveVault scope has merged members; unretire them first": "这个范围里还有已合并的存档位置，请先取消合并再删除",
+    "SaveVault scope already exists": "这个范围已经存在，无法恢复",
+    "SaveVault restore window has expired": "7 天恢复期已过，无法恢复",
+    "only a deleted SaveVault scope can be restored": "只有已删除的范围可以恢复",
+    "SaveVault trash directory not found": "回收区里找不到这个范围的数据",
+    "SaveVault archive already exists in the live directory": "原目录里已经存在同名归档，无法恢复",
     "a retired scope must be unretired": "已合并的范围请使用“取消合并”",
-    "OpenSave retired tombstone not found": "找不到这个范围的合并记录",
-    "into must be a valid OpenSave game id": "目标游戏 ID 无效",
+    "SaveVault retired tombstone not found": "找不到这个范围的合并记录",
+    "into must be a valid SaveVault game id": "目标游戏 ID 无效",
     "a scope cannot be merged into itself": "不能把范围合并到自己",
     "a scope can only be merged into the same type": "只能合并到同一类型的范围",
-    "OpenSave scope already has a tombstone": "这个范围已被删除或合并",
-    "OpenSave scope already has merged members": "这个范围已经有合并进来的存档位置",
-    "target OpenSave scope was deleted": "目标范围已被删除或合并",
-    "target OpenSave scope has a tombstone": "目标范围已被删除或合并",
-    "target OpenSave scope not found": "目标范围不存在",
-    "invalid OpenSave snapshot id": "版本 ID 无效",
+    "SaveVault scope already has a tombstone": "这个范围已被删除或合并",
+    "SaveVault scope already has merged members": "这个范围已经有合并进来的存档位置",
+    "target SaveVault scope was deleted": "目标范围已被删除或合并",
+    "target SaveVault scope has a tombstone": "目标范围已被删除或合并",
+    "target SaveVault scope not found": "目标范围不存在",
+    "invalid SaveVault snapshot id": "版本 ID 无效",
     "lock note must be at most 120 characters without control characters": "备注最多 120 个字符，不能包含控制字符",
-    "invalid OpenSave retention settings": "自动保留设置无效，请检查版本数和天数",
+    "invalid SaveVault retention settings": "自动保留设置无效，请检查版本数和天数",
   };
   return map[message] || message;
 }
@@ -419,7 +419,7 @@ async function guarded(task, success) {
 }
 
 async function showGameMetaDialog(gameKey, refreshedMeta = null) {
-  const games = store.openSaveGames?.length ? store.openSaveGames : (store.overviewOpenSaveGames || []);
+  const games = store.saveVaultGames?.length ? store.saveVaultGames : (store.overviewSaveVaultGames || []);
   const game = games.find((item) => item.key === gameKey);
   if (!game) {
     toast("游戏已不存在，请刷新后再试", true);
@@ -548,7 +548,7 @@ async function loadOverview() {
   const query = timeZone ? `?tz=${encodeURIComponent(timeZone)}` : "";
   const [overview, games, metaSettings, events] = await Promise.all([
     api(`overview${query}`),
-    api("opensave/games").catch((error) => {
+    api("savevault/games").catch((error) => {
       if (error instanceof UnauthorizedError) throw error;
       return null;
     }),
@@ -562,12 +562,12 @@ async function loadOverview() {
     }),
   ]);
   store.overview = overview;
-  store.overviewOpenSaveGames = games ? (games.games || []) : null;
+  store.overviewSaveVaultGames = games ? (games.games || []) : null;
   store.metaSettings = metaSettings;
   if (events) store.events = events.events || [];
   $("#brand-version").textContent = overview.server.version;
   $("#nav-saves").textContent = overview.stats.scopes || "";
-  $("#nav-opensave").textContent = overview.stats.opensave_files || "";
+  $("#nav-savevault").textContent = overview.stats.savevault_files || "";
   $("#nav-devices").textContent = overview.stats.devices
     ? `${overview.stats.online_devices}/${overview.stats.devices}` : "";
 }
@@ -666,8 +666,8 @@ function todayUploadSummary(items) {
   for (const item of items || []) {
     if (item.kind !== "upload" || localDayKey(item.time) !== today) continue;
     uploads++;
-    const openSave = /^opensave:([^/]+)\/(.+)$/.exec(item.scope || "");
-    const gameKey = openSave ? openSaveGameKeyForScope(openSave[1], openSave[2]) : "";
+    const saveVault = /^savevault:([^/]+)\/(.+)$/.exec(item.scope || "");
+    const gameKey = saveVault ? saveVaultGameKeyForScope(saveVault[1], saveVault[2]) : "";
     if (gameKey || item.scope) games.add(gameKey || item.scope);
     if (item.device) devices.add(item.device);
   }
@@ -713,7 +713,7 @@ function uploadGroupTime(group) {
 
 function uploadGroupRow(group, { withDate = false } = {}) {
   const newest = group.items[0];
-  const info = openSaveEventScope(newest);
+  const info = saveVaultEventScope(newest);
   const gameName = info?.gameName || newest.scope || "未知游戏";
   const device = deviceName(group.device);
   const count = group.items.length;
@@ -744,7 +744,7 @@ const eventIcons = {
   tombstone_cleared: "trash", snapshot_lock: "lock", snapshot_unlock: "lock", retention: "broom",
   prune: "broom", prune_scope: "broom", device_new: "devices", device_removed: "devices",
   device_paired: "shield", device_token_created: "shield", device_token_revoked: "shield",
-  verify: "shield", settings: "tools", opensave_meta: "edit",
+  verify: "shield", settings: "tools", savevault_meta: "edit",
 };
 
 // Token events store "<id> <name>"; the name is optional and may contain spaces.
@@ -762,20 +762,20 @@ function tokenEventSubject(item) {
 function describeEvent(item) {
   const scope = `<b>${esc(scopeTitle(item.scope))}</b>`;
   const device = `<b>${esc(deviceName(item.device))}</b>`;
-  const openSave = openSaveEventScope(item);
-  const openSaveArchive = openSave && item.detail ? `归档 ${item.detail}` : "";
+  const saveVault = saveVaultEventScope(item);
+  const saveVaultArchive = saveVault && item.detail ? `归档 ${item.detail}` : "";
   switch (item.kind) {
     case "upload":
-      if (openSave) {
-        return [`${device} 上传了 ${scope}`, `${openSave.gameName} · ${deviceName(item.device)}`,
-          [`快照 ${item.snapshot || "—"}`, openSaveArchive].filter(Boolean).join(" · ")];
+      if (saveVault) {
+        return [`${device} 上传了 ${scope}`, `${saveVault.gameName} · ${deviceName(item.device)}`,
+          [`快照 ${item.snapshot || "—"}`, saveVaultArchive].filter(Boolean).join(" · ")];
       }
       return [`${device} 上传了 ${scope}`, item.detail || "", `快照 ${item.snapshot || "—"}`];
     case "conflict": return [`${device} 上传 ${scope} 时发生冲突`, "云端与冲突副本均已保留，请在快照历史中确认后设为当前版本",
-      [`快照 ${item.snapshot || "—"}`, openSaveArchive].filter(Boolean).join(" · ")];
+      [`快照 ${item.snapshot || "—"}`, saveVaultArchive].filter(Boolean).join(" · ")];
     case "rollback": return [`${scope} 已恢复到旧版本`, "设备执行“下载最新云存档”后才会应用到本地", `快照 ${item.snapshot || "—"}${item.detail ? ` · ${item.detail}` : ""}`];
     case "promote": return [`${scope} 的当前版本已切换`, `来源 ${device}`,
-      [`新当前版本 ${item.snapshot || "—"}`, openSaveArchive].filter(Boolean).join(" · ")];
+      [`新当前版本 ${item.snapshot || "—"}`, saveVaultArchive].filter(Boolean).join(" · ")];
     case "delete_snapshot": return [`删除了 ${scope} 的一个快照`, "快照记录已从云端移除", `快照 ${item.snapshot || "—"}`];
     case "delete_scope": {
       const match = /^(\S+) (\d+) versions, (\d+) bytes$/.exec(item.detail || "");
@@ -788,21 +788,21 @@ function describeEvent(item) {
     }
     case "restore_scope": {
       const match = /^(\S+) (\d+) versions$/.exec(item.detail || "");
-      return [`恢复了存档范围 <b>${esc(match?.[1] || openSaveEventScope(item)?.gameName || item.scope || "未知范围")}</b>`,
+      return [`恢复了存档范围 <b>${esc(match?.[1] || saveVaultEventScope(item)?.gameName || item.scope || "未知范围")}</b>`,
         match ? `${match[2]} 个版本已移回原处，设备可以继续同步` : "归档与版本已恢复",
         item.scope ? `范围 ${item.scope}` : ""];
     }
     case "retire_scope": {
       const match = /^(\S+) into (\S+)$/.exec(item.detail || "");
       const target = match?.[2] || "";
-      const targetName = openSaveGameNameForKey(target) || target;
+      const targetName = saveVaultGameNameForKey(target) || target;
       return [`把 ${match?.[1] ? `<b>${esc(match[1])}</b>` : scope} 合并到了 <b>${esc(targetName)}</b>`,
         "合并后只读，数据保留；仍在跟踪它的设备会被提示移除重复项",
         match ? `目标 ${target}` : item.detail || ""];
     }
-    case "unretire_scope": return [`取消了 <b>${esc(openSaveEventScope(item)?.gameName || item.scope || "未知范围")}</b> 的合并`,
+    case "unretire_scope": return [`取消了 <b>${esc(saveVaultEventScope(item)?.gameName || item.scope || "未知范围")}</b> 的合并`,
       "范围已恢复可写，下次同步会作为冲突副本上传，不会覆盖云端当前版本", `范围 ${item.scope || "—"}`];
-    case "tombstone_cleared": return [`解除了 <b>${esc(openSaveEventScope(item)?.gameName || item.scope || "未知范围")}</b> 的删除标记`,
+    case "tombstone_cleared": return [`解除了 <b>${esc(saveVaultEventScope(item)?.gameName || item.scope || "未知范围")}</b> 的删除标记`,
       "设备可以重新上传，作为新存档从头开始", `范围 ${item.scope || "—"}`];
     case "snapshot_lock": return [`锁定了 ${scope} 的一个版本`,
       item.detail ? `备注：${item.detail}` : "自动清理和手动清理都不会删除锁定的版本",
@@ -835,13 +835,13 @@ function describeEvent(item) {
     case "device_token_revoked": return [`吊销了设备令牌 ${tokenEventSubject(item)}`,
       item.device ? `设备 ${deviceName(item.device)} 的访问已立即失效` : "该令牌的访问已立即失效", item.detail || ""];
     case "verify": return ["完成完整性校验", (item.detail || "").replace(/checked (\d+) objects, (\d+) problems/, "检查 $1 个对象，发现 $2 个问题"), ""];
-    case "opensave_meta": {
+    case "savevault_meta": {
       const detail = String(item.detail || "");
       const cleared = /^(.*) custom-cover cleared$/.exec(detail);
       const split = detail.lastIndexOf(" ");
       const gameKey = cleared ? cleared[1] : split > 0 ? detail.slice(0, split) : detail;
       const action = cleared ? "cover-cleared" : split > 0 ? detail.slice(split + 1) : "";
-      const game = [...(store.openSaveGames || []), ...(store.overviewOpenSaveGames || [])]
+      const game = [...(store.saveVaultGames || []), ...(store.overviewSaveVaultGames || [])]
         .find((candidate) => candidate.key === gameKey);
       const name = game ? gameTitle(game, gameKey) : gameKey;
       if (action === "custom-name") return [`修改了 <b>${esc(name)}</b> 的名称`, "新的自定义名称会同步到所有设备", gameKey];
@@ -860,7 +860,7 @@ function describeEvent(item) {
         return [coverMatch[1] === "on" ? "上游封面抓取已开启" : "上游封面抓取已关闭",
           coverMatch[1] === "on" ? "服务端会从 Steam、Nintendo 和 tinfoil 缓存封面" : "服务端不会再发起新的上游封面请求", detail];
       }
-      if (/^opensave_retention=/.test(detail.trim())) {
+      if (/^savevault_retention=/.test(detail.trim())) {
         return ["更新了 SaveVault 自动保留设置", "新的自动保留规则会在下一次维护任务执行时生效", detail];
       }
       return ["更新了保留策略", detail.replace(/retention: keep (\d+) snapshots, (\d+) days/, "保留 $1 个快照 / $2 天（0 表示不限）"), ""];
@@ -871,9 +871,9 @@ function describeEvent(item) {
 
 function eventRow(item, { withDate = false } = {}) {
   const [text, detail, technical] = describeEvent(item);
-  const openSave = /^opensave:([^/]+)\/(.+)$/.exec(item.scope || "");
-  const link = openSave
-    ? `href="#/opensave/${encodeURIComponent(openSave[1])}/${encodeURIComponent(openSave[2])}"`
+  const saveVault = /^savevault:([^/]+)\/(.+)$/.exec(item.scope || "");
+  const link = saveVault
+    ? `href="#/savevault/${encodeURIComponent(saveVault[1])}/${encodeURIComponent(saveVault[2])}"`
     : item.scope && scopeByID(item.scope) ? `href="#/saves/${encodeURIComponent(item.scope)}"` : "";
   const tag = link ? "a" : "div";
   const plainText = text.replace(/<[^>]*>/g, "");
@@ -889,12 +889,12 @@ function eventRow(item, { withDate = false } = {}) {
 
 function renderOverview() {
   const { stats, server, activity, scopes, events, devices } = store.overview;
-  const openGames = store.overviewOpenSaveGames || [];
+  const openGames = store.overviewSaveVaultGames || [];
   const openVersions = openGames.reduce((sum, game) =>
     sum + (game.scopes || []).reduce((count, member) => count + (Number(member.snapshotCount) || 0), 0), 0);
   const totalGames = stats.scopes + openGames.length;
   const totalVersions = stats.snapshots + openVersions;
-  const totalStored = stats.stored_bytes + stats.opensave_bytes;
+  const totalStored = stats.stored_bytes + stats.savevault_bytes;
   const hasEden = stats.scopes > 0 || stats.snapshots > 0;
   const diskUsed = server.disk_total ? (server.disk_total - server.disk_free) / server.disk_total : 0;
   const meterClass = diskUsed > 0.95 ? "danger" : diskUsed > 0.85 ? "warn" : "";
@@ -910,8 +910,8 @@ function renderOverview() {
   ].filter(Boolean).join(" · ") || "还没有版本记录";
   const gameSub = [
     stats.scopes ? `${stats.scopes} 个 Eden 存档范围` : "",
-    openGames.length ? `${openGames.length} 款 SaveVault 游戏${stats.opensave_files ? ` · ${stats.opensave_files} 个归档` : ""}` : "",
-    !openGames.length && stats.opensave_files ? `${stats.opensave_files} 个 SaveVault 归档` : "",
+    openGames.length ? `${openGames.length} 款 SaveVault 游戏${stats.savevault_files ? ` · ${stats.savevault_files} 个归档` : ""}` : "",
+    !openGames.length && stats.savevault_files ? `${stats.savevault_files} 个 SaveVault 归档` : "",
   ].filter(Boolean).join(" · ") || "等待第一次存档同步";
   const gameHint = hasEden
     ? `${stats.named_scopes} 个 Eden 范围已识别 · ${Math.max(0, stats.scopes - stats.named_scopes)} 个待命名`
@@ -924,7 +924,7 @@ function renderOverview() {
   ].filter(Boolean).join(" · ");
   const storageSub = [
     hasEden || stats.stored_bytes ? `Eden ${formatBytes(stats.stored_bytes)}` : "",
-    openGames.length || stats.opensave_bytes ? `SaveVault ${formatBytes(stats.opensave_bytes)}` : "",
+    openGames.length || stats.savevault_bytes ? `SaveVault ${formatBytes(stats.savevault_bytes)}` : "",
   ].filter(Boolean).join(" · ") || "尚无存档数据";
 
   main.innerHTML = `
@@ -994,9 +994,9 @@ function recentBackups(scopes, games) {
     items.push({
       title: gameTitle(game, game.key),
       kind: "SaveVault",
-      device: latest.head ? openSaveSource({ deviceName: latest.head.deviceName, device: latest.head.device }) : "未确认来源",
+      device: latest.head ? saveVaultSource({ deviceName: latest.head.deviceName, device: latest.head.device }) : "未确认来源",
       at: latest.head?.receivedAt || latest.lastReceivedAt || game.lastReceivedAt,
-      href: openSaveScopeLink(latest),
+      href: saveVaultScopeLink(latest),
       cover: coverBlock(gameTitle(game, game.key), gameCoverURL(game), "sm"),
       detail: `${latest.snapshotCount || 0} 个版本 · ${latest.head?.archive || "暂无归档"}`,
     });
@@ -1128,49 +1128,49 @@ function saveCard(scope) {
     </div></a>`;
 }
 
-function openSaveTypeLabel(type) {
+function saveVaultTypeLabel(type) {
   if (type === "pc") return "PC 游戏";
   if (type === "switch") return "Switch";
   if (String(type).startsWith("emulator-")) return `模拟器 · ${String(type).slice("emulator-".length)}`;
   return type || "未分类";
 }
 
-function openSaveSource(file) {
+function saveVaultSource(file) {
   if (file.deviceName) return file.deviceName;
   if (file.device) return deviceName(file.device);
   return "旧归档（无来源记录）";
 }
 
-function openSaveScopeSource(scope) {
+function saveVaultScopeSource(scope) {
   if (scope.headDeviceName) return scope.headDeviceName;
   if (scope.headDevice) return deviceName(scope.headDevice);
   return "未确认来源";
 }
 
-function openSaveScopeLink(scope) {
-  return `#/opensave/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}`;
+function saveVaultScopeLink(scope) {
+  return `#/savevault/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}`;
 }
 
-function openSaveScopeBytes(type, gameId) {
-  const scope = (store.openSaveScopes || []).find((item) => item.type === type && item.gameId === gameId);
+function saveVaultScopeBytes(type, gameId) {
+  const scope = (store.saveVaultScopes || []).find((item) => item.type === type && item.gameId === gameId);
   return Number(scope?.archiveBytes) || 0;
 }
 
-const openSaveGameLinkLabel = { manual: "手动关联", auto: "自动识别", none: "未识别" };
+const saveVaultGameLinkLabel = { manual: "手动关联", auto: "自动识别", none: "未识别" };
 
-function openSaveLinkStatus(members) {
+function saveVaultLinkStatus(members) {
   if (members.some((member) => member.link === "auto")) return ["ok", "自动识别"];
   if (members.some((member) => member.link === "manual")) return ["accent", "手动关联"];
   return ["warn", "未识别"];
 }
 
-function openSaveGameDevices(members) {
+function saveVaultGameDevices(members) {
   const seen = new Set();
   const devices = [];
   for (const member of members) {
     const head = member.head;
     if (!head) continue;
-    const name = openSaveSource({ deviceName: head.deviceName, device: head.device });
+    const name = saveVaultSource({ deviceName: head.deviceName, device: head.device });
     const key = `${name}\u0000${head.platform || ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1179,7 +1179,7 @@ function openSaveGameDevices(members) {
   return devices;
 }
 
-function openSaveGameCard(game) {
+function saveVaultGameCard(game) {
   const members = game.scopes || [];
   const activeMembers = members.filter((member) => !member.retired);
   const retiredMembers = members.filter((member) => member.retired);
@@ -1187,29 +1187,29 @@ function openSaveGameCard(game) {
   const name = gameTitle(game, "未命名游戏");
   const conflicts = activeMembers.reduce((sum, member) => sum + (Number(member.conflictCount) || 0), 0);
   const versions = activeMembers.reduce((sum, member) => sum + (Number(member.snapshotCount) || 0), 0);
-  const bytes = activeMembers.reduce((sum, member) => sum + openSaveScopeBytes(member.type, member.gameId), 0);
-  const [linkKind, linkText] = activeMembers.length ? openSaveLinkStatus(activeMembers) : ["neutral", "已合并（只读）"];
-  const devices = openSaveGameDevices(activeMembers);
+  const bytes = activeMembers.reduce((sum, member) => sum + saveVaultScopeBytes(member.type, member.gameId), 0);
+  const [linkKind, linkText] = activeMembers.length ? saveVaultLinkStatus(activeMembers) : ["neutral", "已合并（只读）"];
+  const devices = saveVaultGameDevices(activeMembers);
   const latestAt = activeMembers.reduce((latest, member) => {
     const value = member.head?.receivedAt || member.lastReceivedAt;
     return value && (!latest || new Date(value) > new Date(latest)) ? value : latest;
   }, "");
   const memberDescription = (member) => {
     const received = member.head?.receivedAt || member.lastReceivedAt;
-    const source = member.head ? openSaveSource({ deviceName: member.head.deviceName, device: member.head.device }) : "未确认来源";
-    const memberBytes = formatBytes(openSaveScopeBytes(member.type, member.gameId));
+    const source = member.head ? saveVaultSource({ deviceName: member.head.deviceName, device: member.head.device }) : "未确认来源";
+    const memberBytes = formatBytes(saveVaultScopeBytes(member.type, member.gameId));
     if (member.retired) return `已合并（只读） · ${source} · ${relTime(received)} · ${member.snapshotCount || 0} 个版本`;
-    const memberLink = openSaveGameLinkLabel[member.link] || member.link;
+    const memberLink = saveVaultGameLinkLabel[member.link] || member.link;
     return `${source} · ${relTime(received)} · ${member.snapshotCount || 0} 个版本 · ${memberBytes} · ${memberLink}`;
   };
   return `<article class="card game-card">
-    <a class="game-card-hit" href="${first ? openSaveScopeLink(first) : "#/opensave"}" aria-label="打开 ${esc(name)}"></a>
+    <a class="game-card-hit" href="${first ? saveVaultScopeLink(first) : "#/savevault"}" aria-label="打开 ${esc(name)}"></a>
     <div class="game-card-head">
       ${coverBlock(name, gameCoverURL(game), "game-cover")}
       <div class="game-card-copy">
         <span class="game-card-name" title="${esc(name)}">${esc(name)}</span>
         <div class="game-card-tags">
-          <span class="tag">${esc(openSaveTypeLabel(game.type))}</span>
+          <span class="tag">${esc(saveVaultTypeLabel(game.type))}</span>
           ${statusChip(linkKind, linkText)}
           ${retiredMembers.length ? `<span class="tag">已合并 ${retiredMembers.length}</span>` : ""}
         </div>
@@ -1235,7 +1235,7 @@ function openSaveGameCard(game) {
       <span>${activeMembers.length} 个存档位置${retiredMembers.length ? ` · ${retiredMembers.length} 个已合并` : ""}</span>
     </div>
     ${members.length > 1 ? `<div class="game-members"><span class="game-members-label">存档位置</span>
-      ${members.map((member) => `<a class="game-member${member.retired ? " retired" : ""}" href="${openSaveScopeLink(member)}">
+      ${members.map((member) => `<a class="game-member${member.retired ? " retired" : ""}" href="${saveVaultScopeLink(member)}">
           <strong title="${esc(member.name || member.gameId)}">${esc(member.name || member.gameId)}${member.retired ? ` <span class="tag">已合并（只读）</span>` : ""}</strong>
           <small title="${esc(memberDescription(member))}">${esc(memberDescription(member))}</small>
           <code title="${esc(member.gameId)}">${esc(middleEllipsis(member.gameId, 18, 8))}</code>
@@ -1251,7 +1251,7 @@ function archiveFileGameID(file) {
 
 function archiveFileGroup(file) {
   const gameId = archiveFileGameID(file);
-  const game = (store.openSaveGames || []).find((item) => item.type === file.type &&
+  const game = (store.saveVaultGames || []).find((item) => item.type === file.type &&
     (item.scopes || []).some((member) => member.gameId === gameId));
   return {
     key: game?.key || `${file.type || "other"}/${gameId || "other"}`,
@@ -1261,7 +1261,7 @@ function archiveFileGroup(file) {
   };
 }
 
-function openSaveArchivePanel(files, query) {
+function saveVaultArchivePanel(files, query) {
   const groups = new Map();
   for (const file of files) {
     const group = archiveFileGroup(file);
@@ -1280,54 +1280,54 @@ function openSaveArchivePanel(files, query) {
         <div class="archive-group-head">
           ${coverBlock(group.name, group.cover || "", "sm")}
           <div class="archive-group-copy"><strong title="${esc(group.name)}">${esc(group.name)}</strong>
-            ${group.type ? `<span class="tag">${esc(openSaveTypeLabel(group.type))}</span>` : ""}</div>
+            ${group.type ? `<span class="tag">${esc(saveVaultTypeLabel(group.type))}</span>` : ""}</div>
           <span class="archive-group-count">${group.files.length} 个归档</span>
         </div>
-        <div class="archive-list">${group.files.map(openSaveRow).join("")}</div>
+        <div class="archive-list">${group.files.map(saveVaultRow).join("")}</div>
       </section>`).join("")
       : emptyState("没有匹配的归档", "调整关键词或类型筛选后再试。", "archive")}</div>
   </details>`;
 }
 
-function openSaveRow(file) {
+function saveVaultRow(file) {
   const timestamp = file.uploadedAt || file.createdTime;
   const hash = file.sha256 || "未记录";
   const tooltip = `文件名：${file.name}\nSHA-256：${hash}\n上传时间：${absTime(timestamp)}`;
   return `<div class="archive-row" title="${esc(tooltip)}">
     <span class="archive-icon">${icon("archive")}</span>
     <div class="archive-main">
-      <div class="archive-line"><strong>${esc(openSaveSource(file))}</strong><span class="sep">·</span>
+      <div class="archive-line"><strong>${esc(saveVaultSource(file))}</strong><span class="sep">·</span>
         ${relAbsTime(timestamp)}<span class="sep">·</span><span>${formatBytes(file.sizeBytes)}</span></div>
       <span class="archive-name mono" title="${esc(tooltip)}">${esc(middleEllipsis(file.name, 24, 16))}</span>
     </div>
-    <span class="tag accent archive-type">${esc(openSaveTypeLabel(file.type))}</span>
-    ${file.type ? openSaveDownloadLink(file.type, file.name) : ""}
+    <span class="tag accent archive-type">${esc(saveVaultTypeLabel(file.type))}</span>
+    ${file.type ? saveVaultDownloadLink(file.type, file.name) : ""}
   </div>`;
 }
 
-async function renderOpenSave() {
-  if (!store.openSaveFiles || !store.openSaveScopes || !store.openSaveGames) {
+async function renderSaveVault() {
+  if (!store.saveVaultFiles || !store.saveVaultScopes || !store.saveVaultGames) {
     main.innerHTML = `<div class="skeleton"></div>`;
-    const [files, scopes, games] = await Promise.all([api("opensave/files"), api("opensave/scopes"), api("opensave/games")]);
-    store.openSaveFiles = files.files || [];
-    store.openSaveScopes = scopes.scopes || [];
-    store.openSaveGames = games.games || [];
-    if (currentRoute().name !== "opensave") return;
+    const [files, scopes, games] = await Promise.all([api("savevault/files"), api("savevault/scopes"), api("savevault/games")]);
+    store.saveVaultFiles = files.files || [];
+    store.saveVaultScopes = scopes.scopes || [];
+    store.saveVaultGames = games.games || [];
+    if (currentRoute().name !== "savevault") return;
   }
-  const files = store.openSaveFiles;
-  const scopes = store.openSaveScopes;
-  const games = store.openSaveGames;
+  const files = store.saveVaultFiles;
+  const scopes = store.saveVaultScopes;
+  const games = store.saveVaultGames;
   const types = [...new Set([...files, ...games].map((item) => item.type).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  if (store.openSaveType !== "all" && !types.includes(store.openSaveType)) store.openSaveType = "all";
-  const query = store.openSaveQuery.trim().toLowerCase();
+  if (store.saveVaultType !== "all" && !types.includes(store.saveVaultType)) store.saveVaultType = "all";
+  const query = store.saveVaultQuery.trim().toLowerCase();
   const visible = files.filter((file) => {
-    if (store.openSaveType !== "all" && file.type !== store.openSaveType) return false;
+    if (store.saveVaultType !== "all" && file.type !== store.saveVaultType) return false;
     if (!query) return true;
-    return [file.name, openSaveSource(file), archiveFileGroup(file).name].join(" ").toLowerCase().includes(query);
+    return [file.name, saveVaultSource(file), archiveFileGroup(file).name].join(" ").toLowerCase().includes(query);
   });
   visible.sort((left, right) => new Date(right.uploadedAt || right.createdTime) - new Date(left.uploadedAt || left.createdTime));
   const visibleGames = games.filter((game) => {
-    if (store.openSaveType !== "all" && game.type !== store.openSaveType) return false;
+    if (store.saveVaultType !== "all" && game.type !== store.saveVaultType) return false;
     const searchable = [gameTitle(game), game.name, game.key, ...(game.scopes || []).flatMap((member) =>
       [member.name, member.gameId, member.head?.deviceName, member.head?.device])].join(" ").toLowerCase();
     return !query || searchable.includes(query);
@@ -1336,41 +1336,41 @@ async function renderOpenSave() {
   main.innerHTML = `
     ${pageHead("SaveVault 存档", `${games.length} 款游戏 · ${scopes.length} 个同步范围 · ${files.length} 个不可变归档`,
       `<div class="head-tools">
-        <label class="search">${icon("search")}<input type="search" id="opensave-search" aria-label="搜索游戏、范围或归档" placeholder="搜索游戏、范围或设备" value="${esc(store.openSaveQuery)}"></label>
-        <select id="opensave-type" aria-label="游戏类型"><option value="all">全部类型</option>
-          ${types.map((type) => `<option value="${esc(type)}">${esc(openSaveTypeLabel(type))}</option>`).join("")}</select>
+        <label class="search">${icon("search")}<input type="search" id="savevault-search" aria-label="搜索游戏、范围或归档" placeholder="搜索游戏、范围或设备" value="${esc(store.saveVaultQuery)}"></label>
+        <select id="savevault-type" aria-label="游戏类型"><option value="all">全部类型</option>
+          ${types.map((type) => `<option value="${esc(type)}">${esc(saveVaultTypeLabel(type))}</option>`).join("")}</select>
       </div>`)}
     <section class="game-grid">
-      ${visibleGames.length ? visibleGames.map(openSaveGameCard).join("")
+      ${visibleGames.length ? visibleGames.map(saveVaultGameCard).join("")
         : `<div class="card grid-empty">${emptyState(games.length ? "没有匹配的游戏" : "还没有同步范围",
           games.length ? "尝试其他关键词或类型筛选。" : "客户端完成首次同步后会显示在这里。", "gamepad")}</div>`}
     </section>
-    ${openSaveArchivePanel(visible, query)}`;
+    ${saveVaultArchivePanel(visible, query)}`;
 
-  const typeSelect = $("#opensave-type");
-  typeSelect.value = store.openSaveType;
-  typeSelect.onchange = (event) => { store.openSaveType = event.target.value; renderOpenSave(); };
-  const search = $("#opensave-search");
+  const typeSelect = $("#savevault-type");
+  typeSelect.value = store.saveVaultType;
+  typeSelect.onchange = (event) => { store.saveVaultType = event.target.value; renderSaveVault(); };
+  const search = $("#savevault-search");
   search.oninput = () => {
-    store.openSaveQuery = search.value;
+    store.saveVaultQuery = search.value;
     const position = search.selectionStart;
-    renderOpenSave();
-    const next = $("#opensave-search");
+    renderSaveVault();
+    const next = $("#savevault-search");
     next.focus();
     next.setSelectionRange(position, position);
   };
 }
 
-function openSaveDownloadLink(type, archive) {
-  return `<a class="icon-btn" href="api/opensave/files/${encodeURIComponent(type)}/${encodeURIComponent(archive)}/download" title="下载归档（ZIP）" aria-label="下载归档 ${esc(archive)}" download>${icon("download")}</a>`;
+function saveVaultDownloadLink(type, archive) {
+  return `<a class="icon-btn" href="api/savevault/files/${encodeURIComponent(type)}/${encodeURIComponent(archive)}/download" title="下载归档（ZIP）" aria-label="下载归档 ${esc(archive)}" download>${icon("download")}</a>`;
 }
 
-function openSaveArchiveSize(archive, type = "") {
-  const file = (store.openSaveFiles || []).find((item) => item.name === archive && (!type || item.type === type));
+function saveVaultArchiveSize(archive, type = "") {
+  const file = (store.saveVaultFiles || []).find((item) => item.name === archive && (!type || item.type === type));
   return file ? formatBytes(file.sizeBytes) : "大小未知";
 }
 
-function openSaveSnapshotRow(snapshot, headID, type) {
+function saveVaultSnapshotRow(snapshot, headID, type) {
   const timestamp = snapshot.receivedAt || snapshot.createdAt;
   const source = snapshot.deviceName || (snapshot.device ? deviceName(snapshot.device) : "未确认来源");
   const current = snapshot.id === headID && !snapshot.conflict;
@@ -1391,7 +1391,7 @@ function openSaveSnapshotRow(snapshot, headID, type) {
     <div class="os-snap-main">
       <div class="os-snap-heading">${state}<strong>${esc(source)}</strong>
         <span class="sep">·</span>${relAbsTime(timestamp)}
-        <span class="sep">·</span><span class="snap-size">${esc(openSaveArchiveSize(snapshot.archive, type))}</span>
+        <span class="sep">·</span><span class="snap-size">${esc(saveVaultArchiveSize(snapshot.archive, type))}</span>
         ${snapshot.locked ? `<span class="os-lock-note" title="${esc(snapshot.lockNote || "已锁定")}">${icon("lock")}${esc(snapshot.lockNote || "已锁定")}</span>` : ""}</div>
       <details class="os-snap-tech-details"${techOpen ? " open" : ""}>
         <summary><span>详情</span><span class="detail-chevron">${icon("arrow")}</span></summary>
@@ -1406,26 +1406,26 @@ function openSaveSnapshotRow(snapshot, headID, type) {
     </div>
     <div class="os-snap-actions">
       ${snapshot.locked
-        ? `<button class="icon-btn" type="button" data-action="unlock-opensave" data-id="${esc(snapshot.id)}" title="${esc(snapshot.lockNote ? `已锁定：${snapshot.lockNote}` : "已锁定")}，点击解锁" aria-label="解锁版本">${icon("lock")}</button>`
-        : `<button class="icon-btn" type="button" data-action="lock-opensave" data-id="${esc(snapshot.id)}" title="锁定这个版本（清理时永远保留）" aria-label="锁定版本">${icon("lock")}</button>`}
-      ${current ? "" : `<button class="icon-btn" type="button" data-action="promote-opensave" data-id="${esc(snapshot.id)}" data-head="${esc(headID || "")}" title="设为当前版本" aria-label="设为当前版本">${icon("restore")}</button>`}
-      ${openSaveDownloadLink(type, snapshot.archive)}
+        ? `<button class="icon-btn" type="button" data-action="unlock-savevault" data-id="${esc(snapshot.id)}" title="${esc(snapshot.lockNote ? `已锁定：${snapshot.lockNote}` : "已锁定")}，点击解锁" aria-label="解锁版本">${icon("lock")}</button>`
+        : `<button class="icon-btn" type="button" data-action="lock-savevault" data-id="${esc(snapshot.id)}" title="锁定这个版本（清理时永远保留）" aria-label="锁定版本">${icon("lock")}</button>`}
+      ${current ? "" : `<button class="icon-btn" type="button" data-action="promote-savevault" data-id="${esc(snapshot.id)}" data-head="${esc(headID || "")}" title="设为当前版本" aria-label="设为当前版本">${icon("restore")}</button>`}
+      ${saveVaultDownloadLink(type, snapshot.archive)}
     </div>
   </div>`;
 }
 
-function clearOpenSaveCaches() {
-  store.openSaveScopes = null;
-  store.openSaveGames = null;
-  store.openSaveScopeDetail = null;
-  store.openSaveTombstones = null;
-  store.openSaveRetentionPreview = null;
+function clearSaveVaultCaches() {
+  store.saveVaultScopes = null;
+  store.saveVaultGames = null;
+  store.saveVaultScopeDetail = null;
+  store.saveVaultTombstones = null;
+  store.saveVaultRetentionPreview = null;
 }
 
-function openSaveManageCard(scope, retired, gameName) {
+function saveVaultManageCard(scope, retired, gameName) {
   const type = encodeURIComponent(scope.type);
   const gameId = encodeURIComponent(scope.gameId);
-  const exportURL = `api/opensave/scopes/${type}/${gameId}/export`;
+  const exportURL = `api/savevault/scopes/${type}/${gameId}/export`;
   return `<section class="card scope-side-card scope-manage">
     <div class="card-head"><div><h2>管理这个范围</h2><p>下载、合并或删除 · 所有操作都会记入活动</p></div>
       ${retired ? statusChip("neutral", "已合并（只读）") : statusChip("ok", "可写")}</div>
@@ -1435,15 +1435,15 @@ function openSaveManageCard(scope, retired, gameName) {
       <div class="form-actions manage-actions">
         <a class="btn" href="${exportURL}" download>${icon("download")}下载全部版本（ZIP）</a>
         ${retired
-          ? `<button class="btn" type="button" data-action="unretire-opensave">${icon("restore")}取消合并</button>`
-          : `<button class="btn" type="button" data-action="merge-opensave">${icon("archive")}合并到…</button>
-             <button class="btn danger" type="button" data-action="delete-opensave">${icon("trash")}删除这个范围</button>`}
+          ? `<button class="btn" type="button" data-action="unretire-savevault">${icon("restore")}取消合并</button>`
+          : `<button class="btn" type="button" data-action="merge-savevault">${icon("archive")}合并到…</button>
+             <button class="btn danger" type="button" data-action="delete-savevault">${icon("trash")}删除这个范围</button>`}
       </div>
     </div>
   </section>`;
 }
 
-async function showOpenSaveMergeDialog(scope) {
+async function showSaveVaultMergeDialog(scope) {
   let removeEscape = null;
   const { root, close } = modal(`
     <h2>合并到另一个范围</h2>
@@ -1468,11 +1468,11 @@ async function showOpenSaveMergeDialog(scope) {
     error.textContent = "";
     confirm.disabled = true;
     try {
-      await api(`opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/retire`,
+      await api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/retire`,
         { method: "POST", body: { into: selected.value } });
       close();
       toast("已合并为只读");
-      clearOpenSaveCaches();
+      clearSaveVaultCaches();
       await refresh();
     } catch (caught) {
       if (caught instanceof UnauthorizedError) { close(); showLogin(); return; }
@@ -1482,7 +1482,7 @@ async function showOpenSaveMergeDialog(scope) {
   };
   try {
     const [scopesData, gamesData, tombstonesData] = await Promise.all([
-      api("opensave/scopes"), api("opensave/games"), api("opensave/tombstones"),
+      api("savevault/scopes"), api("savevault/games"), api("savevault/tombstones"),
     ]);
     if (!document.contains(list)) return;
     const games = gamesData.games || [];
@@ -1518,7 +1518,7 @@ async function showOpenSaveMergeDialog(scope) {
   }
 }
 
-function showOpenSaveDeleteDialog(scope) {
+function showSaveVaultDeleteDialog(scope) {
   const snapshots = scope.snapshots || [];
   const conflictCount = Number(scope.conflictCount) || snapshots.filter((item) => item.conflict).length;
   const lockedCount = snapshots.filter((item) => item.locked).length;
@@ -1534,7 +1534,7 @@ function showOpenSaveDeleteDialog(scope) {
     if (!previous || time > previous.at) devices.set(key, { name, at: time });
   }
   const recentDevices = [...devices.values()].sort((left, right) => right.at - left.at);
-  const exportURL = `api/opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/export`;
+  const exportURL = `api/savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/export`;
   let headID = scope.head?.id || "";
   let removeEscape = null;
   const { root, close } = modal(`
@@ -1555,7 +1555,7 @@ function showOpenSaveDeleteDialog(scope) {
       <a class="btn" href="${exportURL}" download>${icon("download")}先下载全部版本（ZIP）</a>
     </div>
     <label class="field delete-confirm"><span>输入游戏 ID <code>${esc(scope.gameId)}</code> 以确认删除</span>
-      <input type="text" id="opensave-delete-confirm" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${esc(scope.gameId)}">
+      <input type="text" id="savevault-delete-confirm" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${esc(scope.gameId)}">
     </label>
     <p class="form-error" data-delete-error role="alert"></p>
     <div class="modal-actions">
@@ -1566,7 +1566,7 @@ function showOpenSaveDeleteDialog(scope) {
     onClose: () => { if (removeEscape) removeEscape(); },
   });
   removeEscape = closeOnEscape(close);
-  const input = root.querySelector("#opensave-delete-confirm");
+  const input = root.querySelector("#savevault-delete-confirm");
   const error = root.querySelector("[data-delete-error]");
   const remove = root.querySelector("[data-delete-confirm]");
   root.querySelector("[data-delete-cancel]").onclick = close;
@@ -1576,12 +1576,12 @@ function showOpenSaveDeleteDialog(scope) {
     error.textContent = "";
     remove.disabled = true;
     try {
-      await api(`opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}`,
+      await api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}`,
         { method: "DELETE", headers: { "If-Match": `"${headID}"` } });
       close();
       toast("存档范围已删除，7 天内可恢复");
-      clearOpenSaveCaches();
-      location.hash = "#/opensave";
+      clearSaveVaultCaches();
+      location.hash = "#/savevault";
       await refresh();
     } catch (caught) {
       if (caught instanceof UnauthorizedError) { close(); showLogin(); return; }
@@ -1603,30 +1603,30 @@ function showOpenSaveDeleteDialog(scope) {
   input.focus();
 }
 
-function openSavePruneCard() {
-  return `<section class="card scope-side-card opensave-prune">
+function saveVaultPruneCard() {
+  return `<section class="card scope-side-card savevault-prune">
     <div class="card-head"><div><h2>清理旧版本</h2><p>手动执行 · 不自动清理</p></div></div>
     <div class="card-body form">
       <p class="hint">保留最近若干个普通版本；当前版本和冲突副本不会被删除，冲突副本指向的版本也会保留。锁定的版本不会被清理。删除后无法恢复，建议先预览。</p>
       <div class="inline-fields">
         <label class="field"><span>保留最近</span>
-          <input type="number" id="opensave-prune-keep" min="1" max="1000" step="1" value="20">
+          <input type="number" id="savevault-prune-keep" min="1" max="1000" step="1" value="20">
           <small>个普通版本（1–1000）</small></label>
       </div>
       <div class="form-actions">
-        <button class="btn" type="button" id="opensave-prune-preview">${icon("search")}预览</button>
-        <button class="btn danger" type="button" id="opensave-prune-run">${icon("broom")}清理</button>
+        <button class="btn" type="button" id="savevault-prune-preview">${icon("search")}预览</button>
+        <button class="btn danger" type="button" id="savevault-prune-run">${icon("broom")}清理</button>
       </div>
-      <div class="report" id="opensave-prune-report" hidden></div>
+      <div class="report" id="savevault-prune-report" hidden></div>
     </div>
   </section>`;
 }
 
-function bindOpenSavePrune(scope) {
-  const input = $("#opensave-prune-keep");
-  const preview = $("#opensave-prune-preview");
-  const run = $("#opensave-prune-run");
-  const report = $("#opensave-prune-report");
+function bindSaveVaultPrune(scope) {
+  const input = $("#savevault-prune-keep");
+  const preview = $("#savevault-prune-preview");
+  const run = $("#savevault-prune-run");
+  const report = $("#savevault-prune-report");
   if (!input || !preview || !run || !report) return;
 
   const readKeep = () => {
@@ -1643,7 +1643,7 @@ function bindOpenSavePrune(scope) {
     run.disabled = true;
     try {
       const result = await guarded(
-        () => api(`opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/prune`,
+        () => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/prune`,
           { method: "POST", body: { keep, dryRun } }),
         dryRun ? "" : "旧版本已清理");
       if (!result) return;
@@ -1653,9 +1653,9 @@ function bindOpenSavePrune(scope) {
         <span>${dryRun ? "将删除" : "已删除"} ${result.removed} 个旧版本，${dryRun ? "可释放" : "已释放"} ${formatBytes(result.freedBytes)}，
         保留 ${result.kept} 个版本${result.failed ? `，${result.failed} 个归档删除失败` : ""}。</span>`;
       if (!dryRun) {
-        store.openSaveScopeDetail = null;
-        store.openSaveScopes = null;
-        store.openSaveGames = null;
+        store.saveVaultScopeDetail = null;
+        store.saveVaultScopes = null;
+        store.saveVaultGames = null;
         await refresh();
       }
     } finally {
@@ -1678,36 +1678,36 @@ function bindOpenSavePrune(scope) {
   };
 }
 
-async function renderOpenSaveScope(type, gameId) {
+async function renderSaveVaultScope(type, gameId) {
   const cacheKey = `${type}\u0000${gameId}`;
-  if (!store.openSaveScopeDetail || store.openSaveScopeDetail.cacheKey !== cacheKey) {
+  if (!store.saveVaultScopeDetail || store.saveVaultScopeDetail.cacheKey !== cacheKey) {
     main.innerHTML = `<div class="skeleton"></div>`;
     const [detail, games, files] = await Promise.all([
-      api(`opensave/scopes/${encodeURIComponent(type)}/${encodeURIComponent(gameId)}`),
-      store.openSaveGames ? { games: store.openSaveGames } : api("opensave/games"),
-      store.openSaveFiles ? { files: store.openSaveFiles } : api("opensave/files"),
+      api(`savevault/scopes/${encodeURIComponent(type)}/${encodeURIComponent(gameId)}`),
+      store.saveVaultGames ? { games: store.saveVaultGames } : api("savevault/games"),
+      store.saveVaultFiles ? { files: store.saveVaultFiles } : api("savevault/files"),
     ]);
-    store.openSaveGames = games.games || [];
-    store.openSaveFiles = files.files || [];
-    store.openSaveScopeDetail = { ...detail, cacheKey };
-    if (currentRoute().name !== "opensaveScope") return;
+    store.saveVaultGames = games.games || [];
+    store.saveVaultFiles = files.files || [];
+    store.saveVaultScopeDetail = { ...detail, cacheKey };
+    if (currentRoute().name !== "savevaultScope") return;
   }
-  const scope = store.openSaveScopeDetail;
+  const scope = store.saveVaultScopeDetail;
   const head = scope.head;
   const snapshots = scope.snapshots || [];
-  const game = openSaveScopeGame(scope);
+  const game = saveVaultScopeGame(scope);
   const member = game?.scopes.find((item) => item.type === scope.type && item.gameId === scope.gameId);
   const gameName = game ? gameTitle(game, member?.name || scope.gameId) : (member?.name || scope.gameId);
   const retired = Boolean(member?.retired);
-  const [linkKind, linkText] = retired ? ["neutral", "已合并（只读）"] : member ? openSaveLinkStatus([member]) : ["warn", "未识别"];
+  const [linkKind, linkText] = retired ? ["neutral", "已合并（只读）"] : member ? saveVaultLinkStatus([member]) : ["warn", "未识别"];
   const received = head?.receivedAt || scope.lastReceivedAt;
   main.innerHTML = `
-    <a class="back" href="#/opensave">${icon("back")}返回 SaveVault 存档</a>
+    <a class="back" href="#/savevault">${icon("back")}返回 SaveVault 存档</a>
     <section class="card scope-hero">
       ${coverBlock(gameName, gameCoverURL(game), "lg")}
       <div class="scope-hero-copy">
         <div class="scope-hero-tags">
-          <span class="tag accent">${esc(openSaveTypeLabel(scope.type))}</span>
+          <span class="tag accent">${esc(saveVaultTypeLabel(scope.type))}</span>
           ${statusChip(linkKind, linkText)}
           ${retired ? statusChip("neutral", "只读，不再接受上传") : scope.conflictCount ? statusChip("danger", `${scope.conflictCount} 个冲突副本`) : statusChip("ok", "无未解决冲突")}
           ${game ? `<button class="btn sm game-meta-button" type="button" data-action="edit-game-meta" data-key="${esc(game.key)}">${icon("edit")}编辑名称与封面</button>` : ""}
@@ -1718,7 +1718,7 @@ async function renderOpenSaveScope(type, gameId) {
           <button class="icon-btn" type="button" data-copy="${esc(scope.gameId)}" title="复制游戏 ID" aria-label="复制游戏 ID">${icon("copy")}</button>
         </div>
         <p class="scope-current">${icon("devices")}${head
-          ? `当前版本 · <b>${esc(openSaveScopeSource(scope))}</b> · ${relAbsTime(received)} · <code title="${esc(head.id)}">${esc(shortID(head.id, 18))}</code>`
+          ? `当前版本 · <b>${esc(saveVaultScopeSource(scope))}</b> · ${relAbsTime(received)} · <code title="${esc(head.id)}">${esc(shortID(head.id, 18))}</code>`
           : "当前版本 · 尚未建立"}</p>
       </div>
       <div class="scope-hero-stats">
@@ -1731,30 +1731,30 @@ async function renderOpenSaveScope(type, gameId) {
       <div class="card-head"><div><h2>版本记录</h2><p>权威版本由父链与 CAS 确认 · 最新在上</p></div>
         <span class="hint">${snapshots.length} 个版本</span></div>
       <div class="card-body os-timeline">${snapshots.length
-        ? snapshots.map((item) => openSaveSnapshotRow(item, head?.id, scope.type)).join("")
+        ? snapshots.map((item) => saveVaultSnapshotRow(item, head?.id, scope.type)).join("")
         : emptyState("还没有版本", "客户端完成首次原生存档备份后会显示在这里。", "archive")}</div>
     </section>
     <div class="scope-lower">
-      ${openSaveScopeGameCard(scope)}
-      ${openSavePruneCard()}
-      ${openSaveManageCard(scope, retired, gameName)}
+      ${saveVaultScopeGameCard(scope)}
+      ${saveVaultPruneCard()}
+      ${saveVaultManageCard(scope, retired, gameName)}
     </div>`;
-  bindOpenSaveScopeGameForm(scope);
-  bindOpenSavePrune(scope);
+  bindSaveVaultScopeGameForm(scope);
+  bindSaveVaultPrune(scope);
   syncTimelineDetails();
 }
 
-function openSaveScopeGame(scope) {
-  return (store.openSaveGames || []).find((game) =>
+function saveVaultScopeGame(scope) {
+  return (store.saveVaultGames || []).find((game) =>
     (game.scopes || []).some((member) => member.type === scope.type && member.gameId === scope.gameId));
 }
 
-function openSaveScopeGameCard(scope) {
-  const game = openSaveScopeGame(scope);
+function saveVaultScopeGameCard(scope) {
+  const game = saveVaultScopeGame(scope);
   const member = game?.scopes.find((item) => item.type === scope.type && item.gameId === scope.gameId);
   const others = (game?.scopes || []).filter((item) => item !== member);
-  const sameType = (store.openSaveGames || []).filter((item) => item.type === scope.type && item.key !== game?.key);
-  const [linkKind, linkText] = member ? openSaveLinkStatus([member]) : ["warn", "未识别"];
+  const sameType = (store.saveVaultGames || []).filter((item) => item.type === scope.type && item.key !== game?.key);
+  const [linkKind, linkText] = member ? saveVaultLinkStatus([member]) : ["warn", "未识别"];
   const gameName = game ? gameTitle(game, member?.name || scope.gameId) : (member?.name || scope.gameId);
   return `<section class="card scope-side-card">
     <div class="card-head"><div><h2>所属游戏</h2><p>只影响分组和显示，不会改动任何版本</p></div>${statusChip(linkKind, linkText)}</div>
@@ -1764,11 +1764,11 @@ function openSaveScopeGameCard(scope) {
         <div><strong>${esc(gameName)}</strong><code title="${esc(game?.key || "")}">${esc(middleEllipsis(game?.key || "", 34, 14))}</code></div>
       </div>
       ${others.length ? `<p class="game-link-others"><span class="hint">同一游戏的其他存档位置</span>${others.map((item) =>
-        `<a href="${openSaveScopeLink(item)}" title="${esc(item.gameId)}">${esc(item.name || item.gameId)}</a>`).join("、")}</p>` : ""}
-      <form id="opensave-game-form" class="form">
+        `<a href="${saveVaultScopeLink(item)}" title="${esc(item.gameId)}">${esc(item.name || item.gameId)}</a>`).join("、")}</p>` : ""}
+      <form id="savevault-game-form" class="form">
         <label class="field"><span>关联到游戏（同类型）</span>
-          <input type="text" name="game" list="opensave-game-keys" placeholder="${esc(scope.type)}/…" value="${member?.link === "manual" ? esc(game?.key || "") : ""}">
-          <datalist id="opensave-game-keys">${sameType.map((item) => `<option value="${esc(item.key)}">${esc(item.name)}</option>`).join("")}</datalist>
+          <input type="text" name="game" list="savevault-game-keys" placeholder="${esc(scope.type)}/…" value="${member?.link === "manual" ? esc(game?.key || "") : ""}">
+          <datalist id="savevault-game-keys">${sameType.map((item) => `<option value="${esc(item.key)}">${esc(item.name)}</option>`).join("")}</datalist>
           <small>选择另一款同类型游戏，把这个存档位置并入它；清空后保存，恢复自动识别。</small></label>
         <div class="form-actions"><button class="btn primary" type="submit">保存关联</button></div>
       </form>
@@ -1776,17 +1776,17 @@ function openSaveScopeGameCard(scope) {
   </section>`;
 }
 
-function bindOpenSaveScopeGameForm(scope) {
-  const form = $("#opensave-game-form");
+function bindSaveVaultScopeGameForm(scope) {
+  const form = $("#savevault-game-form");
   if (!form) return;
   form.onsubmit = async (event) => {
     event.preventDefault();
     const game = new FormData(form).get("game").trim();
-    const done = await guarded(() => api(`opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/game`,
+    const done = await guarded(() => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/game`,
       { method: "PUT", body: { game } }), game ? "已关联到游戏" : "已恢复自动识别");
     if (done) {
-      store.openSaveGames = null;
-      store.openSaveScopeDetail = null;
+      store.saveVaultGames = null;
+      store.saveVaultScopeDetail = null;
       render();
     }
   };
@@ -2456,7 +2456,7 @@ const activityKinds = [
 function matchesActivity(item) {
   switch (store.activityFilter) {
     case "all": return true;
-    case "maintenance": return ["prune", "prune_scope", "verify", "settings", "opensave_meta", "delete_snapshot", "delete_scope",
+    case "maintenance": return ["prune", "prune_scope", "verify", "settings", "savevault_meta", "delete_snapshot", "delete_scope",
       "restore_scope", "retire_scope", "unretire_scope", "tombstone_cleared", "snapshot_lock", "snapshot_unlock", "retention"].includes(item.kind);
     case "device": return item.kind.startsWith("device");
     default: return item.kind === store.activityFilter;
@@ -2487,7 +2487,7 @@ async function renderActivity() {
 }
 
 function retentionGameRow(key, policy) {
-  const name = openSaveGameNameForKey(key);
+  const name = saveVaultGameNameForKey(key);
   return `<div class="retention-game-row" data-retention-game="${esc(key)}">
     <div class="retention-game-name"><strong title="${esc(name || key)}">${esc(name || key)}</strong><code title="${esc(key)}">${esc(key)}</code></div>
     <label class="check"><input type="checkbox" data-field="enabled" ${policy.enabled ? "checked" : ""}>启用</label>
@@ -2498,14 +2498,14 @@ function retentionGameRow(key, policy) {
 }
 
 function retentionPreviewReport(preview) {
-  if (!preview) return `<div class="report" id="opensave-retention-report"><b>暂无试算结果</b><span>点击“试算”读取当前设置。</span></div>`;
+  if (!preview) return `<div class="report" id="savevault-retention-report"><b>暂无试算结果</b><span>点击“试算”读取当前设置。</span></div>`;
   const scopes = (preview.scopes || []).filter((item) => item.enabled !== false && item.removed > 0);
   const removed = scopes.reduce((sum, item) => sum + (Number(item.removed) || 0), 0);
   const bytes = scopes.reduce((sum, item) => sum + (Number(item.bytes) || 0), 0);
-  return `<div class="report ${removed ? "" : "ok"}" id="opensave-retention-report">
+  return `<div class="report ${removed ? "" : "ok"}" id="savevault-retention-report">
     <b>${removed ? `将删除 ${removed} 个版本，释放 ${formatBytes(bytes)}` : "按已保存的设置，没有需要删除的版本"}</b>
     ${scopes.length ? `<div class="retention-preview-list">${scopes.map((item) => {
-      const name = openSaveGameNameForScope(item.type, item.gameId) || item.gameId;
+      const name = saveVaultGameNameForScope(item.type, item.gameId) || item.gameId;
       return `<div class="retention-preview-row">
         <span><b>${esc(name)}</b> <code>${esc(item.type)}/${esc(item.gameId)}</code></span>
         <span>${item.removed} 个版本 · ${formatBytes(item.bytes)}</span>
@@ -2515,63 +2515,63 @@ function retentionPreviewReport(preview) {
   </div>`;
 }
 
-function openSaveRetentionCard(retention, preview) {
+function saveVaultRetentionCard(retention, preview) {
   const policy = retention.default || { enabled: false, keepVersions: 20, keepDays: 0 };
   const games = retention.games || {};
   const keys = Object.keys(games).sort((left, right) => left.localeCompare(right));
   const configured = new Set(keys);
-  const options = allOpenSaveGames().filter((game) => game.key && !configured.has(game.key))
+  const options = allSaveVaultGames().filter((game) => game.key && !configured.has(game.key))
     .map((game) => `<option value="${esc(game.key)}">${esc(gameTitle(game, game.key))}（${esc(game.key)}）</option>`).join("");
-  return `<section class="card" id="opensave-retention">
+  return `<section class="card" id="savevault-retention">
     <div class="card-head"><div><h2>SaveVault 自动保留</h2><p>默认关闭 · 由维护任务按游戏执行</p></div>
       ${policy.enabled ? statusChip("accent", "默认已开启") : statusChip("neutral", "默认关闭")}</div>
-    <form class="card-body form" id="opensave-retention-form">
+    <form class="card-body form" id="savevault-retention-form">
       <p class="hint">开关打开后，维护任务会按下面的规则删除旧版本。两个条件满足一个就保留；当前版本、冲突副本、冲突副本指向的版本、锁定的版本永远保留。</p>
       <label class="switch-row">
-        <input type="checkbox" id="opensave-retention-enabled" ${policy.enabled ? "checked" : ""}>
+        <input type="checkbox" id="savevault-retention-enabled" ${policy.enabled ? "checked" : ""}>
         <span class="switch-track" aria-hidden="true"></span>
         <span class="switch-copy"><strong>全局默认自动保留</strong>
           <small>没有单独设置的游戏使用这里的规则。已合并（只读）的范围也按规则清理，已删除的范围不参与。</small></span>
       </label>
       <div class="inline-fields">
         <label class="field"><span>保留最近</span>
-          <input type="number" id="opensave-retention-versions" min="0" max="1000" step="1" value="${Number(policy.keepVersions) || 0}">
+          <input type="number" id="savevault-retention-versions" min="0" max="1000" step="1" value="${Number(policy.keepVersions) || 0}">
           <small>个普通版本（0–1000，启用时至少 1）</small></label>
         <label class="field"><span>保留最近</span>
-          <input type="number" id="opensave-retention-days" min="0" max="3650" step="1" value="${Number(policy.keepDays) || 0}">
+          <input type="number" id="savevault-retention-days" min="0" max="3650" step="1" value="${Number(policy.keepDays) || 0}">
           <small>天内收到的版本（0 表示不按天数）</small></label>
       </div>
       <div class="retention-games-block">
         <div class="retention-games-head"><strong>按游戏的单独设置</strong><span class="hint">没有单独设置的游戏使用全局默认</span></div>
-        <div class="retention-games" id="opensave-retention-games">${keys.length ? keys.map((key) => retentionGameRow(key, games[key])).join("")
+        <div class="retention-games" id="savevault-retention-games">${keys.length ? keys.map((key) => retentionGameRow(key, games[key])).join("")
           : `<p class="hint">还没有单独设置的游戏。</p>`}</div>
         <div class="retention-add">
-          <select id="opensave-retention-game-select" aria-label="选择要单独设置的游戏" ${options ? "" : "disabled"}>
+          <select id="savevault-retention-game-select" aria-label="选择要单独设置的游戏" ${options ? "" : "disabled"}>
             <option value="">${options ? "选择游戏…" : "没有可添加的游戏"}</option>${options}
           </select>
-          <button class="btn" type="button" id="opensave-retention-add" ${options ? "" : "disabled"}>添加游戏设置</button>
+          <button class="btn" type="button" id="savevault-retention-add" ${options ? "" : "disabled"}>添加游戏设置</button>
         </div>
       </div>
       ${retentionPreviewReport(preview)}
       <div class="form-actions">
-        <button class="btn" type="button" id="opensave-retention-preview">${icon("search")}试算</button>
+        <button class="btn" type="button" id="savevault-retention-preview">${icon("search")}试算</button>
         <button class="btn primary" type="submit">保存设置</button>
       </div>
     </form>
   </section>`;
 }
 
-function openSaveOrphanCard(retention, preview) {
+function saveVaultOrphanCard(retention, preview) {
   const files = preview?.orphanFiles || [];
   const count = Number(preview?.orphans) || files.length;
   const bytes = Number(preview?.orphanBytes) || files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
-  return `<section class="card" id="opensave-orphans">
+  return `<section class="card" id="savevault-orphans">
     <div class="card-head"><div><h2>孤立归档</h2><p>上传成功但没有写入任何版本的归档</p></div>
       <span class="tag ${count ? "warn" : ""}">${count} 个 · ${formatBytes(bytes)}</span></div>
     <div class="card-body form">
       <p class="hint">已删除范围的归档在回收区里，不算孤立归档；已合并（只读）范围的归档有版本引用，也不算。</p>
       <label class="switch-row">
-        <input type="checkbox" id="opensave-orphan-toggle" ${retention.orphanCleanup ? "checked" : ""}>
+        <input type="checkbox" id="savevault-orphan-toggle" ${retention.orphanCleanup ? "checked" : ""}>
         <span class="switch-track" aria-hidden="true"></span>
         <span class="switch-copy"><strong>清理孤立归档</strong>
           <small>打开后删除超过 24 小时、没有任何版本引用的归档。与自动保留开关互不影响；关闭时只统计，不删除。</small></span>
@@ -2580,7 +2580,7 @@ function openSaveOrphanCard(retention, preview) {
         <summary>查看 ${files.length} 个孤立归档</summary>
         <div class="orphan-list">${files.map((file) => `<div class="orphan-row">
           <div class="orphan-main"><code title="${esc(file.name)}">${esc(middleEllipsis(file.name, 26, 14))}</code>
-            <small>${esc(openSaveTypeLabel(file.type))} · 推测 gameId：${esc(file.gameId || "未知")} · ${esc(file.modifiedAt ? absTime(file.modifiedAt) : "时间未知")}</small></div>
+            <small>${esc(saveVaultTypeLabel(file.type))} · 推测 gameId：${esc(file.gameId || "未知")} · ${esc(file.modifiedAt ? absTime(file.modifiedAt) : "时间未知")}</small></div>
           <span class="orphan-size">${formatBytes(file.size)}</span>
         </div>`).join("")}</div>
       </details>` : `<p class="hint">没有孤立归档。</p>`}
@@ -2588,16 +2588,16 @@ function openSaveOrphanCard(retention, preview) {
   </section>`;
 }
 
-function openSaveTombstoneCard(tombstones) {
-  return `<section class="card" id="opensave-tombstones">
+function saveVaultTombstoneCard(tombstones) {
+  return `<section class="card" id="savevault-tombstones">
     <div class="card-head"><div><h2>最近删除</h2><p>删除后 7 天内可恢复 · 合并会一直保留记录</p></div>
       <span class="tag ${tombstones.length ? "accent" : ""}">${tombstones.length} 条</span></div>
     <div class="card-body">${tombstones.length ? `<div class="tombstone-list">${tombstones.map((item) => {
-      const name = openSaveGameNameForScope(item.type, item.gameId) || item.gameId;
+      const name = saveVaultGameNameForScope(item.type, item.gameId) || item.gameId;
       const recreated = item.conflictState === "recreated";
       const retired = item.state === "retired";
       if (retired) {
-        const targetName = openSaveGameNameForKey(item.successorGame) || item.successorGame || item.successor || "另一个范围";
+        const targetName = saveVaultGameNameForKey(item.successorGame) || item.successorGame || item.successor || "另一个范围";
         return `<div class="tombstone-row retired">
           <div class="tombstone-head">${statusChip("neutral", "已合并")}
             <b title="${esc(name)}">${esc(name)}</b><code>${esc(item.type)}/${esc(item.gameId)}</code></div>
@@ -2629,21 +2629,21 @@ function openSaveTombstoneCard(tombstones) {
   </section>`;
 }
 
-async function refreshOpenSaveRetentionPreview() {
+async function refreshSaveVaultRetentionPreview() {
   try {
-    store.openSaveRetentionPreview = await api("opensave/retention/preview", { method: "POST" });
+    store.saveVaultRetentionPreview = await api("savevault/retention/preview", { method: "POST" });
   } catch (error) {
     if (error instanceof UnauthorizedError) throw error;
-    store.openSaveRetentionPreview = null;
+    store.saveVaultRetentionPreview = null;
   }
-  return store.openSaveRetentionPreview;
+  return store.saveVaultRetentionPreview;
 }
 
-function bindOpenSaveRetention(current) {
-  const form = $("#opensave-retention-form");
-  const gamesBox = $("#opensave-retention-games");
-  const select = $("#opensave-retention-game-select");
-  const add = $("#opensave-retention-add");
+function bindSaveVaultRetention(current) {
+  const form = $("#savevault-retention-form");
+  const gamesBox = $("#savevault-retention-games");
+  const select = $("#savevault-retention-game-select");
+  const add = $("#savevault-retention-add");
   if (!form) return;
 
   const readNumber = (input, min, max, label) => {
@@ -2656,11 +2656,11 @@ function bindOpenSaveRetention(current) {
     return value;
   };
   const collect = () => {
-    const enabled = $("#opensave-retention-enabled").checked;
-    const versions = readNumber($("#opensave-retention-versions"), 0, 1000, "全局保留版本数");
+    const enabled = $("#savevault-retention-enabled").checked;
+    const versions = readNumber($("#savevault-retention-versions"), 0, 1000, "全局保留版本数");
     if (versions === null) return null;
     if (enabled && versions < 1) { toast("开启自动保留时，保留版本数至少为 1", true); return null; }
-    const days = readNumber($("#opensave-retention-days"), 0, 3650, "全局保留天数");
+    const days = readNumber($("#savevault-retention-days"), 0, 3650, "全局保留天数");
     if (days === null) return null;
     const games = {};
     for (const row of gamesBox.querySelectorAll("[data-retention-game]")) {
@@ -2679,11 +2679,11 @@ function bindOpenSaveRetention(current) {
   };
 
   const save = async (settings, message) => {
-    const result = await guarded(() => api("opensave/retention", { method: "PUT", body: settings }), message);
+    const result = await guarded(() => api("savevault/retention", { method: "PUT", body: settings }), message);
     if (!result) return false;
-    store.openSaveRetention = result;
+    store.saveVaultRetention = result;
     current = result;
-    await refreshOpenSaveRetentionPreview();
+    await refreshSaveVaultRetentionPreview();
     renderMaintenance();
     return true;
   };
@@ -2738,19 +2738,19 @@ function bindOpenSaveRetention(current) {
     select.value = "";
   };
 
-  const previewButton = $("#opensave-retention-preview");
+  const previewButton = $("#savevault-retention-preview");
   if (previewButton) previewButton.onclick = async () => {
     previewButton.disabled = true;
-    const result = await guarded(() => api("opensave/retention/preview", { method: "POST" }));
+    const result = await guarded(() => api("savevault/retention/preview", { method: "POST" }));
     if (result) {
-      store.openSaveRetentionPreview = result;
+      store.saveVaultRetentionPreview = result;
       renderMaintenance();
     } else if (document.contains(previewButton)) {
       previewButton.disabled = false;
     }
   };
 
-  const orphanToggle = $("#opensave-orphan-toggle");
+  const orphanToggle = $("#savevault-orphan-toggle");
   if (orphanToggle) orphanToggle.onchange = async () => {
     const enabled = orphanToggle.checked;
     const ok = await confirmDialog({
@@ -2766,12 +2766,12 @@ function bindOpenSaveRetention(current) {
       games: current.games || {},
       orphanCleanup: enabled,
     };
-    const result = await guarded(() => api("opensave/retention", { method: "PUT", body: settings }),
+    const result = await guarded(() => api("savevault/retention", { method: "PUT", body: settings }),
       enabled ? "孤立归档清理已打开" : "孤立归档清理已关闭");
     if (result) {
-      store.openSaveRetention = result;
+      store.saveVaultRetention = result;
       current = result;
-      await refreshOpenSaveRetentionPreview();
+      await refreshSaveVaultRetentionPreview();
       renderMaintenance();
     } else {
       orphanToggle.disabled = false;
@@ -2781,15 +2781,15 @@ function bindOpenSaveRetention(current) {
 }
 
 async function renderMaintenance() {
-  if (!store.openSaveRetention || !store.openSaveTombstones) {
+  if (!store.saveVaultRetention || !store.saveVaultTombstones) {
     main.innerHTML = `<div class="skeleton"></div>`;
     try {
       const [retentionData, tombstoneData] = await Promise.all([
-        api("opensave/retention"), api("opensave/tombstones"),
+        api("savevault/retention"), api("savevault/tombstones"),
       ]);
-      store.openSaveRetention = retentionData;
-      store.openSaveTombstones = tombstoneData.tombstones || [];
-      await refreshOpenSaveRetentionPreview();
+      store.saveVaultRetention = retentionData;
+      store.saveVaultTombstones = tombstoneData.tombstones || [];
+      await refreshSaveVaultRetentionPreview();
     } catch (error) {
       if (error instanceof UnauthorizedError) { showLogin(); return; }
       toast(error.message || String(error), true);
@@ -2799,9 +2799,9 @@ async function renderMaintenance() {
   }
   const { settings, server } = store.overview;
   const edenRetention = settings.retention;
-  const openRetention = store.openSaveRetention;
-  const tombstones = store.openSaveTombstones || [];
-  const retentionPreview = store.openSaveRetentionPreview;
+  const openRetention = store.saveVaultRetention;
+  const tombstones = store.saveVaultTombstones || [];
+  const retentionPreview = store.saveVaultRetentionPreview;
   const prune = store.pruneReport;
   const verify = store.verifyReport;
   const origin = location.origin;
@@ -2810,9 +2810,9 @@ async function renderMaintenance() {
   main.innerHTML = `
     ${pageHead("维护", "保留策略、存储清理与完整性校验")}
     <div class="stack management-stack">
-      ${openSaveRetentionCard(openRetention, retentionPreview)}
-      ${openSaveOrphanCard(openRetention, retentionPreview)}
-      ${openSaveTombstoneCard(tombstones)}
+      ${saveVaultRetentionCard(openRetention, retentionPreview)}
+      ${saveVaultOrphanCard(openRetention, retentionPreview)}
+      ${saveVaultTombstoneCard(tombstones)}
     </div>
     <div class="grid two">
       <div class="stack">
@@ -2855,24 +2855,24 @@ async function renderMaintenance() {
             </div>
             ${prune ? (() => {
               const hasChanges = prune.snapshots || prune.objects || prune.covers
-                || prune.opensave_versions || prune.opensave_archives || prune.opensave_orphans_removed
+                || prune.savevault_versions || prune.savevault_archives || prune.savevault_orphans_removed
                 || prune.tombstones_purged || prune.temporary_removed;
-              const openSaveParts = [];
-              if (prune.opensave_versions || prune.opensave_archives) {
-                openSaveParts.push(`SaveVault ${prune.opensave_versions || 0} 个版本 / ${prune.opensave_archives || 0} 个归档`);
+              const saveVaultParts = [];
+              if (prune.savevault_versions || prune.savevault_archives) {
+                saveVaultParts.push(`SaveVault ${prune.savevault_versions || 0} 个版本 / ${prune.savevault_archives || 0} 个归档`);
               }
-              if (prune.opensave_orphans_removed || prune.opensave_orphan_archives) {
-                openSaveParts.push(`孤立归档 ${prune.dry_run ? (prune.opensave_orphan_archives || 0) : (prune.opensave_orphans_removed || 0)} 个`);
+              if (prune.savevault_orphans_removed || prune.savevault_orphan_archives) {
+                saveVaultParts.push(`孤立归档 ${prune.dry_run ? (prune.savevault_orphan_archives || 0) : (prune.savevault_orphans_removed || 0)} 个`);
               }
-              if (prune.opensave_freed_bytes) {
-                openSaveParts.push(`SaveVault ${prune.dry_run ? "可释放" : "释放"} ${formatBytes(prune.opensave_freed_bytes)}`);
+              if (prune.savevault_freed_bytes) {
+                saveVaultParts.push(`SaveVault ${prune.dry_run ? "可释放" : "释放"} ${formatBytes(prune.savevault_freed_bytes)}`);
               }
-              if (prune.covers) openSaveParts.push(`未引用封面 ${prune.covers} 个`);
-              if (prune.tombstones_purged) openSaveParts.push(`过期回收区 ${prune.tombstones_purged} 个`);
+              if (prune.covers) saveVaultParts.push(`未引用封面 ${prune.covers} 个`);
+              if (prune.tombstones_purged) saveVaultParts.push(`过期回收区 ${prune.tombstones_purged} 个`);
               return `<div class="report ${hasChanges ? "" : "ok"}">
               <b>${prune.dry_run ? "预览结果" : "清理完成"}</b>
               <span>${prune.dry_run ? "将移除" : "已移除"} ${prune.snapshots} 个快照（${prune.scopes.length} 个存档范围）、${prune.objects} 个对象，
-                ${prune.dry_run ? "可回收" : "回收"} ${formatBytes(prune.reclaimed_bytes)}${prune.temporary_removed ? `，临时文件 ${prune.temporary_removed} 个` : ""}${openSaveParts.length ? `；${openSaveParts.join("，")}` : ""}。</span></div>`;
+                ${prune.dry_run ? "可回收" : "回收"} ${formatBytes(prune.reclaimed_bytes)}${prune.temporary_removed ? `，临时文件 ${prune.temporary_removed} 个` : ""}${saveVaultParts.length ? `；${saveVaultParts.join("，")}` : ""}。</span></div>`;
             })() : ""}
           </div>
         </section>
@@ -2887,7 +2887,7 @@ async function renderMaintenance() {
               <span>检查 ${verify.objects} 个对象，共 ${formatBytes(verify.bytes)}，用时 ${verify.duration_seconds.toFixed(1)} 秒。</span>
               ${verify.problems.map((p) => `<span>${p.problem === "missing" ? "丢失" : p.problem === "corrupt" ? "损坏" : "无法读取"}：
                 ${p.archive
-                  ? p.scopes.map((id) => { const [type, ...game] = id.split("/"); return `<a href="#/opensave/${encodeURIComponent(type)}/${encodeURIComponent(game.join("/"))}"><b>SaveVault ${esc(id)}</b></a>`; }).join("、")
+                  ? p.scopes.map((id) => { const [type, ...game] = id.split("/"); return `<a href="#/savevault/${encodeURIComponent(type)}/${encodeURIComponent(game.join("/"))}"><b>SaveVault ${esc(id)}</b></a>`; }).join("、")
                   : p.scopes.map((id) => `<a href="#/saves/${encodeURIComponent(id)}"><b>${esc(scopeTitle(id))}</b></a>`).join("、")}
                 <code>${esc(p.archive || shortID(p.blob, 16))}</code></span>`).join("")}
             </div>` : ""}
@@ -2919,7 +2919,7 @@ async function renderMaintenance() {
       </div>
     </div>`;
 
-  bindOpenSaveRetention(openRetention);
+  bindSaveVaultRetention(openRetention);
 
   $("#retention-form").onsubmit = async (event) => {
     event.preventDefault();
@@ -2957,12 +2957,13 @@ function safeDecodeURI(value) {
 
 function currentRoute() {
   const hash = location.hash.replace(/^#\/?/, "");
-  const [name, id, detail] = hash.split("/");
+  const [rawName, id, detail] = hash.split("/");
+  const name = rawName === "opensave" ? "savevault" : rawName;
   if (name === "saves" && id) return { name: "scope", id: safeDecodeURI(id), nav: "saves" };
-  if (name === "opensave" && id && detail) {
-    return { name: "opensaveScope", type: safeDecodeURI(id), gameId: safeDecodeURI(detail), nav: "opensave" };
+  if (name === "savevault" && id && detail) {
+    return { name: "savevaultScope", type: safeDecodeURI(id), gameId: safeDecodeURI(detail), nav: "savevault" };
   }
-  const known = ["saves", "opensave", "devices", "users", "tokens", "activity", "maintenance"];
+  const known = ["saves", "savevault", "devices", "users", "tokens", "activity", "maintenance"];
   return { name: known.includes(name) ? name : "overview", nav: known.includes(name) ? name : "overview" };
 }
 
@@ -2974,13 +2975,13 @@ async function render() {
     if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  const titles = { overview: "概览", saves: "存档", scope: "存档", opensave: "SaveVault", opensaveScope: "SaveVault 存档", devices: "设备", tokens: "令牌", activity: "活动", maintenance: "维护" };
+  const titles = { overview: "概览", saves: "存档", scope: "存档", savevault: "SaveVault", savevaultScope: "SaveVault 存档", devices: "设备", tokens: "令牌", activity: "活动", maintenance: "维护" };
   document.title = `${titles[route.name]} · SaveVault 云端`;
   switch (route.name) {
     case "saves": return renderSaves();
     case "scope": return renderScope(route.id);
-    case "opensave": return renderOpenSave();
-    case "opensaveScope": return renderOpenSaveScope(route.type, route.gameId);
+    case "savevault": return renderSaveVault();
+    case "savevaultScope": return renderSaveVaultScope(route.type, route.gameId);
     case "devices": return renderDevices();
     case "users": return renderUsers();
     case "tokens": return renderTokens();
@@ -2995,13 +2996,13 @@ async function refresh({ quiet = false } = {}) {
   if (refreshing) return;
   refreshing = true;
   try {
-    store.openSaveFiles = null;
-    store.openSaveScopes = null;
-    store.openSaveGames = null;
-    store.openSaveScopeDetail = null;
-    store.openSaveRetention = null;
-    store.openSaveTombstones = null;
-    store.openSaveRetentionPreview = null;
+    store.saveVaultFiles = null;
+    store.saveVaultScopes = null;
+    store.saveVaultGames = null;
+    store.saveVaultScopeDetail = null;
+    store.saveVaultRetention = null;
+    store.saveVaultTombstones = null;
+    store.saveVaultRetentionPreview = null;
     await loadOverview();
     const route = currentRoute();
     // Avoid wiping half-typed form input during background refreshes.
@@ -3046,8 +3047,8 @@ async function onAction(event) {
       if (await guarded(() => api(`scopes/${encodeURIComponent(scopeID)}/rollback`, { method: "POST", body: { snapshot: id } }), "已恢复为当前版本")) await refresh();
       return;
     }
-    case "promote-opensave": {
-      const scope = store.openSaveScopeDetail;
+    case "promote-savevault": {
+      const scope = store.saveVaultScopeDetail;
       if (!scope) return;
       const ok = await confirmDialog({
         title: "设为当前版本？",
@@ -3055,12 +3056,12 @@ async function onAction(event) {
         confirm: "设为当前版本",
       });
       if (!ok) return;
-      const done = await guarded(() => api(`opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`,
+      const done = await guarded(() => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`,
         { method: "POST", body: { snapshot: id, expectedHead: target.dataset.head || "" } }), "已设为当前版本");
       if (done) {
-        store.openSaveScopes = null;
-        store.openSaveGames = null;
-        store.openSaveScopeDetail = null;
+        store.saveVaultScopes = null;
+        store.saveVaultGames = null;
+        store.saveVaultScopeDetail = null;
         await render();
       }
       return;
@@ -3071,8 +3072,8 @@ async function onAction(event) {
         { method: "PATCH", body: { pinned } }), pinned ? "已固定快照" : "已取消固定")) await refresh();
       return;
     }
-    case "lock-opensave": {
-      const scope = store.openSaveScopeDetail;
+    case "lock-savevault": {
+      const scope = store.saveVaultScopeDetail;
       if (!scope) return;
       const snapshot = (scope.snapshots || []).find((item) => item.id === id);
       const note = await promptDialog({
@@ -3082,16 +3083,16 @@ async function onAction(event) {
       });
       if (note === null) return;
       const saved = await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`,
+        `savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`,
         { method: "PUT", body: { note } }), "已锁定版本");
       if (saved) {
-        store.openSaveScopeDetail = null;
+        store.saveVaultScopeDetail = null;
         await refresh();
       }
       return;
     }
-    case "unlock-opensave": {
-      const scope = store.openSaveScopeDetail;
+    case "unlock-savevault": {
+      const scope = store.saveVaultScopeDetail;
       if (!scope) return;
       const ok = await confirmDialog({
         title: "解锁这个版本？", danger: true, confirm: "解锁",
@@ -3099,26 +3100,26 @@ async function onAction(event) {
       });
       if (!ok) return;
       const done = await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`,
+        `savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`,
         { method: "DELETE" }), "已解锁版本");
       if (done !== undefined) {
-        store.openSaveScopeDetail = null;
+        store.saveVaultScopeDetail = null;
         await refresh();
       }
       return;
     }
-    case "merge-opensave": {
-      const scope = store.openSaveScopeDetail;
-      if (scope) await showOpenSaveMergeDialog(scope);
+    case "merge-savevault": {
+      const scope = store.saveVaultScopeDetail;
+      if (scope) await showSaveVaultMergeDialog(scope);
       return;
     }
-    case "delete-opensave": {
-      const scope = store.openSaveScopeDetail;
-      if (scope) showOpenSaveDeleteDialog(scope);
+    case "delete-savevault": {
+      const scope = store.saveVaultScopeDetail;
+      if (scope) showSaveVaultDeleteDialog(scope);
       return;
     }
-    case "unretire-opensave": {
-      const scope = store.openSaveScopeDetail;
+    case "unretire-savevault": {
+      const scope = store.saveVaultScopeDetail;
       if (!scope) return;
       const ok = await confirmDialog({
         title: "取消合并？", danger: true, confirm: "取消合并",
@@ -3126,10 +3127,10 @@ async function onAction(event) {
       });
       if (!ok) return;
       const done = await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/unretire`,
+        `savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/unretire`,
         { method: "POST" }), "已取消合并");
       if (done) {
-        clearOpenSaveCaches();
+        clearSaveVaultCaches();
         await refresh();
       }
       return;
@@ -3301,10 +3302,10 @@ async function onAction(event) {
       });
       if (!ok) return;
       const done = await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}/restore`,
+        `savevault/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}/restore`,
         { method: "POST" }), "存档范围已恢复");
       if (done) {
-        clearOpenSaveCaches();
+        clearSaveVaultCaches();
         await refresh();
       }
       return;
@@ -3318,9 +3319,9 @@ async function onAction(event) {
       });
       if (!ok) return;
       if (await guarded(() => api(
-        `opensave/tombstones/${encodeURIComponent(type)}/${encodeURIComponent(game)}`,
+        `savevault/tombstones/${encodeURIComponent(type)}/${encodeURIComponent(game)}`,
         { method: "DELETE" }), "已解除删除标记")) {
-        clearOpenSaveCaches();
+        clearSaveVaultCaches();
         await refresh();
       }
       return;
@@ -3334,9 +3335,9 @@ async function onAction(event) {
       });
       if (!ok) return;
       if (await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}/unretire`,
+        `savevault/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}/unretire`,
         { method: "POST" }), "已取消合并")) {
-        clearOpenSaveCaches();
+        clearSaveVaultCaches();
         await refresh();
       }
       return;
@@ -3345,8 +3346,8 @@ async function onAction(event) {
       const type = target.dataset.type;
       const game = target.dataset.game;
       const detail = await guarded(() => api(
-        `opensave/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}`));
-      if (detail) showOpenSaveDeleteDialog(detail);
+        `savevault/scopes/${encodeURIComponent(type)}/${encodeURIComponent(game)}`));
+      if (detail) showSaveVaultDeleteDialog(detail);
       return;
     }
     case "verify": {
@@ -3382,16 +3383,16 @@ function toggleTheme() {
 
 function showLogin() {
   store.overview = null;
-  store.overviewOpenSaveGames = null;
+  store.overviewSaveVaultGames = null;
   store.scopeDetail = null;
   store.events = null;
-  store.openSaveFiles = null;
-  store.openSaveScopes = null;
-  store.openSaveGames = null;
-  store.openSaveScopeDetail = null;
-  store.openSaveRetention = null;
-  store.openSaveTombstones = null;
-  store.openSaveRetentionPreview = null;
+  store.saveVaultFiles = null;
+  store.saveVaultScopes = null;
+  store.saveVaultGames = null;
+  store.saveVaultScopeDetail = null;
+  store.saveVaultRetention = null;
+  store.saveVaultTombstones = null;
+  store.saveVaultRetentionPreview = null;
   store.metaSettings = null;
   store.deviceTokens = null;
   store.pairings = null;

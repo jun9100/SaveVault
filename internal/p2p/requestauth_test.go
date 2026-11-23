@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // authFixture is one device (the receiver) with one paired peer (the sender),
@@ -30,7 +30,7 @@ type authFixture struct {
 // production would derive.
 func newAuthFixture(t *testing.T, withKey bool) *authFixture {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "opensave.db"))
+	s, err := store.Open(filepath.Join(t.TempDir(), "savevault.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}

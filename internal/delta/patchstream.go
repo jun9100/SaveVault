@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/opensave/opensave/internal/fsx"
+	"github.com/jun9100/savevault/internal/fsx"
 )
 
 // PatchWriter reconstructs a file incrementally, so a sync never has to hold

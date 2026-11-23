@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/syncpause"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/syncpause"
 )
 
 // Pausing syncing, for this device. See package syncpause for what a pause
@@ -28,7 +28,7 @@ type heldUpload struct {
 func (d *Daemon) PauseSync(dur time.Duration) syncpause.Status {
 	st := d.P2P.Pause.Pause(dur)
 	if st.UntilRestart {
-		d.Log.Log("info", "syncing paused until it is resumed or OpenSave restarts — snapshots are still taken")
+		d.Log.Log("info", "syncing paused until it is resumed or SaveVault restarts — snapshots are still taken")
 	} else {
 		d.Log.Log("info", fmt.Sprintf("syncing paused for %s — snapshots are still taken", inWords(dur)))
 	}

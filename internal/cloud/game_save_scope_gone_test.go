@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func writeScopeGoneJSON(w http.ResponseWriter, status int, code string) {
@@ -34,7 +34,7 @@ func TestGameSaveScopeGoneOnEveryPath(t *testing.T) {
 	}{
 		{
 			name: "get deleted", code: "scope_deleted", method: http.MethodGet,
-			path: "/v1/opensave/scopes/pc/hollow-knight",
+			path: "/v1/savevault/scopes/pc/hollow-knight",
 			call: func(svc *Service) error {
 				_, err := svc.GetGameSaveScope("pc", "hollow-knight")
 				return err
@@ -42,7 +42,7 @@ func TestGameSaveScopeGoneOnEveryPath(t *testing.T) {
 		},
 		{
 			name: "snapshot retired", code: "scope_retired", method: http.MethodPut,
-			path: "/v1/opensave/scopes/pc/hollow-knight/snapshots/snap_1--dev-a",
+			path: "/v1/savevault/scopes/pc/hollow-knight/snapshots/snap_1--dev-a",
 			call: func(svc *Service) error {
 				_, err := svc.PutGameSaveScopeSnapshot("pc", "hollow-knight", GameSaveScopeCandidate{
 					ID: "snap_1--dev-a", Archive: "hollow-knight__main__snap_1--dev-a.zip",
@@ -52,7 +52,7 @@ func TestGameSaveScopeGoneOnEveryPath(t *testing.T) {
 		},
 		{
 			name: "conflict deleted", code: "scope_deleted", method: http.MethodPut,
-			path: "/v1/opensave/scopes/pc/hollow-knight/conflicts/snap_2--dev-a",
+			path: "/v1/savevault/scopes/pc/hollow-knight/conflicts/snap_2--dev-a",
 			call: func(svc *Service) error {
 				_, err := svc.PutGameSaveScopeConflict("pc", "hollow-knight", GameSaveScopeCandidate{
 					ID: "snap_2--dev-a", Archive: "hollow-knight__main__snap_2--dev-a.zip",
@@ -62,7 +62,7 @@ func TestGameSaveScopeGoneOnEveryPath(t *testing.T) {
 		},
 		{
 			name: "identity retired", code: "scope_retired", method: http.MethodPut,
-			path: "/v1/opensave/scopes/pc/hollow-knight/identity",
+			path: "/v1/savevault/scopes/pc/hollow-knight/identity",
 			call: func(svc *Service) error {
 				_, err := svc.PutGameSaveScopeIdentity("pc", "hollow-knight", GameSaveScopeIdentity{Name: "Hollow Knight"})
 				return err
@@ -70,7 +70,7 @@ func TestGameSaveScopeGoneOnEveryPath(t *testing.T) {
 		},
 		{
 			name: "upload deleted", code: "scope_deleted", method: http.MethodPut,
-			path: "/v1/opensave/files/pc/hollow-knight__main__snap_3--dev-a.zip",
+			path: "/v1/savevault/files/pc/hollow-knight__main__snap_3--dev-a.zip",
 			call: func(svc *Service) error {
 				return svc.Upload(writeTempZip(t, "zip bytes"), "hollow-knight__main__snap_3--dev-a.zip")
 			},
@@ -156,7 +156,7 @@ func TestGameSaveScopeDecodesLockedAndRetired(t *testing.T) {
 		}
 		now := time.Now().UTC()
 		switch r.URL.Path {
-		case "/v1/opensave/scopes/pc/hollow-knight":
+		case "/v1/savevault/scopes/pc/hollow-knight":
 			_ = json.NewEncoder(w).Encode(GameSaveScope{
 				Type: "pc", GameID: "hollow-knight",
 				Head: &GameSaveScopeSnapshot{
@@ -165,7 +165,7 @@ func TestGameSaveScopeDecodesLockedAndRetired(t *testing.T) {
 					Locked:                 true,
 				},
 			})
-		case "/v1/opensave/games":
+		case "/v1/savevault/games":
 			_ = json.NewEncoder(w).Encode(map[string]any{"games": []GameSaveGame{{
 				Key: "pc/hollow-knight", Type: "pc", Name: "Hollow Knight",
 				Scopes: []GameSaveGameMember{{

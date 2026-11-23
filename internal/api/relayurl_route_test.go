@@ -8,7 +8,7 @@ import (
 
 // A cleartext relay pointed at the public internet must not be storable: the
 // save file itself would cross the wire readable, because nothing else in
-// OpenSave encrypts it.
+// SaveVault encrypts it.
 func TestSettingsRefusesCleartextRelayOnThePublicInternet(t *testing.T) {
 	ts := startTestServer(t)
 

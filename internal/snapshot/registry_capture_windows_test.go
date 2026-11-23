@@ -13,14 +13,14 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // scratchRegistryKey creates a key of our own under HKCU and removes it
 // afterwards. No test ever writes to a key a real game owns.
 func scratchRegistryKey(t *testing.T) (fullPath, sub string) {
 	t.Helper()
-	sub = `Software\OpenSaveTest\snap` + strconv.FormatInt(time.Now().UnixNano(), 36)
+	sub = `Software\SaveVaultTest\snap` + strconv.FormatInt(time.Now().UnixNano(), 36)
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, sub, registry.WRITE)
 	if err != nil {
 		t.Fatalf("creating scratch key: %v", err)

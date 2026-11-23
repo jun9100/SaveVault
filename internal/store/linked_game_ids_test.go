@@ -9,7 +9,7 @@ import (
 
 func linkStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "opensave.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "savevault.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

@@ -66,7 +66,7 @@ func ValidateRelayURL(raw string) error {
 	}
 	return fmt.Errorf(
 		"ws://%s would carry your syncs across the internet unencrypted. Saves between "+
-			"paired devices are sealed, but a pairing made before OpenSave exchanged keys "+
+			"paired devices are sealed, but a pairing made before SaveVault exchanged keys "+
 			"is not, and the rest — which devices are talking, and which games — is "+
 			"readable either way.\n"+
 			"Use wss://%s instead. If you run this relay, give it a domain name and a "+

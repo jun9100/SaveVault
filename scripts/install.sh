@@ -1,16 +1,16 @@
 #!/bin/sh
-# OpenSave installer — headless CLI + daemon for Linux.
+# SaveVault installer — headless CLI + daemon for Linux.
 #
 #   curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.sh | sh
 #
 # Installs to ~/.local/bin by default, so no root is needed. Override with:
-#   OPENSAVE_INSTALL_DIR=/usr/local/bin   where to put the binaries
-#   OPENSAVE_VERSION=v2.2.0               pin a version instead of latest
+#   SAVEVAULT_INSTALL_DIR=/usr/local/bin   where to put the binaries
+#   SAVEVAULT_VERSION=v2.2.0               pin a version instead of latest
 #
 # To remove it again:
 #   install.sh --uninstall                stop the service, remove the binaries,
 #                                         the autostart entry and the PATH line
-#   install.sh --uninstall --purge        also delete ~/.opensave — your settings,
+#   install.sh --uninstall --purge        also delete ~/.savevault — your settings,
 #                                         pairings, and every local backup
 #
 # Without --purge, uninstalling never touches your saves or your backups. For
@@ -26,8 +26,8 @@
 set -eu
 
 REPO="jun9100/SaveVault"
-INSTALL_DIR="${OPENSAVE_INSTALL_DIR:-$HOME/.local/bin}"
-VERSION="${OPENSAVE_VERSION:-latest}"
+INSTALL_DIR="${SAVEVAULT_INSTALL_DIR:-$HOME/.local/bin}"
+VERSION="${SAVEVAULT_VERSION:-latest}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -53,7 +53,7 @@ fi
 
 # ── Uninstall ────────────────────────────────────────────────────────────
 #
-# Reverses exactly what this script and `opensave service install` put down,
+# Reverses exactly what this script and `savevault service install` put down,
 # and nothing it did not: the binaries and their aliases in $INSTALL_DIR, the
 # user systemd unit, the desktop autostart entry, and the PATH line in the
 # shell rc. It removes an alias only if it still points at our binary — the
@@ -69,46 +69,46 @@ uninstall() {
         esac
     done
 
-    say "Uninstalling OpenSave…"
+    say "Uninstalling SaveVault…"
 
     # Stop the daemon first, whichever way it is running, so nothing is
     # writing to the files being removed.
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user disable --now opensave-daemon.service >/dev/null 2>&1 || true
+        systemctl --user disable --now savevault-daemon.service >/dev/null 2>&1 || true
     fi
-    if [ -x "$INSTALL_DIR/opensave-cli" ]; then
-        "$INSTALL_DIR/opensave-cli" daemon stop >/dev/null 2>&1 || true
+    if [ -x "$INSTALL_DIR/savevault-cli" ]; then
+        "$INSTALL_DIR/savevault-cli" daemon stop >/dev/null 2>&1 || true
     fi
 
     unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-    if [ -f "$unit_dir/opensave-daemon.service" ]; then
-        rm -f "$unit_dir/opensave-daemon.service"
+    if [ -f "$unit_dir/savevault-daemon.service" ]; then
+        rm -f "$unit_dir/savevault-daemon.service"
         command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload >/dev/null 2>&1 || true
-        say "  removed $unit_dir/opensave-daemon.service"
+        say "  removed $unit_dir/savevault-daemon.service"
     fi
 
-    autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/opensave.desktop"
+    autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/savevault.desktop"
     if [ -f "$autostart" ]; then
         rm -f "$autostart"
         say "  removed $autostart"
     fi
 
     # Aliases before the binary, and only ones that are ours.
-    for alias_name in opensave os; do
+    for alias_name in savevault os; do
         link="$INSTALL_DIR/$alias_name"
         [ -e "$link" ] || [ -L "$link" ] || continue
         if [ -L "$link" ]; then
             case "$(readlink "$link")" in
-                opensave-cli|*/opensave-cli) rm -f "$link"; say "  removed $link" ;;
-                *) say "  kept $link — it does not point at OpenSave" ;;
+                savevault-cli|*/savevault-cli) rm -f "$link"; say "  removed $link" ;;
+                *) say "  kept $link — it does not point at SaveVault" ;;
             esac
-        elif cmp -s "$link" "$INSTALL_DIR/opensave-cli" 2>/dev/null; then
+        elif cmp -s "$link" "$INSTALL_DIR/savevault-cli" 2>/dev/null; then
             rm -f "$link"; say "  removed $link"
         else
-            say "  kept $link — it is not a copy of OpenSave"
+            say "  kept $link — it is not a copy of SaveVault"
         fi
     done
-    for name in opensave-cli opensave-relay; do
+    for name in savevault-cli savevault-relay; do
         if [ -f "$INSTALL_DIR/$name" ]; then
             rm -f "$INSTALL_DIR/$name"
             say "  removed $INSTALL_DIR/$name"
@@ -120,18 +120,18 @@ uninstall() {
     # is left where it is.
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         [ -f "$rc" ] || continue
-        grep -Fq "# Added by the OpenSave installer" "$rc" || continue
-        tmp="$rc.opensave-uninstall.$$"
+        grep -Fq "# Added by the SaveVault installer" "$rc" || continue
+        tmp="$rc.savevault-uninstall.$$"
         # Drop the marker comment and the export line that follows it.
         awk -v dir="$INSTALL_DIR" '
-            /^# Added by the OpenSave installer$/ { skip = 1; next }
+            /^# Added by the SaveVault installer$/ { skip = 1; next }
             skip == 1 { skip = 0; if (index($0, dir) > 0 && $0 ~ /^export PATH=/) next }
             { print }
         ' "$rc" > "$tmp" && mv -f "$tmp" "$rc"
         say "  removed PATH entry from $rc"
     done
 
-    home_dir="$HOME/.opensave"
+    home_dir="$HOME/.savevault"
     if [ "$purge" = "1" ]; then
         if [ -d "$home_dir" ]; then
             backups="$(find "$home_dir/backups" -type f 2>/dev/null | wc -l | tr -d ' ')"
@@ -162,7 +162,7 @@ uninstall() {
     fi
 
     say ""
-    say "OpenSave is uninstalled. Open a new terminal to drop it from PATH."
+    say "SaveVault is uninstalled. Open a new terminal to drop it from PATH."
     exit 0
 }
 
@@ -187,7 +187,7 @@ case "$arch" in
     *) die "unsupported architecture: $arch" ;;
 esac
 
-ASSET="opensave-${platform}-${arch}.tar.gz"
+ASSET="savevault-${platform}-${arch}.tar.gz"
 
 # What each tarball actually contains, said before the download rather than
 # after: someone installing on a Mac or a Pi should not have to work out from
@@ -212,7 +212,7 @@ tmp="$(mktemp -d)"
 # shellcheck disable=SC2064  # expand tmp now, not at trap time
 trap "rm -rf '$tmp'" EXIT INT TERM
 
-say "Downloading OpenSave ($VERSION, linux/$arch)…"
+say "Downloading SaveVault ($VERSION, linux/$arch)…"
 fetch "$BASE/$ASSET" "$tmp/$ASSET" || die "could not download $BASE/$ASSET"
 
 # Verify against the published checksums when they exist. Releases before
@@ -242,16 +242,16 @@ fi
 tar -xzf "$tmp/$ASSET" -C "$tmp" || die "could not extract $ASSET"
 
 # The archive's top-level directory differs by architecture
-# (opensave-linux, opensave-linux-arm64, opensave-macos-arm64), so find it
+# (savevault-linux, savevault-linux-arm64, savevault-macos-arm64), so find it
 # rather than assume.
 src=""
-for candidate in "$tmp"/opensave-"$platform"*; do
-    if [ -d "$candidate" ] && [ -f "$candidate/opensave-cli" ]; then
+for candidate in "$tmp"/savevault-"$platform"*; do
+    if [ -d "$candidate" ] && [ -f "$candidate/savevault-cli" ]; then
         src="$candidate"
         break
     fi
 done
-[ -n "$src" ] || die "opensave-cli not found in $ASSET — unexpected archive layout"
+[ -n "$src" ] || die "savevault-cli not found in $ASSET — unexpected archive layout"
 
 mkdir -p "$INSTALL_DIR" || die "could not create $INSTALL_DIR"
 
@@ -267,11 +267,11 @@ install_one() {
 }
 
 say "Installing…"
-install_one opensave-cli
-install_one opensave-relay
+install_one savevault-cli
+install_one savevault-relay
 
-# `opensave` is the name the docs, the man page and the tool's own help use,
-# and what the Windows installer has always produced. `opensave-cli` stays as
+# `savevault` is the name the docs, the man page and the tool's own help use,
+# and what the Windows installer has always produced. `savevault-cli` stays as
 # the real file because the systemd units, the .deb/.rpm layout and the Steam
 # Deck plugin all look it up by that name.
 link_alias() {
@@ -295,10 +295,10 @@ link_alias() {
     say "  $INSTALL_DIR/$alias_name"
 }
 
-link_alias opensave opensave-cli
-link_alias os opensave-cli
+link_alias savevault savevault-cli
+link_alias os savevault-cli
 
-installed_version="$("$INSTALL_DIR/opensave-cli" version 2>/dev/null || echo "unknown")"
+installed_version="$("$INSTALL_DIR/savevault-cli" version 2>/dev/null || echo "unknown")"
 say ""
 say "Installed: $installed_version"
 
@@ -324,7 +324,7 @@ add_to_path() {
         say "PATH already configured in $rc."
     elif {
         echo ""
-        echo "# Added by the OpenSave installer"
+        echo "# Added by the SaveVault installer"
         echo "$line"
     } >> "$rc" 2>/dev/null; then
         say "Added $INSTALL_DIR to PATH in $rc."
@@ -344,10 +344,10 @@ add_to_path
 # ── Show what it found ───────────────────────────────────────────────────
 
 say ""
-"$INSTALL_DIR/opensave-cli" || true
+"$INSTALL_DIR/savevault-cli" || true
 
 if [ "$NEW_SHELL_NEEDED" = "1" ]; then
-    say "Open a new terminal (or run: . $rc) for 'opensave' to work everywhere."
+    say "Open a new terminal (or run: . $rc) for 'savevault' to work everywhere."
     say ""
 fi
 
@@ -359,22 +359,22 @@ fi
 #
 # Skipped entirely when stdin is not a terminal: an install piped from curl has
 # no one to answer, and stopping there to wait would hang the pipeline.
-if [ -t 0 ] && [ -x "$INSTALL_DIR/opensave-relay" ]; then
+if [ -t 0 ] && [ -x "$INSTALL_DIR/savevault-relay" ]; then
     say ""
     printf "Configure relay secrets now (cloud sync, cover art)? [y/N] "
     read -r reply || reply=""
     case "$reply" in
-        [Yy]*) "$INSTALL_DIR/opensave-relay" setup || true ;;
-        *)     say "  Skipped — run 'opensave-relay setup' whenever you like." ;;
+        [Yy]*) "$INSTALL_DIR/savevault-relay" setup || true ;;
+        *)     say "  Skipped — run 'savevault-relay setup' whenever you like." ;;
     esac
 fi
 
 say "Next:"
-say "  opensave scan                 find your game saves"
-say "  opensave daemon start         run the sync service"
-say "  opensave service install      run it automatically on login"
-say "  opensave pair <other-device>  pair another machine"
-say "  opensave-relay setup          store this relay's secrets (relay hosts only)"
+say "  savevault scan                 find your game saves"
+say "  savevault daemon start         run the sync service"
+say "  savevault service install      run it automatically on login"
+say "  savevault pair <other-device>  pair another machine"
+say "  savevault-relay setup          store this relay's secrets (relay hosts only)"
 say ""
-say "'os' works as a short alias for 'opensave'."
+say "'os' works as a short alias for 'savevault'."
 say "On a Steam Deck, also run: sudo loginctl enable-linger \$USER"

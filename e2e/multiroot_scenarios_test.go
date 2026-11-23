@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Harder scenarios for games with several save folders. The tests in

@@ -127,7 +127,7 @@ func (s *server) coverFetchEnabledLocked() bool {
 	if s.coverFetchEnv != nil {
 		return *s.coverFetchEnv
 	}
-	return s.openSaveMeta.Settings.CoverFetch
+	return s.saveVaultMeta.Settings.CoverFetch
 }
 
 func (s *server) coverFetchEnabled() bool {
@@ -136,7 +136,7 @@ func (s *server) coverFetchEnabled() bool {
 	}
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	return s.openSaveMeta.Settings.CoverFetch
+	return s.saveVaultMeta.Settings.CoverFetch
 }
 
 func (s *server) metaSettings() (enabled, locked bool) {
@@ -145,14 +145,14 @@ func (s *server) metaSettings() (enabled, locked bool) {
 	}
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	return s.openSaveMeta.Settings.CoverFetch, false
+	return s.saveVaultMeta.Settings.CoverFetch, false
 }
 
 // coverFetchURLs validates the game key before expanding the fixed templates.
 // Unknown keys, malformed AppIDs, and malformed TitleIDs produce no URLs.
 func (s *server) coverFetchURLs(gameKey string) []string {
 	kind, rest, found := strings.Cut(gameKey, "/")
-	if !found || !validOpenSaveType(kind) {
+	if !found || !validSaveVaultType(kind) {
 		return nil
 	}
 	if appID, ok := strings.CutPrefix(rest, "steam:"); ok {
@@ -183,7 +183,7 @@ func (s *server) coverFetchURLs(gameKey string) []string {
 	return urls
 }
 
-func (s *server) queueOpenSaveCoverFetch(gameKey string) {
+func (s *server) queueSaveVaultCoverFetch(gameKey string) {
 	if !s.coverFetchEnabled() || len(s.coverFetchURLs(gameKey)) == 0 {
 		return
 	}
@@ -220,7 +220,7 @@ func (s *server) coverFetchWorker() {
 			if s.coverFetchCtx.Err() != nil {
 				return
 			}
-			s.fetchOpenSaveCover(s.coverFetchCtx, gameKey)
+			s.fetchSaveVaultCover(s.coverFetchCtx, gameKey)
 			s.coverFetchMu.Lock()
 			delete(s.coverFetchQueued, gameKey)
 			s.coverFetchMu.Unlock()
@@ -235,52 +235,52 @@ func (s *server) coverFetchQueueLength() int {
 	return len(s.coverFetchQueue)
 }
 
-func (s *server) shouldFetchOpenSaveCover(gameKey string, now time.Time) bool {
+func (s *server) shouldFetchSaveVaultCover(gameKey string, now time.Time) bool {
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	record := s.openSaveMeta.Games[gameKey]
+	record := s.saveVaultMeta.Games[gameKey]
 	if record.Upstream != nil {
 		return false
 	}
 	return record.UpstreamMissUntil.IsZero() || !now.Before(record.UpstreamMissUntil)
 }
 
-func (s *server) fetchOpenSaveCover(ctx context.Context, gameKey string) {
+func (s *server) fetchSaveVaultCover(ctx context.Context, gameKey string) {
 	if !s.coverFetchEnabled() {
 		return
 	}
-	if now := s.now().UTC(); !s.shouldFetchOpenSaveCover(gameKey, now) {
+	if now := s.now().UTC(); !s.shouldFetchSaveVaultCover(gameKey, now) {
 		return
 	}
 	urls := s.coverFetchURLs(gameKey)
 	if len(urls) == 0 {
 		return
 	}
-	cover, data, outcome, fetchErr := s.downloadOpenSaveCover(ctx, urls)
+	cover, data, outcome, fetchErr := s.downloadSaveVaultCover(ctx, urls)
 	if ctx.Err() != nil {
 		return
 	}
 	switch outcome {
 	case coverFetchOK:
-		s.recordOpenSaveCoverSuccess(gameKey, cover, data)
+		s.recordSaveVaultCoverSuccess(gameKey, cover, data)
 	case coverFetchMiss:
-		s.recordOpenSaveCoverMiss(gameKey)
+		s.recordSaveVaultCoverMiss(gameKey)
 	case coverFetchError:
-		s.recordOpenSaveCoverError(gameKey, fetchErr)
+		s.recordSaveVaultCoverError(gameKey, fetchErr)
 	}
 }
 
-func (s *server) downloadOpenSaveCover(ctx context.Context,
-	urls []string) (openSaveMetaCover, []byte, coverFetchOutcome, error) {
+func (s *server) downloadSaveVaultCover(ctx context.Context,
+	urls []string) (saveVaultMetaCover, []byte, coverFetchOutcome, error) {
 	sawMiss := false
 	sawError := false
 	var lastErr error
 	for _, target := range urls {
 		if ctx.Err() != nil {
-			return openSaveMetaCover{}, nil, coverFetchError, ctx.Err()
+			return saveVaultMetaCover{}, nil, coverFetchError, ctx.Err()
 		}
 		if !s.coverFetchEnabled() {
-			return openSaveMetaCover{}, nil, coverFetchDisabled, nil
+			return saveVaultMetaCover{}, nil, coverFetchDisabled, nil
 		}
 		parsed, err := url.Parse(target)
 		if err != nil || !validCoverFetchURL(parsed) {
@@ -327,7 +327,7 @@ func (s *server) downloadOpenSaveCover(ctx context.Context,
 			lastErr = fmt.Errorf("%s: upstream cover exceeds 2 MiB", parsed.Host)
 			continue
 		}
-		cover, valid := openSaveCoverFromImage(data, maxCoverFetchDimension)
+		cover, valid := saveVaultCoverFromImage(data, maxCoverFetchDimension)
 		if !valid {
 			sawError = true
 			lastErr = fmt.Errorf("%s: upstream cover is not a valid JPEG or PNG", parsed.Host)
@@ -336,15 +336,15 @@ func (s *server) downloadOpenSaveCover(ctx context.Context,
 		return cover, data, coverFetchOK, nil
 	}
 	if sawError {
-		return openSaveMetaCover{}, nil, coverFetchError, lastErr
+		return saveVaultMetaCover{}, nil, coverFetchError, lastErr
 	}
 	if sawMiss {
-		return openSaveMetaCover{}, nil, coverFetchMiss, lastErr
+		return saveVaultMetaCover{}, nil, coverFetchMiss, lastErr
 	}
-	return openSaveMetaCover{}, nil, coverFetchError, errors.New("no upstream cover URL")
+	return saveVaultMetaCover{}, nil, coverFetchError, errors.New("no upstream cover URL")
 }
 
-func (s *server) recordOpenSaveCoverSuccess(gameKey string, cover openSaveMetaCover, data []byte) {
+func (s *server) recordSaveVaultCoverSuccess(gameKey string, cover saveVaultMetaCover, data []byte) {
 	if !s.coverFetchEnabled() {
 		return
 	}
@@ -357,13 +357,13 @@ func (s *server) recordOpenSaveCoverSuccess(gameKey string, cover openSaveMetaCo
 		s.metaMu.Unlock()
 		return
 	}
-	record := s.openSaveMeta.Games[gameKey]
+	record := s.saveVaultMeta.Games[gameKey]
 	if record.Upstream != nil {
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.ok.Add(1)
 		return
 	}
-	created, err := s.storeOpenSaveCover(cover.SHA256, data)
+	created, err := s.storeSaveVaultCover(cover.SHA256, data)
 	if err != nil {
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.err.Add(1)
@@ -373,23 +373,23 @@ func (s *server) recordOpenSaveCoverSuccess(gameKey string, cover openSaveMetaCo
 	record.Upstream = &cover
 	record.UpstreamFailures = 0
 	record.UpstreamMissUntil = time.Time{}
-	next := s.openSaveMeta.clone()
+	next := s.saveVaultMeta.clone()
 	next.Games[gameKey] = record
-	if err := s.persistOpenSaveMeta(next); err != nil {
+	if err := s.persistSaveVaultMeta(next); err != nil {
 		if created {
-			_ = os.Remove(s.openSaveMetaCoverPath(cover.SHA256))
+			_ = os.Remove(s.saveVaultMetaCoverPath(cover.SHA256))
 		}
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.err.Add(1)
 		slog.Warn("fetch upstream cover", "game", gameKey, "error", err)
 		return
 	}
-	s.openSaveMeta = next
+	s.saveVaultMeta = next
 	s.metaMu.Unlock()
 	s.coverFetchMetrics.ok.Add(1)
 }
 
-func (s *server) recordOpenSaveCoverMiss(gameKey string) {
+func (s *server) recordSaveVaultCoverMiss(gameKey string) {
 	if !s.coverFetchEnabled() {
 		return
 	}
@@ -398,26 +398,26 @@ func (s *server) recordOpenSaveCoverMiss(gameKey string) {
 		s.metaMu.Unlock()
 		return
 	}
-	record := s.openSaveMeta.Games[gameKey]
+	record := s.saveVaultMeta.Games[gameKey]
 	if record.Upstream != nil {
 		s.metaMu.Unlock()
 		return
 	}
 	record.UpstreamMissUntil = s.now().UTC().Add(coverFetchMissDuration)
-	next := s.openSaveMeta.clone()
+	next := s.saveVaultMeta.clone()
 	next.Games[gameKey] = record
-	if err := s.persistOpenSaveMeta(next); err != nil {
+	if err := s.persistSaveVaultMeta(next); err != nil {
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.err.Add(1)
 		slog.Warn("fetch upstream cover", "game", gameKey, "error", err)
 		return
 	}
-	s.openSaveMeta = next
+	s.saveVaultMeta = next
 	s.metaMu.Unlock()
 	s.coverFetchMetrics.miss.Add(1)
 }
 
-func (s *server) recordOpenSaveCoverError(gameKey string, fetchErr error) {
+func (s *server) recordSaveVaultCoverError(gameKey string, fetchErr error) {
 	if !s.coverFetchEnabled() {
 		return
 	}
@@ -427,7 +427,7 @@ func (s *server) recordOpenSaveCoverError(gameKey string, fetchErr error) {
 		s.metaMu.Unlock()
 		return
 	}
-	record := s.openSaveMeta.Games[gameKey]
+	record := s.saveVaultMeta.Games[gameKey]
 	if record.Upstream != nil {
 		s.metaMu.Unlock()
 		return
@@ -441,15 +441,15 @@ func (s *server) recordOpenSaveCoverError(gameKey string, fetchErr error) {
 		retry = coverFetchFailureTwentyFour
 	}
 	record.UpstreamMissUntil = now.Add(retry)
-	next := s.openSaveMeta.clone()
+	next := s.saveVaultMeta.clone()
 	next.Games[gameKey] = record
-	if err := s.persistOpenSaveMeta(next); err != nil {
+	if err := s.persistSaveVaultMeta(next); err != nil {
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.err.Add(1)
 		slog.Warn("fetch upstream cover", "game", gameKey, "error", err)
 		return
 	}
-	s.openSaveMeta = next
+	s.saveVaultMeta = next
 	s.metaMu.Unlock()
 	s.coverFetchMetrics.err.Add(1)
 	slog.Warn("fetch upstream cover", "game", gameKey, "error", fetchErr)
@@ -462,20 +462,20 @@ func (s *server) queueMaintenanceCoverFetches() {
 		return
 	}
 	keys := make(map[string]struct{})
-	s.openSaveMu.Lock()
-	for key, stored := range s.openSaveState.Scopes {
+	s.saveVaultMu.Lock()
+	for key, stored := range s.saveVaultState.Scopes {
 		kind, gameID, _ := strings.Cut(key, "\x00")
-		gameKey, _ := openSaveGameKey(kind, gameID, stored)
+		gameKey, _ := saveVaultGameKey(kind, gameID, stored)
 		keys[gameKey] = struct{}{}
 	}
-	s.openSaveMu.Unlock()
+	s.saveVaultMu.Unlock()
 	s.metaMu.Lock()
-	for gameKey := range s.openSaveMeta.Games {
+	for gameKey := range s.saveVaultMeta.Games {
 		keys[gameKey] = struct{}{}
 	}
 	s.metaMu.Unlock()
 	for gameKey := range keys {
-		s.queueOpenSaveCoverFetch(gameKey)
+		s.queueSaveVaultCoverFetch(gameKey)
 	}
 }
 
@@ -496,18 +496,18 @@ func (s *server) handlePutMetaSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metaMu.Lock()
-	changed := s.openSaveMeta.Settings.CoverFetch != request.CoverFetch
+	changed := s.saveVaultMeta.Settings.CoverFetch != request.CoverFetch
 	if changed {
-		next := s.openSaveMeta.clone()
+		next := s.saveVaultMeta.clone()
 		next.Settings.CoverFetch = request.CoverFetch
-		if err := s.persistOpenSaveMeta(next); err != nil {
+		if err := s.persistSaveVaultMeta(next); err != nil {
 			s.metaMu.Unlock()
-			writeError(w, http.StatusInternalServerError, "cannot persist OpenSave metadata")
+			writeError(w, http.StatusInternalServerError, "cannot persist SaveVault metadata")
 			return
 		}
-		s.openSaveMeta = next
+		s.saveVaultMeta = next
 	}
-	enabled := s.openSaveMeta.Settings.CoverFetch
+	enabled := s.saveVaultMeta.Settings.CoverFetch
 	s.metaMu.Unlock()
 	if changed {
 		state := "off"
@@ -521,15 +521,15 @@ func (s *server) handlePutMetaSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"coverFetch": enabled, "lockedByEnv": false})
 }
 
-func (s *server) handleAdminOpenSaveGameCoverRefetch(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleAdminSaveVaultGameCoverRefetch(w http.ResponseWriter, r *http.Request) {
 	value := r.PathValue("key")
 	gameKey, ok := strings.CutSuffix(value, "/cover/refetch")
 	if !ok {
-		writeError(w, http.StatusNotFound, "OpenSave metadata endpoint not found")
+		writeError(w, http.StatusNotFound, "SaveVault metadata endpoint not found")
 		return
 	}
-	if !validOpenSaveGameKey(gameKey) {
-		writeError(w, http.StatusBadRequest, "invalid OpenSave game key")
+	if !validSaveVaultGameKey(gameKey) {
+		writeError(w, http.StatusBadRequest, "invalid SaveVault game key")
 		return
 	}
 	if !s.coverFetchEnabled() {
@@ -537,32 +537,32 @@ func (s *server) handleAdminOpenSaveGameCoverRefetch(w http.ResponseWriter, r *h
 		return
 	}
 	if len(s.coverFetchURLs(gameKey)) == 0 {
-		writeError(w, http.StatusBadRequest, "OpenSave game key has no upstream cover")
+		writeError(w, http.StatusBadRequest, "SaveVault game key has no upstream cover")
 		return
 	}
 
-	s.openSaveMu.Lock()
-	members := s.openSaveGameMembersForKeyLocked(gameKey)
+	s.saveVaultMu.Lock()
+	members := s.saveVaultGameMembersForKeyLocked(gameKey)
 	s.metaMu.Lock()
-	record := s.openSaveMeta.Games[gameKey]
+	record := s.saveVaultMeta.Games[gameKey]
 	changed := record.Upstream != nil || !record.UpstreamMissUntil.IsZero() || record.UpstreamFailures != 0
 	if changed {
 		record.Upstream = nil
 		record.UpstreamMissUntil = time.Time{}
 		record.UpstreamFailures = 0
-		next := s.openSaveMeta.clone()
+		next := s.saveVaultMeta.clone()
 		next.Games[gameKey] = record
-		if err := s.persistOpenSaveMeta(next); err != nil {
+		if err := s.persistSaveVaultMeta(next); err != nil {
 			s.metaMu.Unlock()
-			s.openSaveMu.Unlock()
-			writeError(w, http.StatusInternalServerError, "cannot persist OpenSave metadata")
+			s.saveVaultMu.Unlock()
+			writeError(w, http.StatusInternalServerError, "cannot persist SaveVault metadata")
 			return
 		}
-		s.openSaveMeta = next
+		s.saveVaultMeta = next
 	}
-	meta := openSaveGameMetaView(gameKey, s.openSaveMeta.Games[gameKey], members, true)
+	meta := saveVaultGameMetaView(gameKey, s.saveVaultMeta.Games[gameKey], members, true)
 	s.metaMu.Unlock()
-	s.openSaveMu.Unlock()
-	s.queueOpenSaveCoverFetch(gameKey)
+	s.saveVaultMu.Unlock()
+	s.queueSaveVaultCoverFetch(gameKey)
 	writeJSON(w, http.StatusAccepted, meta)
 }

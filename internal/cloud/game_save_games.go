@@ -41,7 +41,7 @@ type GameSaveGame struct {
 }
 
 func (p gameSave) gamesEndpoint() string {
-	return strings.TrimRight(p.cfg.URL, "/") + "/v1/opensave/games"
+	return strings.TrimRight(p.cfg.URL, "/") + "/v1/savevault/games"
 }
 
 func (p gameSave) listGames() ([]GameSaveGame, error) {

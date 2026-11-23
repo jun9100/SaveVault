@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/andybalholm/brotli"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Exporting and importing saves (Cloud Backup → Export / Import, and
-// `opensave backup`) since games could be linked, emptied, and could lose
+// `savevault backup`) since games could be linked, emptied, and could lose
 // their folders.
 
 type exportReply struct {

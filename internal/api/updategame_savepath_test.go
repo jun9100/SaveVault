@@ -39,7 +39,7 @@ func TestUpdateGameRefusesASavePathTrackingWouldRefuse(t *testing.T) {
 		home,                             // the whole profile
 		filepath.Join(home, "Documents"), // a whole profile folder
 		driveRoot,                        // the drive itself
-		filepath.Join(home, "no-such-dir-opensave-probe"), // does not exist
+		filepath.Join(home, "no-such-dir-savevault-probe"), // does not exist
 	} {
 		resp, _ := ts.do(t, http.MethodPatch, "/api/games/"+gameID,
 			map[string]any{"name": "probe", "savePath": bad})

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Exclusion rules saved fine and then appeared to vanish: reopening a game's

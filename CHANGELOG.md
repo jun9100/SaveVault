@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to OpenSave are documented here. This project adheres to
+All notable changes to SaveVault are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
 ## [2.8.0] — 2026-11-13

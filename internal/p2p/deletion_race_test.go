@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // A deletion made on one device reaches another as one request per file,

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/watcher"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/watcher"
 )
 
 // adoptAutoTracked gives a game tracked because a paired device asked for it

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/sessions"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/sessions"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // A machine for these tests: a Steam library, which has installed only what a

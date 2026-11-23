@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/logging"
+	"github.com/jun9100/savevault/internal/logging"
 )
 
 // GameRoot is one additional save location for a game, beyond the primary

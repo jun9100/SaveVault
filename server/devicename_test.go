@@ -34,18 +34,18 @@ func deviceTestRequest(t *testing.T, method, target, token, deviceName string, b
 		t.Fatal(err)
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("X-OpenSave-Device-ID", "device-1")
-	request.Header.Set("X-OpenSave-Device-Name", deviceName)
-	request.Header.Set("X-OpenSave-Platform", "opensave-windows")
+	request.Header.Set("X-SaveVault-Device-ID", "device-1")
+	request.Header.Set("X-SaveVault-Device-Name", deviceName)
+	request.Header.Set("X-SaveVault-Platform", "savevault-windows")
 	return request
 }
 
-func uploadDeviceNameSnapshot(t *testing.T, baseURL, token, gameID, deviceName string) openSaveScopeSnapshot {
+func uploadDeviceNameSnapshot(t *testing.T, baseURL, token, gameID, deviceName string) saveVaultScopeSnapshot {
 	t.Helper()
 	contents := []byte("save-" + gameID)
 	archive := gameID + "__main__snapshot-1.zip"
 	response, err := http.DefaultClient.Do(deviceTestRequest(t, http.MethodPut,
-		baseURL+"/v1/opensave/files/switch/"+archive, token, deviceName, contents))
+		baseURL+"/v1/savevault/files/switch/"+archive, token, deviceName, contents))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func uploadDeviceNameSnapshot(t *testing.T, baseURL, token, gameID, deviceName s
 	}
 
 	digest := sha256.Sum256(contents)
-	candidate := openSaveScopeCandidate{
+	candidate := saveVaultScopeCandidate{
 		ID:            "snapshot-1",
 		Archive:       archive,
 		ContentDigest: hex.EncodeToString(digest[:]),
@@ -66,7 +66,7 @@ func uploadDeviceNameSnapshot(t *testing.T, baseURL, token, gameID, deviceName s
 		t.Fatal(err)
 	}
 	request := deviceTestRequest(t, http.MethodPut,
-		baseURL+"/v1/opensave/scopes/switch/"+gameID+"/snapshots/"+candidate.ID, token, deviceName, payload)
+		baseURL+"/v1/savevault/scopes/switch/"+gameID+"/snapshots/"+candidate.ID, token, deviceName, payload)
 	request.Header.Set("If-Match", `""`)
 	response, err = http.DefaultClient.Do(request)
 	if err != nil {
@@ -76,7 +76,7 @@ func uploadDeviceNameSnapshot(t *testing.T, baseURL, token, gameID, deviceName s
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("snapshot upload status = %d, want 201", response.StatusCode)
 	}
-	var snapshot openSaveScopeSnapshot
+	var snapshot saveVaultScopeSnapshot
 	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -115,26 +115,26 @@ func TestRequestClientHeaderDecodesOnlyDeviceName(t *testing.T) {
 	request.Header.Set("X-Eden-Platform", "UTF-8''Odin%202")
 	request.Header.Set("X-Eden-Version", "UTF-8''1.0")
 
-	if got := requestClientHeader(request, "X-Eden-Device-Name", "X-OpenSave-Device-Name"); got != "小明" {
+	if got := requestClientHeader(request, "X-Eden-Device-Name", "X-SaveVault-Device-Name"); got != "小明" {
 		t.Fatalf("Eden device name = %q, want %q", got, "小明")
 	}
-	if got := requestClientHeader(request, "X-Eden-Device-ID", "X-OpenSave-Device-ID"); got != "UTF-8''device" {
+	if got := requestClientHeader(request, "X-Eden-Device-ID", "X-SaveVault-Device-ID"); got != "UTF-8''device" {
 		t.Fatalf("device id = %q, want unchanged", got)
 	}
-	if got := requestClientHeader(request, "X-Eden-Platform", "X-OpenSave-Platform"); got != "UTF-8''Odin%202" {
+	if got := requestClientHeader(request, "X-Eden-Platform", "X-SaveVault-Platform"); got != "UTF-8''Odin%202" {
 		t.Fatalf("platform = %q, want unchanged", got)
 	}
-	if got := requestClientHeader(request, "X-Eden-Version", "X-OpenSave-Version"); got != "UTF-8''1.0" {
+	if got := requestClientHeader(request, "X-Eden-Version", "X-SaveVault-Version"); got != "UTF-8''1.0" {
 		t.Fatalf("version = %q, want unchanged", got)
 	}
 
-	request.Header.Set("X-OpenSave-Device-Name", "utf-8''Odin%202")
-	if got := requestClientHeader(request, "X-Eden-Device-Name", "X-OpenSave-Device-Name"); got != "Odin 2" {
-		t.Fatalf("OpenSave device name = %q, want %q", got, "Odin 2")
+	request.Header.Set("X-SaveVault-Device-Name", "utf-8''Odin%202")
+	if got := requestClientHeader(request, "X-Eden-Device-Name", "X-SaveVault-Device-Name"); got != "Odin 2" {
+		t.Fatalf("SaveVault device name = %q, want %q", got, "Odin 2")
 	}
 }
 
-func TestOpenSaveSnapshotRecordsDecodedDeviceName(t *testing.T) {
+func TestSaveVaultSnapshotRecordsDecodedDeviceName(t *testing.T) {
 	token := randomDeviceTestToken(t)
 	s, err := newServer(t.TempDir(), token, 1024*1024)
 	if err != nil {

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A title id no real library will have, so the emulators installed on the

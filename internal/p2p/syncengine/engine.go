@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/syncpause"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/syncpause"
 )
 
 // Conflict is a diverged-save state awaiting user resolution.
@@ -1889,7 +1889,7 @@ func humanBytes(n int64) string {
 func (e *Engine) deviceName() string {
 	settings, err := e.Store.GetSettings()
 	if err != nil {
-		return "OpenSave"
+		return "SaveVault"
 	}
 	return settings.DeviceName
 }

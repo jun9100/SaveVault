@@ -3,7 +3,7 @@ package cloud
 import (
 	"os"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // provider is one kind of place snapshots are kept. Each lives in its own

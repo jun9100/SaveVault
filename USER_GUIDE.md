@@ -1,22 +1,22 @@
-# OpenSave — User Guide
+# SaveVault — User Guide
 
-OpenSave keeps your game saves in sync across your devices, peer-to-peer. No
+SaveVault keeps your game saves in sync across your devices, peer-to-peer. No
 accounts, no subscriptions. This guide walks through everyday use.
 
-> **New to OpenSave?** Start with [Getting Started](GETTING_STARTED.md) — it
+> **New to SaveVault?** Start with [Getting Started](GETTING_STARTED.md) — it
 > covers the same ground from a fresh install and explains the terms as it
 > goes. This page is the reference for when you know what you are looking for.
 
 ## 1. First run
 
-When you open OpenSave the first time your library is empty. Two ways to add
+When you open SaveVault the first time your library is empty. Two ways to add
 games:
 
 - **🔍 Auto-scan** — finds saves from Steam, emulators (RetroArch, Dolphin,
   Ryujinx, Yuzu, Citra, PCSX2, RPCS3, PPSSPP, Cemu, Xenia), Steam-emulator
   repacks (Goldberg, CODEX, RUNE, …), Epic, GOG, and Unreal games. Pick the
   ones you want and click **Track selected**.
-- **+ Track folder** — point OpenSave at any save folder or single save file
+- **+ Track folder** — point SaveVault at any save folder or single save file
   manually.
 
 ### Reading the scan results
@@ -29,7 +29,7 @@ with a recent date is the live save.
 
 **One tile per game.** When a game is found in several places you get a single
 tile with **found in N folders** underneath it. Click that to see them all,
-each labelled with what OpenSave thinks it is:
+each labelled with what SaveVault thinks it is:
 
 | Label | What it means |
 |---|---|
@@ -42,7 +42,7 @@ Clicking a tile ticks the save folder plus anything marked *part of the same
 save*, and **Track** adds them as one game with extra locations — not as
 several games that share a name. Open the list to overrule any of it.
 
-If OpenSave puts two folders in different tiles when they are really one game
+If SaveVault puts two folders in different tiles when they are really one game
 — it has nothing to match on when the names differ and there is no Steam AppID
 — tick both and use **Track as one game** at the bottom.
 
@@ -50,7 +50,7 @@ Folders holding no files are hidden, because Steam creates one for every game
 you own whether or not saves go there; on a typical library that is a fifth of
 the results. Tick **Show N empty** in the scan toolbar to see them, which is
 worth doing if you want to track a game before it has saved for the first
-time. From the command line, `opensave scan --all` does the same.
+time. From the command line, `savevault scan --all` does the same.
 
 Tracked games appear in the sidebar and on the Home grid.
 
@@ -66,13 +66,13 @@ the two sides match on -- the folder itself lives somewhere different on each
 machine, so the path cannot be. A location whose name a device knows but has
 no folder for is shown as needing one, and is skipped until you choose it.
 
-Removing a location never deletes its files; it only stops OpenSave covering
+Removing a location never deletes its files; it only stops SaveVault covering
 them. From the command line:
 
 ```
-opensave locations <gameId>
-opensave locations add <gameId> config "C:/Users/me/Documents/Game"
-opensave locations remove <gameId> config
+savevault locations <gameId>
+savevault locations add <gameId> config "C:/Users/me/Documents/Game"
+savevault locations remove <gameId> config
 ```
 
 ### Files that shouldn't sync
@@ -109,14 +109,14 @@ Excluding something stops it travelling between devices; it never stops it
 being backed up. From the command line:
 
 ```
-opensave ignore <gameId>
-opensave ignore <gameId> add Config.gs
-opensave ignore <gameId> test Config.gs      # would this sync?
+savevault ignore <gameId>
+savevault ignore <gameId> add Config.gs
+savevault ignore <gameId> test Config.gs      # would this sync?
 ```
 
 ## 2. Snapshots & restore
 
-Every time a save changes, OpenSave takes a **snapshot** automatically (only
+Every time a save changes, SaveVault takes a **snapshot** automatically (only
 changed blocks are stored, so history is cheap). Open a game to:
 
 - **Snapshot now** — take a manual snapshot with a comment.
@@ -152,7 +152,7 @@ copies.
 
 ### On the same network (LAN)
 
-1. Install OpenSave on both devices.
+1. Install SaveVault on both devices.
 2. Open **Devices** — they discover each other automatically over the LAN.
 3. Click **Pair**; approve the request on the other device.
 4. Paired devices sync tracked games automatically.
@@ -170,7 +170,7 @@ device's LAN IP and port (default `8383`), then **Send pairing request**.
 
 ### Conflicts
 
-If the same save changed on two devices independently, OpenSave detects it
+If the same save changed on two devices independently, SaveVault detects it
 from sync lineage (not clocks) and asks you to **keep yours, theirs, or both**
 (both creates a new branch). Nothing is overwritten without your choice.
 
@@ -182,14 +182,14 @@ Sign in, flip the toggle, and every new snapshot uploads in the background.
 Use **Browse cloud** to explore and restore snapshots per game.
 
 **game-save (native API).** Choose **game-save** and enter the service
-address (e.g. `https://nas.example:8788`) and its sync key. OpenSave uses the
-service's native API under `/v1/opensave`, not WebDAV. Each game lives in its
+address (e.g. `https://nas.example:8788`) and its sync key. SaveVault uses the
+service's native API under `/v1/savevault`, not WebDAV. Each game lives in its
 save type's namespace (`pc`, `switch`, `emulator-<name>`), and each has a
 version chain: a publish only advances the cloud head when this device's last
 confirmed head is still the newest, otherwise it is kept as a conflict copy
 rather than overwriting another device's progress. A game's **Cloud** tab shows
 the chain, its history and any conflict copies. From a terminal:
-`opensave cloud setup game-save --url <service-url> --password <sync-key>`.
+`savevault cloud setup game-save --url <service-url> --password <sync-key>`.
 
 An upload that fails reports why — in the message, in **Activity**, and per
 game in a batch upload — instead of being counted as "skipped".
@@ -223,7 +223,7 @@ window's choice.
 
 ### Beta builds
 
-By default OpenSave only offers you published releases. Tick **Offer me beta
+By default SaveVault only offers you published releases. Tick **Offer me beta
 versions** under Settings → Updates to be offered pre-releases as well, if you
 want to try what is coming and report on it.
 
@@ -232,8 +232,8 @@ to find this setting first, and you will still be offered the stable release the
 moment it is newer than your build. From the command line:
 
 ```
-opensave config set update-channel beta      # or stable
-opensave update --check
+savevault config set update-channel beta      # or stable
+savevault update --check
 ```
 
 ### Snapshot retention
@@ -250,32 +250,30 @@ Both are set per game in its Configuration tab, or for newly tracked games
 under Settings → Snapshot history. From the command line:
 
 ```
-opensave game <gameId> set max-snapshots 20
-opensave game <gameId> set max-manual-snapshots 0     # 0 = keep forever
-opensave config set snapshot-limit 20                 # default for new games
-opensave config set manual-snapshot-limit 0
+savevault game <gameId> set max-snapshots 20
+savevault game <gameId> set max-manual-snapshots 0     # 0 = keep forever
+savevault config set snapshot-limit 20                 # default for new games
+savevault config set manual-snapshot-limit 0
 ```
 
 ## 6. Tray & background
 
-Closing the window **hides OpenSave to the system tray** so syncing keeps
+Closing the window **hides SaveVault to the system tray** so syncing keeps
 running. Right-click the tray icon to reopen, sync all games, or quit.
 
 ## 7. Troubleshooting
 
 - **"404 Not Found" on launch** — another program is using port `8383`. Quit
-  the other OpenSave (or app on that port), or change the port in Settings →
+  the other SaveVault (or app on that port), or change the port in Settings →
   Advanced.
 - **Devices don't see each other** — make sure both are on a *Private* network
-  profile and OpenSave is allowed through the firewall; otherwise pair by IP.
+  profile and SaveVault is allowed through the firewall; otherwise pair by IP.
 - **Cloud upload fails with "session expired"** — reconnect the provider under
   Cloud Backup (see the Google note above).
 - **Steam Deck / Game Mode** — a Decky Loader plugin lives in
-  `opensave-decky-plugin/`.
+  `savevault-decky-plugin/`.
 
 ## 8. Getting help
 
-Still stuck, or want to ask for something? **[Join the OpenSave Discord →](https://discord.gg/hvBv92DZvn)**
-It is the quickest way to get an answer, and where new builds are discussed
-before they ship. Bugs are also welcome on
-[GitHub issues](https://github.com/Liquid-co/OpenSave/issues).
+Still stuck, or want to ask for something? Open an issue on before they ship. Bugs are also welcome on
+[GitHub issues](https://github.com/jun9100/SaveVault/issues).

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/sessions"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/sessions"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func sessionGame(t *testing.T, d *Daemon, id string) (store.Game, string) {

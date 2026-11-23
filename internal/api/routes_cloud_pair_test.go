@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func setTestCloudConfig(t *testing.T, ts *testServer, mutate func(*store.CloudConfig)) {

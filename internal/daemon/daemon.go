@@ -1,4 +1,4 @@
-// Package daemon wires OpenSave's subsystems together: storage (with
+// Package daemon wires SaveVault's subsystems together: storage (with
 // legacy import on first launch), the snapshot manager, the file watcher,
 // and the local REST/WebSocket API. P2P and cloud attach here in later
 // phases.
@@ -15,24 +15,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/config"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/drain"
-	"github.com/opensave/opensave/internal/logging"
-	"github.com/opensave/opensave/internal/p2p"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/presets"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/store/legacyimport"
-	"github.com/opensave/opensave/internal/switchtitle"
-	"github.com/opensave/opensave/internal/watcher"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/config"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/drain"
+	"github.com/jun9100/savevault/internal/logging"
+	"github.com/jun9100/savevault/internal/p2p"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/presets"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/store/legacyimport"
+	"github.com/jun9100/savevault/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/watcher"
 )
 
 // Options tune daemon construction; the zero value is production behavior.
 type Options struct {
-	// HomeOverride uses a custom data directory instead of ~/.opensave
+	// HomeOverride uses a custom data directory instead of ~/.savevault
 	// (tests and portable installs).
 	HomeOverride string
 	// DisableDiscovery skips UDP LAN discovery (tests pair peers manually
@@ -94,7 +94,7 @@ type Daemon struct {
 
 	// initialSnapshots counts the first-snapshot goroutines TrackGame starts.
 	// They run in the background so the API can answer immediately, which is
-	// right for the desktop app and wrong for the CLI: `opensave add` returns
+	// right for the desktop app and wrong for the CLI: `savevault add` returns
 	// and the process exits, taking the unfinished snapshot with it. The game
 	// ended up tracked with no history at all, and nothing said so — the one
 	// snapshot you would most want is the state before you started playing.
@@ -120,7 +120,7 @@ func New(opts Options) (*Daemon, error) {
 	// that never reach the dashboard (boot problems, unreachable API) stay
 	// diagnosable — the dashboard only exists once boot succeeds.
 	log := logging.New()
-	log.AttachFile(filepath.Join(paths.HomeDir, "opensave.log"))
+	log.AttachFile(filepath.Join(paths.HomeDir, "savevault.log"))
 	log.Log("info", "daemon starting (data dir: "+paths.HomeDir+")")
 	fail := func(err error) (*Daemon, error) {
 		log.Log("error", "daemon boot failed: "+err.Error())
@@ -191,7 +191,7 @@ func New(opts Options) (*Daemon, error) {
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
 		// Tracked so Stop can wait for it. In a short-lived process —
-		// `opensave snapshot`, or the automatic backup taken by rollback and
+		// `savevault snapshot`, or the automatic backup taken by rollback and
 		// checkout — the process would otherwise exit before the copy
 		// finishes. The destination file has already been created and
 		// truncated by then, so what is left in the cloud is a zero-byte
@@ -260,8 +260,8 @@ func New(opts Options) (*Daemon, error) {
 }
 
 // normalizeGameSaveCloudURL migrates the old WebDAV collection address that
-// early game-save builds stored. Native endpoints live below /v1/opensave, so
-// retaining a trailing /opensave would make upgraded clients request it twice.
+// early game-save builds stored. Native endpoints live below /v1/savevault, so
+// retaining a trailing /savevault would make upgraded clients request it twice.
 func normalizeGameSaveCloudURL(s *store.Store) error {
 	cfg, err := s.GetCloudConfig()
 	if err != nil || cfg.Provider != cloud.GameSaveProvider || strings.TrimSpace(cfg.URL) == "" {
@@ -677,7 +677,7 @@ const watchResyncInterval = time.Minute
 //
 // It exists because the CLI does not talk to a running daemon: every command
 // opens its own short-lived daemon and writes the database directly. A game
-// added with `opensave add` while the desktop app (or a `daemon start`) is
+// added with `savevault add` while the desktop app (or a `daemon start`) is
 // running therefore appears in the database but is watched by nobody — no
 // auto-snapshots, no auto-sync — until the long-running process is restarted,
 // and nothing on screen says so. The CLI asks for this afterwards so the
@@ -872,7 +872,7 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	// upload, no zombie work for a game that no longer exists.
 	//
 	// Counted so Stop can wait for it: the CLI's daemon lives only as long as
-	// the command, and without the wait `opensave add` returned before the
+	// the command, and without the wait `savevault add` returned before the
 	// snapshot was written and the process took it with it.
 	d.initialSnapshots.Add()
 	go func() {
@@ -884,7 +884,7 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 			d.Log.Log("info", fmt.Sprintf("%q was untracked during its initial snapshot; skipping watch", game.Name))
 			return
 		}
-		// A stopped engine is a process on its way out — `opensave add`, whose
+		// A stopped engine is a process on its way out — `savevault add`, whose
 		// own short-lived daemon is gone by the time this runs, and which tells
 		// the running one to take the game on. Nothing failed, and saying
 		// "could not watch" in the shared log sent people looking for a fault.
@@ -919,7 +919,7 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 
 // validateSavePath rejects save locations that can never be right: paths
 // that don't exist, whole-profile/system directories, drive roots,
-// OpenSave's own data directory, and paths another game already tracks.
+// SaveVault's own data directory, and paths another game already tracks.
 // ValidateSavePath is exported so the CLI applies exactly the same checks the
 // app does when a save location is set or moved.
 func (d *Daemon) ValidateSavePath(rawPath string) (string, error) {
@@ -982,7 +982,7 @@ func (d *Daemon) ValidateSavePath(rawPath string) (string, error) {
 
 // CheckRestoreTarget validates a path files are about to be restored into
 // (backup import onto a possibly-fresh machine): same shape rules as
-// tracking — no drive roots, profile/system folders, or OpenSave's own
+// tracking — no drive roots, profile/system folders, or SaveVault's own
 // data dir — but the path is allowed to not exist yet.
 func (d *Daemon) CheckRestoreTarget(rawPath string) (string, error) {
 	if strings.TrimSpace(rawPath) == "" {
@@ -1061,18 +1061,18 @@ func (d *Daemon) checkSavePathShape(abs string) error {
 		}
 	}
 
-	// Never OpenSave's own data dir (snapshotting the backups folder would
+	// Never SaveVault's own data dir (snapshotting the backups folder would
 	// recurse forever).
 	dataDir := strings.ToLower(filepath.Clean(d.Paths.HomeDir))
 	if norm == dataDir || strings.HasPrefix(norm, dataDir+sep) || strings.HasPrefix(dataDir, norm+sep) {
-		return fmt.Errorf("refusing to use OpenSave's own data folder (%s)", abs)
+		return fmt.Errorf("refusing to use SaveVault's own data folder (%s)", abs)
 	}
 	// And by identity, for the same reason as above: a link pointing at the
 	// data folder is a different string for it, and snapshotting the folder
 	// the snapshots live in recurses.
 	if absStatErr == nil {
 		if dataInfo, err := os.Stat(d.Paths.HomeDir); err == nil && os.SameFile(absInfo, dataInfo) {
-			return fmt.Errorf("refusing to use %s — it points at OpenSave's own data folder (%s)",
+			return fmt.Errorf("refusing to use %s — it points at SaveVault's own data folder (%s)",
 				logging.Quote(abs), d.Paths.HomeDir)
 		}
 	}
@@ -1204,7 +1204,7 @@ func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
 		// game's folders — and deleting the entry below cascades them away,
 		// which would silently stop covering folders the user had set up
 		// without saying anything. The files stay either way; what would be
-		// lost is OpenSave knowing about them.
+		// lost is SaveVault knowing about them.
 		//
 		// A name the canonical game already uses is left alone: it has its own
 		// folder for that name here, and the merged entry's path is no more

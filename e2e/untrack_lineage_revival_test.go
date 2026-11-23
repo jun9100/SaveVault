@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Untracking clears everything a game agreed with its peers — and then a

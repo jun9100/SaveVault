@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Pairing has to leave both devices able to derive the same key, or nothing

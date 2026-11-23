@@ -22,9 +22,9 @@ type offeredGame struct {
 	PeerPath string `json:"peerPath"`
 }
 
-const offersUsage = `usage: opensave offers                          games another device syncs, waiting for a folder here
-       opensave offers place <gameId> <folder>  track it here, in that folder
-       opensave offers decline <gameId>         don't — it is not offered again`
+const offersUsage = `usage: savevault offers                          games another device syncs, waiting for a folder here
+       savevault offers place <gameId> <folder>  track it here, in that folder
+       savevault offers decline <gameId>         don't — it is not offered again`
 
 func cmdOffers(args []string) int {
 	asJSON, args := jsonFlag(args)
@@ -90,7 +90,7 @@ func listOffers(asJSON bool) int {
 		fmt.Printf("  %s Nothing waiting for a folder.\n", symOK())
 		if !askingBeforeTracking() {
 			note("Games from your other devices are tracked here by themselves; to be asked instead:")
-			hint("opensave config set unknown-game-from-peer ask")
+			hint("savevault config set unknown-game-from-peer ask")
 		}
 		fmt.Println()
 		return 0
@@ -115,8 +115,8 @@ func listOffers(asJSON bool) int {
 	}
 	t.render()
 	hint(
-		"opensave offers place <game> <folder>   track it here, in that folder",
-		"opensave offers decline <game>          don't",
+		"savevault offers place <game> <folder>   track it here, in that folder",
+		"savevault offers decline <game>          don't",
 	)
 	fmt.Println()
 	return 0

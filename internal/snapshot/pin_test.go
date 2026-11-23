@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func pin(t *testing.T, env *testEnv, snap store.Snapshot) {

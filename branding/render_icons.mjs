@@ -19,8 +19,8 @@ function render(size) {
 }
 
 const targets = {
-  'cmd/opensave-app/build/appicon.png': 1024,
-  'cmd/opensave-app/frontend/src/assets/logo.png': 256,
+  'cmd/savevault-app/build/appicon.png': 1024,
+  'cmd/savevault-app/frontend/src/assets/logo.png': 256,
 };
 for (const [path, size] of Object.entries(targets)) {
   writeFileSync(join(root, path), render(size));

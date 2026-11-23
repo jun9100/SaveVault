@@ -19,15 +19,15 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	cloudsvc "github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/logging"
-	"github.com/opensave/opensave/internal/p2p"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/syncpause"
-	"github.com/opensave/opensave/internal/transfers"
-	"github.com/opensave/opensave/internal/version"
+	cloudsvc "github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/logging"
+	"github.com/jun9100/savevault/internal/p2p"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/syncpause"
+	"github.com/jun9100/savevault/internal/transfers"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // Server hosts the REST API and dashboard WebSocket for one daemon.
@@ -257,7 +257,7 @@ func (s *Server) Start(port int) (string, error) {
 var ErrLoopbackTaken = errors.New("another program answers on this port")
 
 // instanceHeader carries Server.instance on every response.
-const instanceHeader = "X-OpenSave-Instance"
+const instanceHeader = "X-SaveVault-Instance"
 
 func newInstanceID() string {
 	b := make([]byte, 12)
@@ -272,7 +272,7 @@ func newInstanceID() string {
 // another program holds 127.0.0.1 at the same port — the more specific
 // address then wins every local connection. The desktop app, the CLI and the
 // port check all dial 127.0.0.1, so all of them reached the other program;
-// the app took its web page for an empty OpenSave (no games, first-run
+// the app took its web page for an empty SaveVault (no games, first-run
 // settings, a blank device name, and "i is not iterable" from a scan). A
 // BIOS update that installed a vendor utility serving on localhost was
 // enough.
@@ -280,7 +280,7 @@ func newInstanceID() string {
 // Only a connection that fails outright is let through: a firewall that
 // blocks loopback is reported by the desktop app's own check, which says what
 // to do about it. Anything that accepts the connection and does not answer as
-// this server — a page, a hang, a different OpenSave — is another program.
+// this server — a page, a hang, a different SaveVault — is another program.
 func (s *Server) answersLoopback(addr net.Addr) error {
 	tcp, ok := addr.(*net.TCPAddr)
 	if !ok {
@@ -296,7 +296,7 @@ func (s *Server) answersLoopback(addr net.Addr) error {
 		if errors.As(err, &opErr) && opErr.Op == "dial" {
 			return nil
 		}
-		return fmt.Errorf("%w: 127.0.0.1:%d does not answer as OpenSave (%v)", ErrLoopbackTaken, tcp.Port, err)
+		return fmt.Errorf("%w: 127.0.0.1:%d does not answer as SaveVault (%v)", ErrLoopbackTaken, tcp.Port, err)
 	}
 	resp.Body.Close()
 	if resp.Header.Get(instanceHeader) != s.instance {

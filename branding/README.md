@@ -16,7 +16,7 @@ the 66 dp safe zone.
 ```sh
 npm install --no-save @resvg/resvg-js@2.6.2
 node branding/render_icons.mjs
-python3 -c "from PIL import Image; s=[16,24,32,48,64,128,256]; Image.open('branding/out/icon-256.png').save('cmd/opensave-app/build/windows/icon.ico', sizes=[(n,n) for n in s])"
+python3 -c "from PIL import Image; s=[16,24,32,48,64,128,256]; Image.open('branding/out/icon-256.png').save('cmd/savevault-app/build/windows/icon.ico', sizes=[(n,n) for n in s])"
 ```
 
 `branding/out/` is scratch output and is not committed.

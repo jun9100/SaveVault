@@ -1,0 +1,223 @@
+// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestSaveVaultNativeFilesAreTypedAndTokenProtected(t *testing.T) {
+	dataDir := t.TempDir()
+	s, err := newServer(dataDir, "sync-token", 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(s.handler())
+	defer httpServer.Close()
+
+	url := httpServer.URL + "/v1/savevault/files/switch/mario__main__snap_1.zip"
+	unauthorized, err := http.NewRequest(http.MethodPut, url, bytes.NewReader([]byte("save")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(unauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated upload status = %d, want 401", response.StatusCode)
+	}
+
+	request, err := http.NewRequest(http.MethodPut, url, bytes.NewReader([]byte("save")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer sync-token")
+	request.Header.Set("X-SaveVault-Device-ID", "desktop-1")
+	request.Header.Set("X-SaveVault-Device-Name", "Test Desktop")
+	request.Header.Set("X-SaveVault-Platform", "savevault-windows")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("upload status = %d, want 201", response.StatusCode)
+	}
+	stored, err := os.ReadFile(filepath.Join(dataDir, "savevault-native", "switch", "mario__main__snap_1.zip"))
+	if err != nil || string(stored) != "save" {
+		t.Fatalf("native archive = %q, err=%v", stored, err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "savevault", "switch", "mario__main__snap_1.zip")); !os.IsNotExist(err) {
+		t.Fatalf("native archive leaked into legacy WebDAV storage: %v", err)
+	}
+
+	list, err := http.NewRequest(http.MethodGet, httpServer.URL+"/v1/savevault/files", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list.Header.Set("Authorization", "Bearer sync-token")
+	response, err = http.DefaultClient.Do(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var body struct {
+		Files []saveVaultFile `json:"files"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Files) != 1 || body.Files[0].Type != "switch" || body.Files[0].Name != "mario__main__snap_1.zip" {
+		t.Fatalf("list = %+v", body.Files)
+	}
+	wantHash := sha256.Sum256([]byte("save"))
+	if body.Files[0].SHA256 != hex.EncodeToString(wantHash[:]) || body.Files[0].Device != "desktop-1" ||
+		body.Files[0].DeviceName != "Test Desktop" || body.Files[0].UploadedAt.IsZero() {
+		t.Fatalf("audit metadata = %+v", body.Files[0])
+	}
+	if device, ok := s.dashboard.Devices["desktop-1"]; !ok || device.Name != "Test Desktop" || device.Platform != "savevault-windows" {
+		t.Fatalf("recorded device = %+v, known=%v", device, ok)
+	}
+
+	// Metadata is separate from archive bytes and must survive a service restart.
+	restarted, err := newServer(dataDir, "sync-token", 1024*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := restarted.listSaveVaultFiles()
+	if len(files) != 1 || files[0].SHA256 != hex.EncodeToString(wantHash[:]) || files[0].Device != "desktop-1" {
+		t.Fatalf("restarted archive metadata = %+v", files)
+	}
+
+	remove, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remove.Header.Set("Authorization", "Bearer sync-token")
+	response, err = http.DefaultClient.Do(remove)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status = %d", response.StatusCode)
+	}
+	contents, err := os.ReadFile(filepath.Join(dataDir, "savevault-native.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var catalog saveVaultCatalog
+	if err := json.Unmarshal(contents, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Files) != 0 {
+		t.Fatalf("catalog retained deleted archive: %+v", catalog.Files)
+	}
+}
+
+func TestSaveVaultCatalogSupportsEmulatorNamespacesAndAdminAudit(t *testing.T) {
+	dataDir := t.TempDir()
+	s, err := newServer(dataDir, testToken, 1024*1024, testAdminToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(s.handler())
+	defer httpServer.Close()
+
+	url := httpServer.URL + "/v1/savevault/files/emulator-eden/odyssey__profile-1__snapshot.zip"
+	request, err := http.NewRequest(http.MethodPut, url, bytes.NewReader([]byte("emulator save")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	request.Header.Set("X-SaveVault-Device-ID", "odin2-1")
+	request.Header.Set("X-SaveVault-Device-Name", "Odin2")
+	request.Header.Set("X-SaveVault-Platform", "savevault-android")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("upload status = %d, want 201", response.StatusCode)
+	}
+
+	response, body := adminDo(t, http.MethodGet, httpServer.URL+"/admin/api/savevault/files", nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("admin catalog status = %d: %s", response.StatusCode, body)
+	}
+	var catalog struct {
+		Files []saveVaultFile `json:"files"`
+	}
+	if err := json.Unmarshal(body, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Files) != 1 || catalog.Files[0].Type != "emulator-eden" ||
+		catalog.Files[0].DeviceName != "Odin2" || catalog.Files[0].SHA256 == "" {
+		t.Fatalf("admin catalog = %+v", catalog.Files)
+	}
+
+	overview := fetchOverview(t, httpServer.URL)
+	if overview.Stats.SaveVaultFiles != 1 || overview.Stats.SaveVaultBytes != int64(len("emulator save")) {
+		t.Fatalf("SaveVault overview statistics = %+v", overview.Stats)
+	}
+	response, metrics := adminDo(t, http.MethodGet, httpServer.URL+"/metrics", nil)
+	if response.StatusCode != http.StatusOK || !bytes.Contains(metrics, []byte("game_save_savevault_archives 1")) ||
+		!bytes.Contains(metrics, []byte("game_save_savevault_archive_bytes 13")) {
+		t.Fatalf("SaveVault metrics = %d %s", response.StatusCode, metrics)
+	}
+}
+
+func TestOverviewActivityIncludesSaveVaultUploads(t *testing.T) {
+	_, httpServer := newAdminTestServer(t, t.TempDir())
+	defer httpServer.Close()
+
+	publishSaveVaultScope(t, httpServer.URL, "pc", "forza-horizon-5", "snapshot-1", "", []byte("native save"))
+	overview := fetchOverview(t, httpServer.URL)
+	if overview.Stats.Uploads7d != 1 {
+		t.Fatalf("uploads_7d = %d, want 1", overview.Stats.Uploads7d)
+	}
+	uploads := 0
+	for _, day := range overview.Activity {
+		uploads += day.Uploads
+	}
+	if uploads != 1 {
+		t.Fatalf("activity uploads = %d, want 1: %+v", uploads, overview.Activity)
+	}
+}
+
+func TestDashboardDownloadsASaveVaultArchiveAsAnAttachment(t *testing.T) {
+	_, httpServer := newAdminTestServer(t, t.TempDir())
+	defer httpServer.Close()
+	const name = "dawn-of-war-2__main__snap-1.zip"
+	if status := putSaveVaultScopeArchive(t, httpServer.URL, "pc", name, []byte("zip bytes")); status != http.StatusCreated {
+		t.Fatalf("archive status = %d", status)
+	}
+	response, body := adminDo(t, http.MethodGet, httpServer.URL+"/admin/api/savevault/files/pc/"+name+"/download", nil)
+	if response.StatusCode != http.StatusOK || string(body) != "zip bytes" ||
+		response.Header.Get("Content-Type") != "application/zip" ||
+		response.Header.Get("Content-Disposition") != `attachment; filename=`+name {
+		t.Fatalf("download = %d %q %v", response.StatusCode, body, response.Header)
+	}
+	// The sync token is not an administrator login.
+	request := saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/admin/api/savevault/files/pc/"+name+"/download", nil)
+	plain, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain.Body.Close()
+	if plain.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("sync token status = %d", plain.StatusCode)
+	}
+}

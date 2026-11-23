@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // A fresh install has backup on, with the local folder provider and no folder

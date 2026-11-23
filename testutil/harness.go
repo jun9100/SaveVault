@@ -18,10 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/api"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/api"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // TestDaemon is one running daemon + API server.
@@ -72,7 +72,7 @@ func mustTempRoot(t *testing.T, pattern string) string {
 // directory a daemon writes into — a cloud folder, a watched save tree — for
 // the reason described on mustTempRoot: the standard one fails an otherwise
 // passing test when a handle is still open, which on Windows is routine.
-func TempDir(t *testing.T) string { return mustTempRoot(t, "opensave-test-*") }
+func TempDir(t *testing.T) string { return mustTempRoot(t, "savevault-test-*") }
 
 // NewTestDaemon boots a daemon with an isolated home dir and API server on
 // an OS-assigned port. Discovery is disabled; tests pair explicitly.
@@ -107,7 +107,7 @@ func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 	// Removal is retried and, in the end, best-effort: the operating system
 	// reclaims a test's temp directory regardless, and a stubborn handle says
 	// nothing about whether the code under test is correct.
-	root := mustTempRoot(t, "opensave-e2e-*")
+	root := mustTempRoot(t, "savevault-e2e-*")
 	home := filepath.Join(root, "home")
 	if err := os.MkdirAll(home, 0o777); err != nil {
 		t.Fatal(err)

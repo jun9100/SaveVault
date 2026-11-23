@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/config"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/config"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
-// Running `opensave` with no arguments shows what the system is doing right
+// Running `savevault` with no arguments shows what the system is doing right
 // now, not documentation. Someone typing the bare command almost always wants
 // to know "is this working?" — the full command list is one `--help` away.
 
@@ -136,7 +136,7 @@ func cmdOverview(args []string) int {
 	} else {
 		// Narrow terminal or piped output — the wordmark would wrap or turn
 		// into mojibake, so use the same title-and-rule the sections use.
-		title := "OpenSave " + st.Version
+		title := "SaveVault " + st.Version
 		fmt.Printf("  %s   %s\n", heading(title), faint("peer-to-peer game save sync"))
 		fmt.Printf("  %s\n\n", faint(strings.Repeat(sym("─", "-"), displayWidth(title)+32)))
 	}
@@ -189,7 +189,7 @@ func cloudSummary(st overviewState) string {
 	case st.CloudReady:
 		return okText("backing up") + faint("  to ") + cloud.ProviderLabel(st.CloudProvider)
 	case st.CloudOn:
-		return warnText("not set up") + faint("  see opensave cloud")
+		return warnText("not set up") + faint("  see savevault cloud")
 	}
 	return faint("off")
 }
@@ -215,41 +215,41 @@ func printQuickCommands(st overviewState) {
 
 	if !st.DaemonUp {
 		group("Start here", [][2]string{
-			{"opensave daemon start", "run the sync service"},
-			{"opensave service install", "run it automatically on login"},
+			{"savevault daemon start", "run the sync service"},
+			{"savevault service install", "run it automatically on login"},
 		})
 	}
 	if st.Games == 0 {
 		group("Find your saves", [][2]string{
-			{"opensave scan", "auto-detect installed games"},
-			{"opensave add <name> <path>", "track a folder yourself"},
+			{"savevault scan", "auto-detect installed games"},
+			{"savevault add <name> <path>", "track a folder yourself"},
 		})
 	} else {
 		group("Saves", [][2]string{
-			{"opensave status", "what's tracked here"},
-			{"opensave sync --all", "sync everything now"},
-			{"opensave scan", "look for new games"},
+			{"savevault status", "what's tracked here"},
+			{"savevault sync --all", "sync everything now"},
+			{"savevault scan", "look for new games"},
 		})
 	}
 	if st.PeersTotal == 0 {
 		group("Add a device", [][2]string{
-			{"opensave pair <address>", "same network"},
-			{"opensave relay join <code>", "different networks"},
+			{"savevault pair <address>", "same network"},
+			{"savevault relay join <code>", "different networks"},
 		})
 	} else {
 		group("Devices", [][2]string{
-			{"opensave peers", "paired and discovered devices"},
-			{"opensave pair requests", "approve an incoming request"},
+			{"savevault peers", "paired and discovered devices"},
+			{"savevault pair requests", "approve an incoming request"},
 		})
 	}
 	if st.Conflicts > 0 {
 		group("Needs a decision", [][2]string{
-			{"opensave conflicts", "what diverged, and which side is newer"},
+			{"savevault conflicts", "what diverged, and which side is newer"},
 		})
 	}
 
 	fmt.Println()
 	fmt.Printf("    %s  %s %s\n",
-		faint(sym("→", "->")), padRight(accent("opensave --help"), 27), faint("every command"))
+		faint(sym("→", "->")), padRight(accent("savevault --help"), 27), faint("every command"))
 	fmt.Println()
 }

@@ -64,7 +64,7 @@ const (
 	//
 	// Every distinct game name anyone ever scans used to stay resident for
 	// the life of the process: entries past their TTL were ignored on read
-	// but never removed. One key serves every OpenSave user through this
+	// but never removed. One key serves every SaveVault user through this
 	// relay, so "how many game names exist" was the only limit, against a
 	// service unit that caps the process at 512 MB.
 	//

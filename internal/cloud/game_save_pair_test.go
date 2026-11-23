@@ -106,7 +106,7 @@ func TestClaimPairingSendsCodeAndIdentityWithoutCredentials(t *testing.T) {
 		got.method, got.path = r.Method, r.URL.Path
 		got.contentType = r.Header.Get("Content-Type")
 		got.auth = r.Header.Get("Authorization")
-		got.deviceID = r.Header.Get("X-OpenSave-Device-ID")
+		got.deviceID = r.Header.Get("X-SaveVault-Device-ID")
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &got.body)
 		w.Header().Set("Content-Type", "application/json")
@@ -123,8 +123,8 @@ func TestClaimPairingSendsCodeAndIdentityWithoutCredentials(t *testing.T) {
 	svc, _ := newTestService(t)
 	result, err := svc.ClaimPairing(context.Background(), server.URL, "abcd-efgh", PairDevice{
 		DeviceID:   deviceID,
-		DeviceName: "OpenSave linux",
-		Platform:   "opensave-linux",
+		DeviceName: "SaveVault linux",
+		Platform:   "savevault-linux",
 		Version:    "2.6.0",
 	})
 	if err != nil {
@@ -142,7 +142,7 @@ func TestClaimPairingSendsCodeAndIdentityWithoutCredentials(t *testing.T) {
 	if got.body["code"] != "ABCD-EFGH" || got.body["device_id"] != deviceID {
 		t.Fatalf("request body = %+v", got.body)
 	}
-	if got.body["device_name"] != "OpenSave linux" || got.body["platform"] != "opensave-linux" || got.body["version"] != "2.6.0" {
+	if got.body["device_name"] != "SaveVault linux" || got.body["platform"] != "savevault-linux" || got.body["version"] != "2.6.0" {
 		t.Fatalf("request body = %+v", got.body)
 	}
 	if result.Token != token || result.TokenID != "0123456789abcdef" ||

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // syncSettleWindow covers the mtime-vs-lastSynced skew: an edit made within

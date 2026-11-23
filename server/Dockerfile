@@ -14,7 +14,7 @@ RUN go vet ./... \
 FROM alpine:3.22
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="game-save" \
-      org.opencontainers.image.description="Self-hosted encrypted game-save sync service for Eden and OpenSave" \
+      org.opencontainers.image.description="Self-hosted encrypted game-save sync service for Eden and SaveVault" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/jun9100/SaveVault"

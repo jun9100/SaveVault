@@ -71,7 +71,7 @@ type indexedGame struct {
 }
 
 // manifestPaths derives the manifest + index locations from the scanner's
-// cache file directory (~/.opensave).
+// cache file directory (~/.savevault).
 func (sc *Scanner) manifestPaths() (yamlPath, indexPath string) {
 	dir := filepath.Dir(sc.CacheFile)
 	return filepath.Join(dir, "ludusavi-manifest.yaml"), filepath.Join(dir, indexFileName)

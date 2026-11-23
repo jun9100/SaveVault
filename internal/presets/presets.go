@@ -146,7 +146,7 @@ var presetDefs = []preset{
 	// because it is wherever the user keeps their ROMs. The entries here find
 	// the configured-directory setups; anyone using the next-to-ROM default
 	// tracks their ROM folder by hand, which works fine and is what
-	// `opensave add` is for. Adding a preset cannot fix an unfixed location.
+	// `savevault add` is for. Adding a preset cannot fix an unfixed location.
 
 	// N64. Missing from every roadmap I have been handed, which is odd for a
 	// console this size. Project64 keeps saves in Save/ next to the binary

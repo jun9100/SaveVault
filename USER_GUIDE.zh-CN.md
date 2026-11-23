@@ -1,6 +1,6 @@
 # SaveVault 使用手册（简体中文）
 
-SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存档保存**快照**（版本历史），在你的多台设备之间点对点同步，并可选地备份到云端（包括自建的 game-save 服务）。不需要注册账号，所有数据都在你自己的设备和存储上。
+SaveVault 会自动为游戏存档保存**快照**（版本历史），在你的多台设备之间点对点同步，并可选地备份到云端（包括自建的 game-save 服务）。不需要注册账号，所有数据都在你自己的设备和存储上。
 
 > 英文版参考：[User Guide](USER_GUIDE.md)、[Getting Started](GETTING_STARTED.md)。应用内也有同样内容的**帮助**页（侧边栏 →「帮助」）。
 
@@ -24,17 +24,17 @@ SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存�
 
 | 平台 | 文件 | 说明 |
 |---|---|---|
-| Windows | `OpenSave.Setup.exe`（安装包）或 `OpenSave.exe`（免安装） | 双击运行。免安装版可以放在任意文件夹 |
-| Linux | `opensave-linux-amd64.tar.gz` | 解压后运行 `./opensave` |
-| Steam Deck | `OpenSave.flatpak` | 见英文 README 的 Steam Deck 一节 |
-| macOS | `OpenSave-macos.dmg` | 未签名，首次打开需在「隐私与安全性」中允许 |
+| Windows | `SaveVault.Setup.exe`（安装包）或 `SaveVault.exe`（免安装） | 双击运行。免安装版可以放在任意文件夹 |
+| Linux | `savevault-linux-amd64.tar.gz` | 解压后运行 `./savevault` |
+| Steam Deck | `SaveVault.flatpak` | 见英文 README 的 Steam Deck 一节 |
+| macOS | `SaveVault-macos.dmg` | 未签名，首次打开需在「隐私与安全性」中允许 |
 
 **Windows 首次运行注意：**
 
 - 系统可能弹出 **Windows 防火墙** 提示，请勾选「专用网络」并允许。否则局域网中的其他设备无法发现这台电脑（云备份不受影响）。
 - 如果 SmartScreen 提示「已保护你的电脑」，点「更多信息」→「仍要运行」。
-- 数据保存在用户文件夹下的 `.opensave\`（快照、数据库、日志 `opensave.log`）。
-- 想开机自启：**设置 → 常规 → 启动 → 开机时启动 OpenSave**（启动后最小化到托盘）。
+- 数据保存在用户文件夹下的 `.savevault\`（快照、数据库、日志 `savevault.log`）。
+- 想开机自启：**设置 → 常规 → 启动 → 开机时启动 SaveVault**（启动后最小化到托盘）。
 
 首次打开时游戏库为空，主页会显示入门向导：找到存档 → 添加其他设备 → 备份到云端。每一步都可以跳过，之后可在 **设置 → 常规 → 入门向导** 重新显示。
 
@@ -52,7 +52,7 @@ SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存�
 
 ### 扫描存档（推荐）
 
-点 **扫描存档**，OpenSave 会检查：
+点 **扫描存档**，SaveVault 会检查：
 
 - Steam（含每个用户的 `userdata`）、Epic、GOG、Unreal 引擎游戏的常见存档目录；
 - 模拟器：RetroArch、Dolphin、Ryujinx、Yuzu / Eden 等 Switch 模拟器、Citra、PCSX2、RPCS3、PPSSPP、Cemu、Xenia 等；
@@ -78,7 +78,7 @@ SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存�
 
 ### 拖放
 
-把存档文件夹直接拖进 OpenSave 窗口即可添加。
+把存档文件夹直接拖进 SaveVault 窗口即可添加。
 
 ### 模拟器的建议
 
@@ -93,7 +93,7 @@ SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存�
 
 ## 4. 快照
 
-快照是存档在某个时间点的完整压缩包。OpenSave 会在以下时机自动创建：
+快照是存档在某个时间点的完整压缩包。SaveVault 会在以下时机自动创建：
 
 - 开始跟踪时；
 - 检测到存档变化时；
@@ -136,9 +136,9 @@ SaveVault（基于 OpenSave 的分支，原名 OpenSave）会自动为游戏存�
 
 ### 6.1 自建 game-save 服务（原生接口，推荐）
 
-game-save 是自建的存档服务。OpenSave 通过它的原生同步接口（`/v1/opensave/...`）工作，不使用 WebDAV：
+game-save 是自建的存档服务。SaveVault 通过它的原生同步接口（`/v1/savevault/...`）工作，不使用 WebDAV：
 
-- 每个游戏按**存档类型**放在各自的命名空间中：PC 游戏为 `pc`，Switch 为 `switch`，模拟器为 `emulator-<名称>`。同一台服务器上的 PC、Switch、模拟器存档互不干扰，Android 端（OpenSave Android）也使用同样的分类。
+- 每个游戏按**存档类型**放在各自的命名空间中：PC 游戏为 `pc`，Switch 为 `switch`，模拟器为 `emulator-<名称>`。同一台服务器上的 PC、Switch、模拟器存档互不干扰，Android 端（SaveVault Android）也使用同样的分类。
 - 每个游戏有一条**版本链**（scope）：云端记录一个“权威版本（head）”。发布新快照时，只有在本机确认过的 head 仍是云端最新版本时才会推进（CAS）；否则本机的快照会作为**冲突副本**保留，不会覆盖另一台设备的进度。
 - 认证使用 `Authorization: Bearer <同步密钥>`。
 
@@ -156,8 +156,8 @@ game-save 是自建的存档服务。OpenSave 通过它的原生同步接口（`
 命令行等价操作：
 
 ```bash
-opensave cloud setup game-save --url https://nas.example:8788 --password <同步密钥>
-opensave cloud push <游戏ID>
+savevault cloud setup game-save --url https://nas.example:8788 --password <同步密钥>
+savevault cloud push <游戏ID>
 ```
 
 **用配对码连接（推荐，需要 game-save v1.7.0 或更新版本）**
@@ -177,7 +177,7 @@ opensave cloud push <游戏ID>
 ### 6.2 WebDAV（NAS、Nextcloud、坚果云等）
 
 1. 云备份 → 选择 **WebDAV 服务器**。
-2. **WebDAV 地址**填写一个专用文件夹，例如 `https://nas.local/dav/opensave/`。
+2. **WebDAV 地址**填写一个专用文件夹，例如 `https://nas.local/dav/savevault/`。
 3. 填写用户名和密码，保存并打开「自动」。
 
 
@@ -241,44 +241,44 @@ opensave cloud push <游戏ID>
 
 ## 8. 多设备同步
 
-- **同一局域网**：两台设备都运行 OpenSave，在「设备」页会自动互相发现，点 **配对** 并在对方设备上 **批准**。发现失败时可以用「通过 IP 地址添加」（默认端口 `8383`）。
-- **不同网络**：「设备 → 通过互联网」中，两台设备输入**相同的房间码**加入同一个中继房间，然后配对。通过中继的数据端到端加密，中继无法读取存档内容。也可以自建中继（`opensave-relay`）。
+- **同一局域网**：两台设备都运行 SaveVault，在「设备」页会自动互相发现，点 **配对** 并在对方设备上 **批准**。发现失败时可以用「通过 IP 地址添加」（默认端口 `8383`）。
+- **不同网络**：「设备 → 通过互联网」中，两台设备输入**相同的房间码**加入同一个中继房间，然后配对。通过中继的数据端到端加密，中继无法读取存档内容。也可以自建中继（`savevault-relay`）。
 - **冲突**：同一存档在两台设备上各自被修改时，会提示选择「保留我的 / 保留对方的 / 两者都保留（推荐，另一份放到分支上）」，任何选择之前都会先创建快照。
 
 ## 9. 托盘与后台运行
 
 - 关闭窗口只会隐藏到**系统托盘**，同步和快照继续在后台进行。
-- 托盘菜单：当前状态、最近动态、打开 OpenSave、同步所有游戏、立即为所有游戏创建快照、暂停同步（15 分钟 / 1 小时 / 3 小时 / 直到手动恢复）、退出。
+- 托盘菜单：当前状态、最近动态、打开 SaveVault、同步所有游戏、立即为所有游戏创建快照、暂停同步（15 分钟 / 1 小时 / 3 小时 / 直到手动恢复）、退出。
 - 要彻底退出，请在托盘菜单中选择 **退出**。
 
 ## 10. 常见问题
 
-**启动时提示「无法连接到 OpenSave 的后台服务」**
-通常是防火墙或杀毒软件拦截了本地回环连接，或有残留的 OpenSave 进程。检查托盘和任务管理器后点「重试」。日志：`%USERPROFILE%\.opensave\opensave.log`。
+**启动时提示「无法连接到 SaveVault 的后台服务」**
+通常是防火墙或杀毒软件拦截了本地回环连接，或有残留的 SaveVault 进程。检查托盘和任务管理器后点「重试」。日志：`%USERPROFILE%\.savevault\savevault.log`。
 
-**提示「响应的不是 OpenSave，有其他程序占用了端口」**
-其他程序（常见于硬件厂商工具）占用了 8383 端口。重启 OpenSave 会自动换用其他端口；或在 设置 → 高级 → 服务端口 中修改。
+**提示「响应的不是 SaveVault，有其他程序占用了端口」**
+其他程序（常见于硬件厂商工具）占用了 8383 端口。重启 SaveVault 会自动换用其他端口；或在 设置 → 高级 → 服务端口 中修改。
 
 **游戏显示「存档文件夹丢失」**
 游戏被移动、盘符改变或硬盘未连接。恢复后一分钟内会自动重新识别；如果存档确实换了位置，在游戏页点「编辑」重新指定。
 
 **另一台设备找不到**
-确认两台设备在同一网段、防火墙已允许 OpenSave（专用网络），或改用互联网中继。
+确认两台设备在同一网段、防火墙已允许 SaveVault（专用网络），或改用互联网中继。
 
 **如何提交问题**
 「动态」→ 切换到「日志」→「复制」，把技术日志附在反馈中。
 
 ## 11. 命令行速查
 
-桌面版内置后台服务；`opensave-cli` 可以在终端里完成同样的操作（详见 [docs/CLI.md](docs/CLI.md)）：
+桌面版内置后台服务；`savevault-cli` 可以在终端里完成同样的操作（详见 [docs/CLI.md](docs/CLI.md)）：
 
 ```bash
-opensave status                         # 已跟踪的游戏、分支和设备
-opensave scan                           # 扫描存档
-opensave add "游戏名" <路径>              # 跟踪文件夹
-opensave snapshot <游戏ID> 备注           # 创建快照（--all 为所有游戏）
-opensave snapshots <游戏ID>               # 列出快照
-opensave rollback <游戏ID> <快照ID>       # 恢复到某个快照（--dry-run 只预览）
-opensave cloud setup game-save --url <地址> --password <同步密钥>
-opensave cloud push <游戏ID>             # 上传本地快照到云端
+savevault status                         # 已跟踪的游戏、分支和设备
+savevault scan                           # 扫描存档
+savevault add "游戏名" <路径>              # 跟踪文件夹
+savevault snapshot <游戏ID> 备注           # 创建快照（--all 为所有游戏）
+savevault snapshots <游戏ID>               # 列出快照
+savevault rollback <游戏ID> <快照ID>       # 恢复到某个快照（--dry-run 只预览）
+savevault cloud setup game-save --url <地址> --password <同步密钥>
+savevault cloud push <游戏ID>             # 上传本地快照到云端
 ```

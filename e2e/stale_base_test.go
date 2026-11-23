@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A merge-base that falls behind both devices does not merely delay

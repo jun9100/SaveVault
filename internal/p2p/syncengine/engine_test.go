@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // fakeTransport serves the sync protocol from a real directory on disk,
@@ -155,7 +155,7 @@ func setupEngine(t *testing.T) *engineEnv {
 		}
 	}
 
-	s, err := store.Open(filepath.Join(root, "opensave.db"))
+	s, err := store.Open(filepath.Join(root, "savevault.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

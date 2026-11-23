@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // copyTree mirrors src onto dst, which is what a peer pull does to the peer's

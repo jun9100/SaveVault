@@ -11,13 +11,13 @@ import (
 // readable by them.
 //
 // The problem this exists for: install-relay.sh creates a dedicated
-// "opensave-relay" account and runs the service as it, which is the right way
-// round for isolation. But `opensave-relay setup` is run with sudo, and writes
+// "savevault-relay" account and runs the service as it, which is the right way
+// round for isolation. But `savevault-relay setup` is run with sudo, and writes
 // the secrets file 0600 owned by root — so the service cannot read it. The key
 // is stored correctly, reported as configured, and never reaches the relay.
 //
 // That failure is silent in both directions: the relay answers "no key
-// configured" and `opensave-relay config`, run as root, reads the file
+// configured" and `savevault-relay config`, run as root, reads the file
 // perfectly well and says the key is set. Somebody self-hosting has no
 // thread to pull.
 //
@@ -26,7 +26,7 @@ import (
 // written by setup is affected.
 
 // unitPath is where install-relay.sh puts the service definition.
-const unitPath = "/etc/systemd/system/opensave-relay.service"
+const unitPath = "/etc/systemd/system/savevault-relay.service"
 
 // ServiceUser reports the account the installed relay service runs as, or ""
 // when there is no installed service to read.

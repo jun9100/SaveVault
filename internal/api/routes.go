@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/sysintegration"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/sysintegration"
 )
 
 // routes registers the Phase 1 endpoint surface. Peer/cloud/p2p routes
@@ -535,7 +535,7 @@ func isSteamCover(url string) bool {
 // its watch list back in line with it.
 //
 // The CLI writes the database directly rather than talking to a running
-// daemon, so `opensave add` on a machine where the app is already running
+// daemon, so `savevault add` on a machine where the app is already running
 // leaves the new game tracked but unwatched — no auto-snapshots and no
 // auto-sync until a restart, with nothing to indicate it. The CLI posts here
 // after any change so the running process notices straight away.

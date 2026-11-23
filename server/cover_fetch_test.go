@@ -143,21 +143,21 @@ func setCoverFetchForTest(t *testing.T, s *server, enabled bool) {
 	t.Helper()
 	s.metaMu.Lock()
 	defer s.metaMu.Unlock()
-	next := s.openSaveMeta.clone()
+	next := s.saveVaultMeta.clone()
 	next.Settings.CoverFetch = enabled
-	if err := s.persistOpenSaveMeta(next); err != nil {
+	if err := s.persistSaveVaultMeta(next); err != nil {
 		t.Fatal(err)
 	}
-	s.openSaveMeta = next
+	s.saveVaultMeta = next
 }
 
-func waitForOpenSaveMetaRecord(t *testing.T, s *server, gameKey string,
-	condition func(openSaveMetaRecord) bool) openSaveMetaRecord {
+func waitForSaveVaultMetaRecord(t *testing.T, s *server, gameKey string,
+	condition func(saveVaultMetaRecord) bool) saveVaultMetaRecord {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		s.metaMu.Lock()
-		record := s.openSaveMeta.Games[gameKey]
+		record := s.saveVaultMeta.Games[gameKey]
 		s.metaMu.Unlock()
 		if condition(record) {
 			return record
@@ -195,8 +195,8 @@ func TestCoverFetchDisabledMakesNoRequestsOrFiles(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, transport := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "disabled-game", "a", "", []byte("disabled"))
-	if status, body := putOpenSaveIdentity(t, httpServer.URL, "pc", "disabled-game",
+	publishSaveVaultScope(t, httpServer.URL, "pc", "disabled-game", "a", "", []byte("disabled"))
+	if status, body := putSaveVaultIdentity(t, httpServer.URL, "pc", "disabled-game",
 		map[string]string{"steamAppId": "1245620"}); status != http.StatusOK {
 		t.Fatalf("identity = %d %v", status, body)
 	}
@@ -207,11 +207,11 @@ func TestCoverFetchDisabledMakesNoRequestsOrFiles(t *testing.T) {
 	if count := transport.Count(); count != 0 {
 		t.Fatalf("disabled cover fetch made %d requests: %v", count, transport.Requests())
 	}
-	if _, err := os.Stat(filepath.Join(s.dataDir, openSaveMetaFileName)); !os.IsNotExist(err) {
-		t.Fatalf("disabled cover fetch created %s: %v", openSaveMetaFileName, err)
+	if _, err := os.Stat(filepath.Join(s.dataDir, saveVaultMetaFileName)); !os.IsNotExist(err) {
+		t.Fatalf("disabled cover fetch created %s: %v", saveVaultMetaFileName, err)
 	}
-	if _, err := os.Stat(filepath.Join(s.dataDir, openSaveMetaDirectoryName)); !os.IsNotExist(err) {
-		t.Fatalf("disabled cover fetch created %s: %v", openSaveMetaDirectoryName, err)
+	if _, err := os.Stat(filepath.Join(s.dataDir, saveVaultMetaDirectoryName)); !os.IsNotExist(err) {
+		t.Fatalf("disabled cover fetch created %s: %v", saveVaultMetaDirectoryName, err)
 	}
 }
 
@@ -230,12 +230,12 @@ func TestCoverFetchSteamFallsBackAndServesCachedCover(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, transport := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "elden-ring", "a", "", []byte("save"))
-	putOpenSaveIdentity(t, httpServer.URL, "pc", "elden-ring", map[string]string{"steamAppId": "1245620"})
+	publishSaveVaultScope(t, httpServer.URL, "pc", "elden-ring", "a", "", []byte("save"))
+	putSaveVaultIdentity(t, httpServer.URL, "pc", "elden-ring", map[string]string{"steamAppId": "1245620"})
 	setCoverFetchForTest(t, s, true)
-	s.queueOpenSaveCoverFetch("pc/steam:1245620")
+	s.queueSaveVaultCoverFetch("pc/steam:1245620")
 
-	record := waitForOpenSaveMetaRecord(t, s, "pc/steam:1245620", func(record openSaveMetaRecord) bool {
+	record := waitForSaveVaultMetaRecord(t, s, "pc/steam:1245620", func(record saveVaultMetaRecord) bool {
 		return record.Upstream != nil
 	})
 	if record.Rev != 0 || !record.UpdatedAt.IsZero() || record.UpdatedBy != "" {
@@ -253,23 +253,23 @@ func TestCoverFetchSteamFallsBackAndServesCachedCover(t *testing.T) {
 		t.Fatalf("Steam request order = %v", requests)
 	}
 
-	request := openSaveScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/opensave/games", nil)
-	response, body := openSaveMetaDo(t, request)
+	request := saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/savevault/games", nil)
+	response, body := saveVaultMetaDo(t, request)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("games = %d: %s", response.StatusCode, body)
 	}
 	var games struct {
-		Games []openSaveGame `json:"games"`
+		Games []saveVaultGame `json:"games"`
 	}
 	if err := json.Unmarshal(body, &games); err != nil {
 		t.Fatal(err)
 	}
 	game := gameByKey(games.Games, "pc/steam:1245620")
-	if game == nil || game.Meta.Cover == nil || game.Meta.Cover.Source != openSaveCoverSourceCached ||
+	if game == nil || game.Meta.Cover == nil || game.Meta.Cover.Source != saveVaultCoverSourceCached ||
 		game.Meta.Cover.SHA256 != wantSHA {
 		t.Fatalf("game cover = %+v", game)
 	}
-	if response, downloaded := getOpenSaveCover(t, httpServer.URL, wantSHA); response.StatusCode != http.StatusOK ||
+	if response, downloaded := getSaveVaultCover(t, httpServer.URL, wantSHA); response.StatusCode != http.StatusOK ||
 		!bytes.Equal(downloaded, picture) {
 		t.Fatalf("cached cover download = %d", response.StatusCode)
 	}
@@ -295,12 +295,12 @@ func TestCoverFetchSwitchPrefersEShopThenTinfoil(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, transport := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "switch", "switch-0100000000010000", "a", "", []byte("switch"))
-	putOpenSaveIdentity(t, httpServer.URL, "switch", "switch-0100000000010000",
+	publishSaveVaultScope(t, httpServer.URL, "switch", "switch-0100000000010000", "a", "", []byte("switch"))
+	putSaveVaultIdentity(t, httpServer.URL, "switch", "switch-0100000000010000",
 		map[string]string{"titleId": "0100000000010000"})
 	setCoverFetchForTest(t, s, true)
-	s.queueOpenSaveCoverFetch("switch/title:0100000000010000")
-	record := waitForOpenSaveMetaRecord(t, s, "switch/title:0100000000010000", func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch("switch/title:0100000000010000")
+	record := waitForSaveVaultMetaRecord(t, s, "switch/title:0100000000010000", func(record saveVaultMetaRecord) bool {
 		return record.Upstream != nil
 	})
 	if record.Upstream.MediaType != "image/jpeg" {
@@ -320,8 +320,8 @@ func TestCoverFetchMissBacksOffForOneDay(t *testing.T) {
 	clock := newCoverFetchTestClock()
 	s.now = clock.Now
 	setCoverFetchForTest(t, s, true)
-	s.queueOpenSaveCoverFetch("pc/steam:424242")
-	record := waitForOpenSaveMetaRecord(t, s, "pc/steam:424242", func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch("pc/steam:424242")
+	record := waitForSaveVaultMetaRecord(t, s, "pc/steam:424242", func(record saveVaultMetaRecord) bool {
 		return !record.UpstreamMissUntil.IsZero()
 	})
 	firstCount := transport.Count()
@@ -347,7 +347,7 @@ func TestCoverFetchMissBacksOffForOneDay(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForCoverRequests(t, transport, firstCount*2)
-	waitForOpenSaveMetaRecord(t, s, "pc/steam:424242", func(record openSaveMetaRecord) bool {
+	waitForSaveVaultMetaRecord(t, s, "pc/steam:424242", func(record saveVaultMetaRecord) bool {
 		return !record.UpstreamMissUntil.IsZero()
 	})
 }
@@ -362,12 +362,12 @@ func TestCoverFetchErrorBackoffSchedule(t *testing.T) {
 	s.now = clock.Now
 	setCoverFetchForTest(t, s, true)
 	key := "pc/steam:777777"
-	s.queueOpenSaveCoverFetch(key)
-	record := waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch(key)
+	record := waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return record.UpstreamFailures == 1
 	})
 	base := transport.Count()
-	assertDelay := func(record openSaveMetaRecord, want time.Duration) {
+	assertDelay := func(record saveVaultMetaRecord, want time.Duration) {
 		t.Helper()
 		delay := record.UpstreamMissUntil.Sub(clock.Now())
 		if delay < want-time.Second || delay > want+time.Second {
@@ -389,7 +389,7 @@ func TestCoverFetchErrorBackoffSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForCoverRequests(t, transport, base*2)
-	record = waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	record = waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return record.UpstreamFailures == 2
 	})
 	assertDelay(record, 6*time.Hour)
@@ -399,7 +399,7 @@ func TestCoverFetchErrorBackoffSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForCoverRequests(t, transport, base*3)
-	record = waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	record = waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return record.UpstreamFailures == 3
 	})
 	assertDelay(record, 24*time.Hour)
@@ -409,7 +409,7 @@ func TestCoverFetchErrorBackoffSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForCoverRequests(t, transport, base*4)
-	waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return record.UpstreamFailures == 4
 	})
 }
@@ -423,8 +423,8 @@ func TestCoverFetchRedirectPolicy(t *testing.T) {
 		s, _, transport := newCoverFetchTestServer(t, upstream)
 		setCoverFetchForTest(t, s, true)
 		key := "pc/steam:111111"
-		s.queueOpenSaveCoverFetch(key)
-		record := waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+		s.queueSaveVaultCoverFetch(key)
+		record := waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 			return record.UpstreamFailures == 1
 		})
 		if record.UpstreamMissUntil.IsZero() {
@@ -453,8 +453,8 @@ func TestCoverFetchRedirectPolicy(t *testing.T) {
 		s, _, transport := newCoverFetchTestServer(t, upstream)
 		setCoverFetchForTest(t, s, true)
 		key := "pc/steam:222222"
-		s.queueOpenSaveCoverFetch(key)
-		waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+		s.queueSaveVaultCoverFetch(key)
+		waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 			return record.Upstream != nil
 		})
 		if count := transport.Count(); count != 2 {
@@ -478,8 +478,8 @@ func TestCoverFetchRedirectPolicy(t *testing.T) {
 		s, _, transport := newCoverFetchTestServer(t, upstream)
 		setCoverFetchForTest(t, s, true)
 		key := "pc/steam:333333"
-		s.queueOpenSaveCoverFetch(key)
-		waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+		s.queueSaveVaultCoverFetch(key)
+		waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 			return record.UpstreamFailures == 1
 		})
 		if count := transport.Count(); count != 4*len(s.coverFetchSteamTemplates) {
@@ -515,14 +515,14 @@ func TestCoverFetchRejectsInvalidOrOversizedResponses(t *testing.T) {
 			s, _, _ := newCoverFetchTestServer(t, upstream)
 			setCoverFetchForTest(t, s, true)
 			key := fmt.Sprintf("pc/steam:%d", 900000+index)
-			s.queueOpenSaveCoverFetch(key)
-			record := waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+			s.queueSaveVaultCoverFetch(key)
+			record := waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 				return record.UpstreamFailures == 1
 			})
 			if record.Upstream != nil {
 				t.Fatalf("invalid upstream cover was cached: %+v", record.Upstream)
 			}
-			if files := openSaveCoverFiles(t, s.dataDir); len(files) != 0 {
+			if files := saveVaultCoverFiles(t, s.dataDir); len(files) != 0 {
 				t.Fatalf("invalid upstream cover left files: %v", files)
 			}
 		})
@@ -536,18 +536,18 @@ func TestCoverFetchReadOnlyEndpointsDoNotFetchOrWrite(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, transport := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "readonly-cover", "a", "", []byte("read"))
-	putOpenSaveIdentity(t, httpServer.URL, "pc", "readonly-cover", map[string]string{"steamAppId": "555555"})
+	publishSaveVaultScope(t, httpServer.URL, "pc", "readonly-cover", "a", "", []byte("read"))
+	putSaveVaultIdentity(t, httpServer.URL, "pc", "readonly-cover", map[string]string{"steamAppId": "555555"})
 	setCoverFetchForTest(t, s, true)
 	before := snapshotDataDirectory(t, s.dataDir)
 	requests := []*http.Request{
-		openSaveScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/opensave/games", nil),
-		openSaveScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/opensave/games/pc/steam:555555", nil),
-		openSaveScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/opensave/covers/"+strings.Repeat("a", 64), nil),
-		openSaveScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/opensave/titles/switch", nil),
+		saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/savevault/games", nil),
+		saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/savevault/games/pc/steam:555555", nil),
+		saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/savevault/covers/"+strings.Repeat("a", 64), nil),
+		saveVaultScopeRequest(t, http.MethodGet, httpServer.URL+"/v1/savevault/titles/switch", nil),
 	}
 	for _, request := range requests {
-		response, body := openSaveMetaDo(t, request)
+		response, body := saveVaultMetaDo(t, request)
 		if response.StatusCode >= 500 {
 			t.Fatalf("read-only cover endpoint = %d: %s", response.StatusCode, body)
 		}
@@ -571,33 +571,33 @@ func TestCoverFetchReadOnlyEndpointsDoNotFetchOrWrite(t *testing.T) {
 	}
 }
 
-func TestOpenSaveCachedCoverFallsBackAfterCustomCover(t *testing.T) {
+func TestSaveVaultCachedCoverFallsBackAfterCustomCover(t *testing.T) {
 	picture := testCoverImage(t, "png", 24, 12)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeCoverTestImage(t, w, picture)
 	}))
 	defer upstream.Close()
 	s, httpServer, _ := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "cover-priority", "a", "", []byte("priority"))
-	putOpenSaveIdentity(t, httpServer.URL, "pc", "cover-priority", map[string]string{"steamAppId": "666666"})
+	publishSaveVaultScope(t, httpServer.URL, "pc", "cover-priority", "a", "", []byte("priority"))
+	putSaveVaultIdentity(t, httpServer.URL, "pc", "cover-priority", map[string]string{"steamAppId": "666666"})
 	setCoverFetchForTest(t, s, true)
-	s.queueOpenSaveCoverFetch("pc/steam:666666")
-	waitForOpenSaveMetaRecord(t, s, "pc/steam:666666", func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch("pc/steam:666666")
+	waitForSaveVaultMetaRecord(t, s, "pc/steam:666666", func(record saveVaultMetaRecord) bool {
 		return record.Upstream != nil
 	})
 
 	custom := testCoverImage(t, "jpeg", 30, 20)
-	response, meta := putOpenSaveCustomCover(t, httpServer.URL, "pc", "cover-priority", custom, "image/jpeg")
-	if response.StatusCode != http.StatusOK || meta.Cover == nil || meta.Cover.Source != openSaveCoverSourceCustom {
+	response, meta := putSaveVaultCustomCover(t, httpServer.URL, "pc", "cover-priority", custom, "image/jpeg")
+	if response.StatusCode != http.StatusOK || meta.Cover == nil || meta.Cover.Source != saveVaultCoverSourceCustom {
 		t.Fatalf("custom cover = %d %+v", response.StatusCode, meta)
 	}
-	response, _ = deleteOpenSaveCustomCover(t, httpServer.URL, "pc", "cover-priority")
+	response, _ = deleteSaveVaultCustomCover(t, httpServer.URL, "pc", "cover-priority")
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("clear custom cover = %d", response.StatusCode)
 	}
-	games := listOpenSaveGames(t, httpServer.URL)
+	games := listSaveVaultGames(t, httpServer.URL)
 	game := gameByKey(games, "pc/steam:666666")
-	if game == nil || game.Meta.Cover == nil || game.Meta.Cover.Source != openSaveCoverSourceCached {
+	if game == nil || game.Meta.Cover == nil || game.Meta.Cover.Source != saveVaultCoverSourceCached {
 		t.Fatalf("cover after clearing custom = %+v", game)
 	}
 }
@@ -618,12 +618,12 @@ func TestAdminCoverRefetchClearsMissAndFetches(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, transport := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "refetch-game", "a", "", []byte("refetch"))
-	putOpenSaveIdentity(t, httpServer.URL, "pc", "refetch-game", map[string]string{"steamAppId": "888888"})
+	publishSaveVaultScope(t, httpServer.URL, "pc", "refetch-game", "a", "", []byte("refetch"))
+	putSaveVaultIdentity(t, httpServer.URL, "pc", "refetch-game", map[string]string{"steamAppId": "888888"})
 	setCoverFetchForTest(t, s, true)
 	key := "pc/steam:888888"
-	s.queueOpenSaveCoverFetch(key)
-	waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch(key)
+	waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return !record.UpstreamMissUntil.IsZero()
 	})
 	base := transport.Count()
@@ -632,11 +632,11 @@ func TestAdminCoverRefetchClearsMissAndFetches(t *testing.T) {
 	success = true
 	successMu.Unlock()
 	response, body := adminDo(t, http.MethodPost,
-		httpServer.URL+"/admin/api/opensave/games/pc/steam%3A888888/cover/refetch", nil)
+		httpServer.URL+"/admin/api/savevault/games/pc/steam%3A888888/cover/refetch", nil)
 	if response.StatusCode != http.StatusAccepted {
 		t.Fatalf("refetch status = %d: %s", response.StatusCode, body)
 	}
-	var meta openSaveGameMeta
+	var meta saveVaultGameMeta
 	if err := json.Unmarshal(body, &meta); err != nil {
 		t.Fatal(err)
 	}
@@ -644,18 +644,18 @@ func TestAdminCoverRefetchClearsMissAndFetches(t *testing.T) {
 		t.Fatalf("refetch returned stale cached cover: %+v", meta.Cover)
 	}
 	waitForCoverRequests(t, transport, base+1)
-	waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+	waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 		return record.Upstream != nil
 	})
 
 	response, body = adminDo(t, http.MethodPost,
-		httpServer.URL+"/admin/api/opensave/games/pc/scope:not-fetchable/cover/refetch", nil)
+		httpServer.URL+"/admin/api/savevault/games/pc/scope:not-fetchable/cover/refetch", nil)
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unfetchable refetch = %d: %s", response.StatusCode, body)
 	}
 	setCoverFetchForTest(t, s, false)
 	response, body = adminDo(t, http.MethodPost,
-		httpServer.URL+"/admin/api/opensave/games/pc/steam%3A888888/cover/refetch", nil)
+		httpServer.URL+"/admin/api/savevault/games/pc/steam%3A888888/cover/refetch", nil)
 	if response.StatusCode != http.StatusConflict || !bytes.Contains(body, []byte("cover fetch is disabled")) {
 		t.Fatalf("disabled refetch = %d: %s", response.StatusCode, body)
 	}
@@ -677,7 +677,7 @@ func TestMetaSettingsGetPutAndEnvironmentLock(t *testing.T) {
 			t.Fatalf("PUT meta settings = %d: %s", response.StatusCode, body)
 		}
 		s.metaMu.Lock()
-		enabled := s.openSaveMeta.Settings.CoverFetch
+		enabled := s.saveVaultMeta.Settings.CoverFetch
 		s.metaMu.Unlock()
 		if !enabled {
 			t.Fatal("PUT did not persist coverFetch")
@@ -728,10 +728,10 @@ func TestCoverFetchConcurrencyAndClose(t *testing.T) {
 	for index := 0; index < 10; index++ {
 		key := fmt.Sprintf("pc/steam:%d", 700000+index)
 		keys = append(keys, key)
-		s.queueOpenSaveCoverFetch(key)
+		s.queueSaveVaultCoverFetch(key)
 	}
 	for _, key := range keys {
-		waitForOpenSaveMetaRecord(t, s, key, func(record openSaveMetaRecord) bool {
+		waitForSaveVaultMetaRecord(t, s, key, func(record saveVaultMetaRecord) bool {
 			return record.Upstream != nil
 		})
 	}
@@ -758,26 +758,26 @@ func TestCoverFetchDoesNotChangeScopeState(t *testing.T) {
 	}))
 	defer upstream.Close()
 	s, httpServer, _ := newCoverFetchTestServer(t, upstream)
-	publishOpenSaveScope(t, httpServer.URL, "pc", "stable-cover", "head", "", []byte("head"))
+	publishSaveVaultScope(t, httpServer.URL, "pc", "stable-cover", "head", "", []byte("head"))
 	conflictBody := []byte("conflict")
 	conflictArchive := "stable-cover__main__conflict.zip"
-	if status := putOpenSaveScopeArchive(t, httpServer.URL, "pc", conflictArchive, conflictBody); status != http.StatusCreated {
+	if status := putSaveVaultScopeArchive(t, httpServer.URL, "pc", conflictArchive, conflictBody); status != http.StatusCreated {
 		t.Fatalf("conflict archive = %d", status)
 	}
-	conflict := openSaveScopeCandidateFor("conflict", conflictArchive, "other-parent", conflictBody, time.Now().UTC())
-	response, body := putOpenSaveScopeCandidate(t, httpServer.URL,
-		"/v1/opensave/scopes/pc/stable-cover/conflicts/"+conflict.ID, "-", conflict)
+	conflict := saveVaultScopeCandidateFor("conflict", conflictArchive, "other-parent", conflictBody, time.Now().UTC())
+	response, body := putSaveVaultScopeCandidate(t, httpServer.URL,
+		"/v1/savevault/scopes/pc/stable-cover/conflicts/"+conflict.ID, "-", conflict)
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("conflict = %d: %s", response.StatusCode, body)
 	}
-	putOpenSaveIdentity(t, httpServer.URL, "pc", "stable-cover", map[string]string{"steamAppId": "999999"})
-	before := getOpenSaveScopeForTest(t, httpServer.URL, "pc", "stable-cover")
+	putSaveVaultIdentity(t, httpServer.URL, "pc", "stable-cover", map[string]string{"steamAppId": "999999"})
+	before := getSaveVaultScopeForTest(t, httpServer.URL, "pc", "stable-cover")
 	setCoverFetchForTest(t, s, true)
-	s.queueOpenSaveCoverFetch("pc/steam:999999")
-	waitForOpenSaveMetaRecord(t, s, "pc/steam:999999", func(record openSaveMetaRecord) bool {
+	s.queueSaveVaultCoverFetch("pc/steam:999999")
+	waitForSaveVaultMetaRecord(t, s, "pc/steam:999999", func(record saveVaultMetaRecord) bool {
 		return record.Upstream != nil
 	})
-	after := getOpenSaveScopeForTest(t, httpServer.URL, "pc", "stable-cover")
+	after := getSaveVaultScopeForTest(t, httpServer.URL, "pc", "stable-cover")
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(after)
 	if !bytes.Equal(beforeJSON, afterJSON) {

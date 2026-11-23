@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/ignore"
+	"github.com/jun9100/savevault/internal/ignore"
 )
 
 // RestoreKeeping puts the snapshot's save in place and leaves this device's

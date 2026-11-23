@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/p2p"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Whole journeys, rather than one feature at a time.
@@ -287,7 +287,7 @@ func TestJourney_OneDeviceStillOnTheOldBuild(t *testing.T) {
 	if got := old.ReadSave("machine.cfg"); got != "new device" {
 		t.Errorf("step 2: expected the excluded file to still reach a peer that has no rule of its own, got %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(old.SaveDir, ".opensave-locations")); err == nil {
+	if _, err := os.Stat(filepath.Join(old.SaveDir, ".savevault-locations")); err == nil {
 		t.Error("step 2: the archive's internal location folder appeared in the old device's save")
 	}
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
 )
 
 // Reports reach a peer in the order they were made. A quick sync's "started"

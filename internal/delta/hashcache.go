@@ -337,7 +337,7 @@ func invalidate(key string) {
 // that decides what to copy over someone's save. Dropping the folder cannot
 // be wrong, only wasteful, and the waste is one re-read.
 //
-// This matters more than it looks: OpenSave stamps a pulled file with the
+// This matters more than it looks: SaveVault stamps a pulled file with the
 // PEER'S modification time, and conflict resolution rewrites mtimes across a
 // whole folder. Neither reliably moves an mtime forward, so neither can be
 // relied on to invalidate an entry by itself.

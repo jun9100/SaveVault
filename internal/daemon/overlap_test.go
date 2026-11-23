@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Forza Horizon 5 tracked at CODEX and again at CODEX/1551360/remote became

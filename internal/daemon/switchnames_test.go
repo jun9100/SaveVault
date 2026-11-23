@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/presets"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/presets"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 const testTitle = "0100ABCDEF012000"

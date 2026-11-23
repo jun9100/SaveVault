@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/snapshot"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/snapshot"
 )
 
 // cmdStorage shows where snapshot space goes: each game's share, the biggest
-// snapshots, free space, and what `opensave prune` would give back.
+// snapshots, free space, and what `savevault prune` would give back.
 //
 // --compact first has older snapshots share the files they have in common
 // (snapshot/shared.go), which the app otherwise does every few hours.
@@ -99,7 +99,7 @@ func cmdStorage(d *daemon.Daemon, args []string) int {
 	fmt.Println()
 	if r.Reclaimable > 0 {
 		note(fmt.Sprintf("%s in %s is past the limits and would be removed by clean-up", humanBytes(r.Reclaimable), plural(r.ReclaimableSnapshots, "snapshot", "snapshots")))
-		hint("opensave prune")
+		hint("savevault prune")
 	} else {
 		note("nothing to clean up: every game is within its limits")
 	}

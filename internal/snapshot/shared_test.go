@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/fsx"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/fsx"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // noise is content that does not compress: large enough, it goes to the
@@ -517,7 +517,7 @@ func forgetSharedChecks() {
 	sharedChecked.Range(func(k, _ any) bool { sharedChecked.Delete(k); return true })
 }
 
-// Another process working on the store — the app while `opensave` runs from
+// Another process working on the store — the app while `savevault` runs from
 // a terminal — keeps this one out of it: no compaction, no clean-up, and
 // both happen on a later pass once it is done.
 func TestAnotherProcessOnTheStoreIsWaitedFor(t *testing.T) {

@@ -3,7 +3,7 @@ package mobilecore
 import "testing"
 
 func TestSha256(t *testing.T) {
-	if got := Sha256([]byte("opensave")); got != "7c20a69d509a0354159ce6af891c989f10e94554c4204c43573832bb7ae93757" {
+	if got := Sha256([]byte("savevault")); got != "114790dccea4b6661a521fbd117342f3213db6b4c098a2f3b6138fe2e7848dd5" {
 		t.Fatalf("Sha256() = %s", got)
 	}
 }

@@ -110,7 +110,7 @@ func TestTwoLocationsRoundTrip(t *testing.T) {
 	if got := read(newSave, "settings.ini"); got != "" {
 		t.Errorf("a config file was restored into the save folder as %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(newSave, ".opensave-locations")); err == nil {
+	if _, err := os.Stat(filepath.Join(newSave, ".savevault-locations")); err == nil {
 		t.Error("the prefix folder was restored literally into the save folder")
 	}
 }

@@ -168,7 +168,7 @@ func TestNewInstallsDefaultToTracking(t *testing.T) {
 	}
 	if settings.ShouldAskBeforeTracking() {
 		t.Errorf("a new install defaulted to asking (value %q); auto-tracking is "+
-			"what makes OpenSave zero-config and must stay the default",
+			"what makes SaveVault zero-config and must stay the default",
 			settings.UnknownGameFromPeer)
 	}
 }

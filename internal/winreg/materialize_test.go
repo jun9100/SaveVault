@@ -46,7 +46,7 @@ func TestAMissingKeyIsRecordedNotDropped(t *testing.T) {
 		t.Skip("no registry on this platform")
 	}
 	dir := t.TempDir()
-	key := `HKEY_CURRENT_USER\Software\OpenSaveTest\definitely-absent`
+	key := `HKEY_CURRENT_USER\Software\SaveVaultTest\definitely-absent`
 	warns, err := CaptureToDir([]string{key}, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestACorruptCaptureIsReported(t *testing.T) {
 }
 
 // The capture file must not be dot-prefixed. A dot-named entry is excluded
-// from every manifest, which is what makes .opensave-locations/ safe for older
+// from every manifest, which is what makes .savevault-locations/ safe for older
 // builds — and is exactly what would stop a registry capture from syncing.
 func TestTheCaptureFileIsVisibleToManifests(t *testing.T) {
 	if strings.HasPrefix(FileName, ".") {

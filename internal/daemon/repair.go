@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Snapshots found damaged when read back (verify.go): getting them back, or
 // letting them go.
 //
-// An archive deleted or corrupted outside OpenSave is gone from this device,
+// An archive deleted or corrupted outside SaveVault is gone from this device,
 // but not necessarily from everywhere. With cloud backup on, every snapshot
 // was uploaded as it was taken, and a copy that reads back whole there is the
 // same snapshot: it is fetched, checked, and put where the archive was. What
@@ -140,7 +140,7 @@ func (d *Daemon) RepairSnapshots(ctx context.Context) (RepairReport, error) {
 // fetchSnapshotCopy downloads a snapshot's cloud copy, checks it reads back
 // whole, and puts it where the snapshot's archive belongs.
 func (d *Daemon) fetchSnapshotCopy(snap store.Snapshot, file cloud.CloudFile) error {
-	tmp, err := os.CreateTemp("", "opensave-repair-*.zip")
+	tmp, err := os.CreateTemp("", "savevault-repair-*.zip")
 	if err != nil {
 		return err
 	}

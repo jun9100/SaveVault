@@ -49,12 +49,12 @@ func cmdCompletion(args []string) int {
 	return 0
 }
 
-const completionUsage = `usage: opensave completion bash|zsh|fish
+const completionUsage = `usage: savevault completion bash|zsh|fish
 
-  bash:  opensave completion bash > /etc/bash_completion.d/opensave
-         (or: opensave completion bash >> ~/.bashrc)
-  zsh:   opensave completion zsh > "${fpath[1]}/_opensave"
-  fish:  opensave completion fish > ~/.config/fish/completions/opensave.fish`
+  bash:  savevault completion bash > /etc/bash_completion.d/savevault
+         (or: savevault completion bash >> ~/.bashrc)
+  zsh:   savevault completion zsh > "${fpath[1]}/_savevault"
+  fish:  savevault completion fish > ~/.config/fish/completions/savevault.fish`
 
 func joined(list []string) string {
 	out := ""
@@ -68,7 +68,7 @@ func joined(list []string) string {
 }
 
 func bashCompletion() string {
-	s := "# bash completion for opensave\n_opensave() {\n"
+	s := "# bash completion for savevault\n_savevault() {\n"
 	s += "  local cur prev\n"
 	s += "  cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
 	s += "  prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n\n"
@@ -83,13 +83,13 @@ func bashCompletion() string {
 	s += "    add|export) COMPREPLY=( $(compgen -f -- \"$cur\") ); return ;;\n"
 	s += "  esac\n\n"
 	s += "  COMPREPLY=( $(compgen -W \"--json\" -- \"$cur\") )\n"
-	s += "}\ncomplete -F _opensave opensave opensave-cli\n"
+	s += "}\ncomplete -F _savevault savevault savevault\n"
 	return s
 }
 
 func zshCompletion() string {
-	s := "#compdef opensave opensave-cli\n"
-	s += "_opensave() {\n"
+	s := "#compdef savevault savevault\n"
+	s += "_savevault() {\n"
 	s += "  local -a cmds\n"
 	s += "  cmds=(" + joined(topLevelCommands) + ")\n"
 	s += "  if (( CURRENT == 2 )); then\n"
@@ -101,12 +101,12 @@ func zshCompletion() string {
 	}
 	s += "    add|export) _files ;;\n"
 	s += "    *) _values 'flag' --json ;;\n"
-	s += "  esac\n}\n_opensave \"$@\"\n"
+	s += "  esac\n}\n_savevault \"$@\"\n"
 	return s
 }
 
 func fishCompletion() string {
-	s := "# fish completion for opensave\n"
+	s := "# fish completion for savevault\n"
 	descriptions := map[string]string{
 		"scan": "Auto-detect game saves", "add": "Track a save folder",
 		"remove": "Stop tracking a game", "status": "Show tracked games and peers",
@@ -126,13 +126,13 @@ func fishCompletion() string {
 	}
 	for _, c := range topLevelCommands {
 		desc := descriptions[c]
-		s += fmt.Sprintf("complete -c opensave -n __fish_use_subcommand -a %s -d '%s'\n", c, desc)
+		s += fmt.Sprintf("complete -c savevault -n __fish_use_subcommand -a %s -d '%s'\n", c, desc)
 	}
 	for cmd, subs := range subCommands {
 		for _, sub := range subs {
-			s += fmt.Sprintf("complete -c opensave -n '__fish_seen_subcommand_from %s' -a %s\n", cmd, sub)
+			s += fmt.Sprintf("complete -c savevault -n '__fish_seen_subcommand_from %s' -a %s\n", cmd, sub)
 		}
 	}
-	s += "complete -c opensave -l json -d 'Machine-readable output'\n"
+	s += "complete -c savevault -l json -d 'Machine-readable output'\n"
 	return s
 }

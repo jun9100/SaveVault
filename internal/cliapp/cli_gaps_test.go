@@ -65,7 +65,7 @@ func startStubDaemon(t *testing.T, answers map[string]struct {
 	for _, v := range []string{"HOME", "USERPROFILE"} {
 		t.Setenv(v, home)
 	}
-	dir := filepath.Join(home, ".opensave")
+	dir := filepath.Join(home, ".savevault")
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}

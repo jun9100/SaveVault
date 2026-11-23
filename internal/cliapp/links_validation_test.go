@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // cmdLinks reads nothing but the store, so a daemon holding one is enough.

@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: cmd/opensave-app/frontend
+        working-directory: cmd/savevault-app/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: opensave-decky-plugin
+        working-directory: savevault-decky-plugin
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -105,11 +105,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      # cmd/opensave-app embeds frontend/dist (built by wails); stub it so
+      # cmd/savevault-app embeds frontend/dist (built by wails); stub it so
       # vet/test can compile the package without a frontend toolchain.
       - name: Stub embedded frontend assets
         shell: bash
-        run: mkdir -p cmd/opensave-app/frontend/dist && echo stub > cmd/opensave-app/frontend/dist/.stub
+        run: mkdir -p cmd/savevault-app/frontend/dist && echo stub > cmd/savevault-app/frontend/dist/.stub
       - name: Vet
         run: go vet ./...
       # Nothing else here compiles for macOS, which only the release build
@@ -170,7 +170,7 @@ jobs:
           go-version: "1.26"
       - name: Stub embedded frontend assets
         shell: bash
-        run: mkdir -p cmd/opensave-app/frontend/dist && echo stub > cmd/opensave-app/frontend/dist/.stub
+        run: mkdir -p cmd/savevault-app/frontend/dist && echo stub > cmd/savevault-app/frontend/dist/.stub
       - name: E2E shard ${{ matrix.shard }} of 3 (race detector)
         shell: bash
         env:

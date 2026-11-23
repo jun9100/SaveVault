@@ -53,31 +53,34 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /admin/api/overview", s.requireAdmin(s.handleOverview))
 	mux.HandleFunc("GET /admin/api/events", s.requireAdmin(s.handleEvents))
-	mux.HandleFunc("GET /admin/api/opensave/files", s.requireAdmin(s.handleOpenSaveFiles))
-	mux.HandleFunc("GET /admin/api/opensave/scopes", s.requireAdmin(s.handleOpenSaveScopes))
-	mux.HandleFunc("GET /admin/api/opensave/scopes/{type}/{game}", s.requireAdmin(s.handleOpenSaveScopeDetail))
-	mux.HandleFunc("DELETE /admin/api/opensave/scopes/{type}/{game}", s.requireAdminWrite(s.handleDeleteOpenSaveScope))
-	mux.HandleFunc("POST /admin/api/opensave/scopes/{type}/{game}/restore", s.requireAdminWrite(s.handleRestoreOpenSaveScope))
-	mux.HandleFunc("POST /admin/api/opensave/scopes/{type}/{game}/retire", s.requireAdminWrite(s.handleRetireOpenSaveScope))
-	mux.HandleFunc("POST /admin/api/opensave/scopes/{type}/{game}/unretire", s.requireAdminWrite(s.handleUnretireOpenSaveScope))
-	mux.HandleFunc("GET /admin/api/opensave/scopes/{type}/{game}/export", s.requireAdmin(s.handleExportOpenSaveScope))
-	mux.HandleFunc("PUT /admin/api/opensave/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handlePutOpenSaveSnapshotLock))
-	mux.HandleFunc("DELETE /admin/api/opensave/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handleDeleteOpenSaveSnapshotLock))
-	mux.HandleFunc("GET /admin/api/opensave/tombstones", s.requireAdmin(s.handleListOpenSaveTombstones))
-	mux.HandleFunc("DELETE /admin/api/opensave/tombstones/{type}/{game}", s.requireAdminWrite(s.handleClearOpenSaveTombstone))
-	mux.HandleFunc("POST /admin/api/opensave/rebuild-heads", s.requireAdminWrite(s.handleRebuildOpenSaveHeads))
-	mux.HandleFunc("GET /admin/api/opensave/rebuild-heads/preview", s.requireAdmin(s.handlePreviewRebuildOpenSaveHeads))
-	mux.HandleFunc("GET /admin/api/opensave/retention", s.requireAdmin(s.handleGetOpenSaveRetention))
-	mux.HandleFunc("PUT /admin/api/opensave/retention", s.requireAdminWrite(s.handlePutOpenSaveRetention))
-	mux.HandleFunc("POST /admin/api/opensave/retention/preview", s.requireAdmin(s.handlePreviewOpenSaveRetention))
-	mux.HandleFunc("POST /admin/api/opensave/scopes/{type}/{game}/prune", s.requireAdminWrite(s.handleOpenSaveScopePrune))
-	mux.HandleFunc("GET /admin/api/opensave/files/{type}/{name}/download", s.requireAdmin(s.handleDownloadOpenSaveArchive))
-	mux.HandleFunc("GET /admin/api/opensave/games", s.requireAdmin(s.handleAdminListOpenSaveGames))
-	mux.HandleFunc("GET /admin/api/opensave/covers/{sha256}", s.requireAdmin(s.handleOpenSaveCover))
-	mux.HandleFunc("PUT /admin/api/opensave/games/{key...}", s.requireAdminWrite(s.handleAdminOpenSaveGameMetaPut))
-	mux.HandleFunc("DELETE /admin/api/opensave/games/{key...}", s.requireAdminWrite(s.handleAdminOpenSaveGameMetaDelete))
-	mux.HandleFunc("POST /admin/api/opensave/scopes/{type}/{game}/promote", s.requireAdminWrite(s.handlePromoteOpenSaveScopeSnapshot))
-	mux.HandleFunc("PUT /admin/api/opensave/scopes/{type}/{game}/game", s.requireAdminWrite(s.handlePutOpenSaveScopeGame))
+	for _, prefix := range []string{"/admin/api/savevault", "/admin/api/opensave"} {
+		mux.HandleFunc("GET "+prefix+"/files", s.requireAdmin(s.handleSaveVaultFiles))
+		mux.HandleFunc("GET "+prefix+"/scopes", s.requireAdmin(s.handleSaveVaultScopes))
+		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}", s.requireAdmin(s.handleSaveVaultScopeDetail))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}", s.requireAdminWrite(s.handleDeleteSaveVaultScope))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/restore", s.requireAdminWrite(s.handleRestoreSaveVaultScope))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/retire", s.requireAdminWrite(s.handleRetireSaveVaultScope))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/unretire", s.requireAdminWrite(s.handleUnretireSaveVaultScope))
+		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}/export", s.requireAdmin(s.handleExportSaveVaultScope))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handlePutSaveVaultSnapshotLock))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handleDeleteSaveVaultSnapshotLock))
+		mux.HandleFunc("GET "+prefix+"/tombstones", s.requireAdmin(s.handleListSaveVaultTombstones))
+		mux.HandleFunc("DELETE "+prefix+"/tombstones/{type}/{game}", s.requireAdminWrite(s.handleClearSaveVaultTombstone))
+		mux.HandleFunc("POST "+prefix+"/rebuild-heads", s.requireAdminWrite(s.handleRebuildSaveVaultHeads))
+		mux.HandleFunc("GET "+prefix+"/rebuild-heads/preview", s.requireAdmin(s.handlePreviewRebuildSaveVaultHeads))
+		mux.HandleFunc("GET "+prefix+"/retention", s.requireAdmin(s.handleGetSaveVaultRetention))
+		mux.HandleFunc("PUT "+prefix+"/retention", s.requireAdminWrite(s.handlePutSaveVaultRetention))
+		mux.HandleFunc("POST "+prefix+"/retention/preview", s.requireAdmin(s.handlePreviewSaveVaultRetention))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/prune", s.requireAdminWrite(s.handleSaveVaultScopePrune))
+		mux.HandleFunc("GET "+prefix+"/files/{type}/{name}/download", s.requireAdmin(s.handleDownloadSaveVaultArchive))
+		mux.HandleFunc("GET "+prefix+"/games", s.requireAdmin(s.handleAdminListSaveVaultGames))
+		mux.HandleFunc("GET "+prefix+"/covers/{sha256}", s.requireAdmin(s.handleSaveVaultCover))
+		mux.HandleFunc("PUT "+prefix+"/games/{key...}", s.requireAdminWrite(s.handleAdminSaveVaultGameMetaPut))
+		mux.HandleFunc("DELETE "+prefix+"/games/{key...}", s.requireAdminWrite(s.handleAdminSaveVaultGameMetaDelete))
+		mux.HandleFunc("POST "+prefix+"/games/{key...}", s.requireAdminWrite(s.handleAdminSaveVaultGameCoverRefetch))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/promote", s.requireAdminWrite(s.handlePromoteSaveVaultScopeSnapshot))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/game", s.requireAdminWrite(s.handlePutSaveVaultScopeGame))
+	}
 	mux.HandleFunc("GET /admin/api/scopes/{id}", s.requireAdmin(s.handleScopeDetail))
 	mux.HandleFunc("PATCH /admin/api/scopes/{id}", s.requireAdminWrite(s.handlePatchScope))
 	mux.HandleFunc("DELETE /admin/api/scopes/{id}", s.requireAdminWrite(s.handleDeleteScope))
@@ -103,7 +106,6 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /metrics", s.requireAdmin(s.handleMetrics))
 	mux.HandleFunc("GET /admin/api/meta-settings", s.requireAdmin(s.handleGetMetaSettings))
 	mux.HandleFunc("PUT /admin/api/meta-settings", s.requireAdminWrite(s.handlePutMetaSettings))
-	mux.HandleFunc("POST /admin/api/opensave/games/{key...}", s.requireAdminWrite(s.handleAdminOpenSaveGameCoverRefetch))
 
 	// Routes kept for scripts written against the previous server-rendered dashboard.
 	mux.HandleFunc("GET /admin/scopes/{id}/logo", s.requireAdmin(s.handleScopeLogo))
@@ -184,8 +186,8 @@ type overviewStats struct {
 	SharedTokenDevices int   `json:"shared_token_devices"`
 	Uploads7d          int   `json:"uploads_7d"`
 	Conflicts7d        int   `json:"conflicts_7d"`
-	OpenSaveFiles      int   `json:"opensave_files"`
-	OpenSaveBytes      int64 `json:"opensave_bytes"`
+	SaveVaultFiles      int   `json:"savevault_files"`
+	SaveVaultBytes      int64 `json:"savevault_bytes"`
 }
 
 type serverInfo struct {
@@ -270,9 +272,9 @@ func (s *server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		Devices: []deviceView{},
 	}
 	response.Server.DiskTotal, response.Server.DiskFree = diskUsage(s.dataDir)
-	for _, file := range s.listOpenSaveFiles() {
-		response.Stats.OpenSaveFiles++
-		response.Stats.OpenSaveBytes += file.SizeBytes
+	for _, file := range s.listSaveVaultFiles() {
+		response.Stats.SaveVaultFiles++
+		response.Stats.SaveVaultBytes += file.SizeBytes
 	}
 
 	const days = 30
@@ -334,9 +336,9 @@ func (s *server) handleOverview(w http.ResponseWriter, r *http.Request) {
 				response.Stats.Conflicts7d++
 			}
 		case eventUpload:
-			// Eden uploads are counted from persisted snapshots above. OpenSave
+			// Eden uploads are counted from persisted snapshots above. SaveVault
 			// uploads only exist in the shared event stream, so count those here.
-			if !strings.HasPrefix(item.Scope, "opensave:") {
+			if !strings.HasPrefix(item.Scope, "savevault:") {
 				continue
 			}
 			if index := dayIndex(item.Time); index >= 0 {
@@ -397,27 +399,27 @@ func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
-func (s *server) handleOpenSaveFiles(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"files": s.listOpenSaveFiles()})
+func (s *server) handleSaveVaultFiles(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"files": s.listSaveVaultFiles()})
 }
 
-func (s *server) handleOpenSaveScopes(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"scopes": s.listOpenSaveScopeAudits()})
+func (s *server) handleSaveVaultScopes(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"scopes": s.listSaveVaultScopeAudits()})
 }
 
-func (s *server) handleOpenSaveScopeDetail(w http.ResponseWriter, r *http.Request) {
-	kind, gameID, key, ok := openSaveScopeFromRequest(w, r)
+func (s *server) handleSaveVaultScopeDetail(w http.ResponseWriter, r *http.Request) {
+	kind, gameID, key, ok := saveVaultScopeFromRequest(w, r)
 	if !ok {
 		return
 	}
-	s.openSaveMu.Lock()
-	defer s.openSaveMu.Unlock()
-	stored, exists := s.openSaveState.Scopes[key]
+	s.saveVaultMu.Lock()
+	defer s.saveVaultMu.Unlock()
+	stored, exists := s.saveVaultState.Scopes[key]
 	if !exists {
-		writeError(w, http.StatusNotFound, "OpenSave scope not found")
+		writeError(w, http.StatusNotFound, "SaveVault scope not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.openSaveScopeAuditLocked(kind, gameID, stored))
+	writeJSON(w, http.StatusOK, s.saveVaultScopeAuditLocked(kind, gameID, stored))
 }
 
 func (s *server) handleScopeDetail(w http.ResponseWriter, r *http.Request) {
@@ -781,13 +783,13 @@ func (s *server) handleDownloadSnapshot(w http.ResponseWriter, r *http.Request) 
 	s.serveObject(w, r, record.Blob, fmt.Sprintf("%s_%s.edenenc", scopeID, snapshotID))
 }
 
-// handleDownloadOpenSaveArchive lets the dashboard save any SaveVault
+// handleDownloadSaveVaultArchive lets the dashboard save any SaveVault
 // archive, such as an older version or a conflict copy, as a ZIP file.
-func (s *server) handleDownloadOpenSaveArchive(w http.ResponseWriter, r *http.Request) {
-	if name := r.PathValue("name"); validOpenSaveName(name) {
+func (s *server) handleDownloadSaveVaultArchive(w http.ResponseWriter, r *http.Request) {
+	if name := r.PathValue("name"); validSaveVaultName(name) {
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
 	}
-	s.handleOpenSaveNativeGet(w, r)
+	s.handleSaveVaultNativeGet(w, r)
 }
 
 func (s *server) handlePatchDevice(w http.ResponseWriter, r *http.Request) {
@@ -951,13 +953,13 @@ func (s *server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	}
 	activeTokens, revokedTokens := s.deviceTokenCounts()
 	total, free := diskUsage(s.dataDir)
-	openSaveFiles := s.listOpenSaveFiles()
-	var openSaveBytes int64
-	for _, file := range openSaveFiles {
-		openSaveBytes += file.SizeBytes
+	saveVaultFiles := s.listSaveVaultFiles()
+	var saveVaultBytes int64
+	for _, file := range saveVaultFiles {
+		saveVaultBytes += file.SizeBytes
 	}
-	tombstonesDeleted, tombstonesRetired, lockedSnapshots := s.openSaveManageCounts()
-	orphanArchives, orphanBytes := s.openSaveOrphanStats()
+	tombstonesDeleted, tombstonesRetired, lockedSnapshots := s.saveVaultManageCounts()
+	orphanArchives, orphanBytes := s.saveVaultOrphanStats()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	metric := func(name, kind, help string, value any) {
@@ -971,11 +973,11 @@ func (s *server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	metric("game_save_stored_bytes", "gauge", "Bytes used by referenced objects.", stored)
 	metric("game_save_devices", "gauge", "Known client devices.", devices)
 	metric("game_save_devices_online", "gauge", "Devices seen within the online window.", online)
-	metric("game_save_opensave_archives", "gauge", "Native OpenSave archives.", len(openSaveFiles))
-	metric("game_save_opensave_archive_bytes", "gauge", "Bytes used by native OpenSave archives.", openSaveBytes)
-	fmt.Fprint(w, "# HELP game_save_covers OpenSave cover files referenced by metadata.\n"+
+	metric("game_save_savevault_archives", "gauge", "Native SaveVault archives.", len(saveVaultFiles))
+	metric("game_save_savevault_archive_bytes", "gauge", "Bytes used by native SaveVault archives.", saveVaultBytes)
+	fmt.Fprint(w, "# HELP game_save_covers SaveVault cover files referenced by metadata.\n"+
 		"# TYPE game_save_covers gauge\n")
-	customCovers, cachedCovers := s.openSaveCoverCounts()
+	customCovers, cachedCovers := s.saveVaultCoverCounts()
 	fmt.Fprintf(w, "game_save_covers{source=\"custom\"} %d\n", customCovers)
 	fmt.Fprintf(w, "game_save_covers{source=\"cached\"} %d\n", cachedCovers)
 	fmt.Fprint(w, "# HELP game_save_cover_fetch_total Upstream cover fetch results.\n"+
@@ -984,15 +986,15 @@ func (s *server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	fmt.Fprintf(w, "game_save_cover_fetch_total{result=\"miss\"} %d\n", s.coverFetchMetrics.miss.Load())
 	fmt.Fprintf(w, "game_save_cover_fetch_total{result=\"error\"} %d\n", s.coverFetchMetrics.err.Load())
 	metric("game_save_cover_fetch_queue", "gauge", "Upstream cover fetches waiting in the queue.", s.coverFetchQueueLength())
-	fmt.Fprint(w, "# HELP game_save_opensave_tombstones SaveVault scope tombstones by state.\n"+
-		"# TYPE game_save_opensave_tombstones gauge\n")
-	fmt.Fprintf(w, "game_save_opensave_tombstones{state=\"deleted\"} %d\n", tombstonesDeleted)
-	fmt.Fprintf(w, "game_save_opensave_tombstones{state=\"retired\"} %d\n", tombstonesRetired)
-	metric("game_save_opensave_locked_snapshots", "gauge", "SaveVault snapshots locked by an administrator.", lockedSnapshots)
-	metric("game_save_opensave_retention_removed_total", "counter",
+	fmt.Fprint(w, "# HELP game_save_savevault_tombstones SaveVault scope tombstones by state.\n"+
+		"# TYPE game_save_savevault_tombstones gauge\n")
+	fmt.Fprintf(w, "game_save_savevault_tombstones{state=\"deleted\"} %d\n", tombstonesDeleted)
+	fmt.Fprintf(w, "game_save_savevault_tombstones{state=\"retired\"} %d\n", tombstonesRetired)
+	metric("game_save_savevault_locked_snapshots", "gauge", "SaveVault snapshots locked by an administrator.", lockedSnapshots)
+	metric("game_save_savevault_retention_removed_total", "counter",
 		"SaveVault versions removed by automatic retention since start.", s.retentionRemoved.Load())
-	metric("game_save_opensave_orphan_archives", "gauge", "SaveVault archives no version references.", orphanArchives)
-	metric("game_save_opensave_orphan_bytes", "gauge", "Bytes used by unreferenced SaveVault archives.", orphanBytes)
+	metric("game_save_savevault_orphan_archives", "gauge", "SaveVault archives no version references.", orphanArchives)
+	metric("game_save_savevault_orphan_bytes", "gauge", "Bytes used by unreferenced SaveVault archives.", orphanBytes)
 	metric("game_save_http_requests_total", "counter", "HTTP requests served since start.", s.requests.Load())
 	metric("game_save_start_time_seconds", "gauge", "Process start time.", s.startedAt.Unix())
 

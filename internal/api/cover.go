@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // httpStatusError distinguishes a "the CDN answered, but not 200" failure

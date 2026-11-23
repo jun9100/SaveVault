@@ -101,14 +101,14 @@ func (s *Server) handleBrowserCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if provider == "" {
-		fail("This sign-in link has already been used or expired — start again from OpenSave.")
+		fail("This sign-in link has already been used or expired — start again from SaveVault.")
 		return
 	}
 	if !stateOK {
 		// Reject forged/stale redirects without consuming the legitimate flow's
 		// PKCE verifier or tearing down the callback listener.
 		w.WriteHeader(http.StatusBadRequest)
-		writeCallbackPage(w, false, "Sign-in state mismatch — please use the link opened by OpenSave.")
+		writeCallbackPage(w, false, "Sign-in state mismatch — please use the link opened by SaveVault.")
 		return
 	}
 	if oauthErr != "" {
@@ -137,9 +137,9 @@ func writeCallbackPage(w http.ResponseWriter, ok bool, detail string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	safeDetail := html.EscapeString(detail)
-	icon, title, sub := "✅", "Connected to OpenSave", "Signed in as <strong>"+safeDetail+"</strong>. You can close this tab and return to the app."
+	icon, title, sub := "✅", "Connected to SaveVault", "Signed in as <strong>"+safeDetail+"</strong>. You can close this tab and return to the app."
 	if !ok {
-		icon, title, sub = "⚠️", "Sign-in didn't complete", safeDetail+" You can close this tab and try again from OpenSave."
+		icon, title, sub = "⚠️", "Sign-in didn't complete", safeDetail+" You can close this tab and try again from SaveVault."
 	}
 	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><title>%s</title></head>
 <body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#0c0c0d;color:#e8e8ea;font-family:'Segoe UI',system-ui,sans-serif;">

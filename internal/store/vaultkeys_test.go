@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
+	"github.com/jun9100/savevault/internal/e2ee"
 )
 
 func vaultTestStore(t *testing.T) *Store {

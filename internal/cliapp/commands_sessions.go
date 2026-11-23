@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
 // cmdSessions shows when games were played on this device and for how long:
@@ -29,7 +29,7 @@ func cmdSessions(d *daemon.Daemon, args []string) int {
 		}
 		section(fmt.Sprintf("%s %s %s played", game.Name, symDot(), playLength(stats.PlaytimeMs)))
 		if len(list) == 0 {
-			note("not played here since OpenSave began keeping track")
+			note("not played here since SaveVault began keeping track")
 			return 0
 		}
 		for _, s := range list {
@@ -63,8 +63,8 @@ func cmdSessions(d *daemon.Daemon, args []string) int {
 		fmt.Printf("  %s %s  %s  %s\n", symBullet(), padRight(bold(g.Name), 30), padRight(playLength(st.PlaytimeMs), 14), faint("last "+last))
 	}
 	if shown == 0 {
-		note("nothing played here since OpenSave began keeping track")
-		hint("opensave wrap <gameId> -- <command>")
+		note("nothing played here since SaveVault began keeping track")
+		hint("savevault wrap <gameId> -- <command>")
 	}
 	return 0
 }
@@ -83,15 +83,15 @@ func playLength(ms int64) string {
 	}
 }
 
-const wrapUsage = `usage: opensave wrap <gameId> -- <command> [args…]
-    Runs a game the way Ludusavi's wrap does, bracketed by OpenSave: brings
+const wrapUsage = `usage: savevault wrap <gameId> -- <command> [args…]
+    Runs a game the way Ludusavi's wrap does, bracketed by SaveVault: brings
     the newest save from your other devices first, then runs it, then keeps
     the save as you left it — a snapshot named for the session — and syncs
     it on. For Steam, put this in the game's launch options:
-        opensave wrap <gameId> -- %command%`
+        savevault wrap <gameId> -- %command%`
 
 // cmdWrap runs a game between the two halves of a session. It needs the
-// running daemon — the desktop app or `opensave daemon start` — which does
+// running daemon — the desktop app or `savevault daemon start` — which does
 // the syncing and keeps the session; without one the game still runs.
 func cmdWrap(args []string) int {
 	sep := -1

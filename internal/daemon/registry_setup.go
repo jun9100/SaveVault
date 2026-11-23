@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // setUpRegistryCapture gives a game whose saves live in the registry somewhere
 // to keep them.
 //
 // The keys come from the manifest. The capture itself is a file in a directory
-// OpenSave owns, registered as one of the game's save locations — from there
+// SaveVault owns, registered as one of the game's save locations — from there
 // the ordinary machinery archives it, hashes it, and syncs it, and no snapshot
 // or sync code has to know the registry exists. See internal/winreg for why a
 // capture has to be a real file rather than something the archive holds alone.

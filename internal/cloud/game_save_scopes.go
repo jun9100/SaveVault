@@ -142,7 +142,7 @@ type GameSaveScope struct {
 }
 
 func (p gameSave) scopeEndpoint(saveType, gameID string) string {
-	return strings.TrimRight(p.cfg.URL, "/") + "/v1/opensave/scopes/" +
+	return strings.TrimRight(p.cfg.URL, "/") + "/v1/savevault/scopes/" +
 		url.PathEscape(SaveTypeScope(saveType)) + "/" + url.PathEscape(gameID)
 }
 

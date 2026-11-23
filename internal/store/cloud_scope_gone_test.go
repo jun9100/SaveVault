@@ -6,7 +6,7 @@ import (
 )
 
 func TestCloudScopeGoneRoundTrip(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "opensave.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "savevault.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestCloudScopeGoneRoundTrip(t *testing.T) {
 }
 
 func TestSetCloudScopeGoneNoticeMissingIsNotFound(t *testing.T) {
-	s, err := Open(filepath.Join(t.TempDir(), "opensave.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "savevault.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

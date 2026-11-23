@@ -1,0 +1,448 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
+	"strconv"
+	"strings"
+	"time"
+
+	savevault "github.com/jun9100/savevault"
+	"github.com/jun9100/savevault/internal/api"
+	"github.com/jun9100/savevault/internal/changelog"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/sysintegration"
+	"github.com/jun9100/savevault/internal/version"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// AppVersion mirrors internal/version.Version — the single source of
+// truth for the app version. Keep wails.json's info.productVersion (which
+// drives the Windows executable/installer metadata) in sync with it.
+var AppVersion = version.Version
+
+// App is the Wails-bound bridge between the webview frontend and the
+// embedded daemon. Methods on it are callable from JS.
+type App struct {
+	ctx         context.Context
+	daemon      *daemon.Daemon
+	server      *api.Server
+	addr        string
+	bootErr     string
+	reallyQuit  bool
+	updatedFrom string // previous version when this run is the first on a new build
+	notifyErr   error  // why desktop notifications cannot be shown, where known (notify_other.go)
+	// ready is closed when startup has finished, however it finished. The
+	// window loads while startup is still running, and what startup sets —
+	// the address, the boot error, the version updated from — is read only
+	// after this, never while it is being written (see started).
+	ready chan struct{}
+}
+
+// NewApp creates the App shell (daemon boots in startup).
+func NewApp() *App {
+	return &App{ready: make(chan struct{})}
+}
+
+// startupWait is how long the window waits for startup before saying it is
+// taking too long. Generous: a large library on a cold disk takes a while to
+// watch, and every second of it is better spent waiting than showing an error
+// that Retry would clear.
+var startupWait = 3 * time.Minute
+
+// started waits for startup to finish, and says whether it did in time.
+func (a *App) started() bool {
+	select {
+	case <-a.ready:
+		return true
+	case <-time.After(startupWait):
+		return false
+	}
+}
+
+// startup boots the daemon + local API server once the webview exists.
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	defer close(a.ready)
+
+	// Asked to stop a running SaveVault, and we ARE the only one: there is
+	// nothing to stop. Exit without booting a daemon, claiming a port or
+	// opening the database — this process was never meant to be the app.
+	if quitRequested() {
+		a.quitFromTray()
+		return
+	}
+
+	d, err := daemon.New(daemon.Options{})
+	if err != nil {
+		a.bootErr = err.Error()
+		return
+	}
+	a.daemon = d
+
+	if err := d.Start(); err != nil {
+		a.bootErr = err.Error()
+		d.Stop()
+		return
+	}
+
+	// Detect "first run after an update" so the UI can greet with the
+	// changelog — this is how users see what's new after a peer-to-peer
+	// update, which carries no release notes of its own. A rebuild of the
+	// same version (build timestamp changed, version didn't) is not an
+	// update worth announcing.
+	a.updatedFrom = stampVersionFile(d.Paths.HomeDir)
+	if a.updatedFrom == AppVersion {
+		a.updatedFrom = ""
+	}
+	if a.updatedFrom != "" {
+		d.Log.Log("success", "SaveVault updated: "+a.updatedFrom+" → "+AppVersion)
+	}
+
+	settings, err := d.Store.GetSettings()
+	if err != nil {
+		a.bootErr = err.Error()
+		d.Stop()
+		return
+	}
+
+	a.server = api.New(d)
+	addr, err := a.server.Start(settings.Port)
+	if err != nil {
+		// Configured port taken (another instance?) — fall back to an
+		// ephemeral port; the frontend asks us for the real address.
+		addr, err = a.server.Start(0)
+		if err != nil {
+			a.bootErr = err.Error()
+			d.Stop()
+			return
+		}
+	}
+	// The listener binds 0.0.0.0 (P2P routes are LAN-reachable), but the
+	// webview must dial loopback — "0.0.0.0" is not a connectable host in
+	// browsers.
+	if _, port, splitErr := net.SplitHostPort(addr); splitErr == nil {
+		addr = "127.0.0.1:" + port
+	}
+
+	// Self-check: confirm the API is actually connectable on loopback
+	// before handing the address to the webview. If something on this
+	// machine blocks it (firewall/security software), fail loudly with the
+	// reason instead of letting the UI render broken with "Failed to
+	// fetch" on every call.
+	if conn, dialErr := net.DialTimeout("tcp", addr, 3*time.Second); dialErr != nil {
+		a.bootErr = fmt.Sprintf(
+			"the app's local service started on %s but this machine blocks connections to it (%v) — check firewall/security software",
+			addr, dialErr)
+		d.Log.Log("error", a.bootErr)
+		return
+	} else {
+		conn.Close()
+	}
+
+	a.addr = addr
+	d.Log.Log("info", "desktop app connected to daemon at "+addr)
+
+	a.initNotifications()
+	a.startTray()
+
+	// Repair the autostart entry every launch. The entry written by earlier
+	// versions launched the bare executable, so every boot brought the
+	// window up; and after an update or a move the path it holds can be
+	// stale. SetAutostart writes only when the value differs, so on a
+	// healthy install this reads one registry value and stops.
+	if settings.StartOnBoot {
+		if err := sysintegration.SetAutostart(true); err != nil {
+			d.Log.Log("warn", "could not refresh the start-with-system entry: "+err.Error())
+		}
+	} else if sysintegration.AutostartEnabled() {
+		// The other direction: something outside the app turned it on. The
+		// installer's "start SaveVault when Windows starts" checkbox does
+		// exactly this — it writes the entry, being unable to open the
+		// database the setting lives in. Adopt it, or Settings would show
+		// the switch off while Windows starts the app every morning, and
+		// turning it "on" and off again would be the only way to fix it.
+		settings.StartOnBoot = true
+		if err := d.Store.UpdateSettings(settings); err != nil {
+			d.Log.Log("warn", "could not record that start-with-system is on: "+err.Error())
+		} else {
+			d.Log.Log("info", "start-with-system was switched on outside the app; Settings now agrees")
+		}
+		// And rewrite it as the app's own entry: the one found may be the
+		// 2.5/2.6 installer's, under another name, which SetAutostart folds
+		// into this one rather than leaving two that each start the app.
+		if err := sysintegration.SetAutostart(true); err != nil {
+			d.Log.Log("warn", "could not refresh the start-with-system entry: "+err.Error())
+		}
+	}
+
+	// Started hidden, but with nowhere to come back from? Show the window.
+	// Not every Linux desktop has a StatusNotifier host, and a hidden window
+	// with no tray icon is an app the person cannot reach — the same reason
+	// closing the window quits outright when the tray never appeared.
+	if launchedHidden() {
+		go a.showIfTrayNeverAppears()
+	}
+}
+
+// onSecondInstanceLaunch fires when SaveVault is launched again while it is
+// already running — commonly because closing the window only hides it to the
+// tray, so the user thinks it's closed. Rather than spawn a second (blank)
+// window, surface the existing one.
+func (a *App) onSecondInstanceLaunch(data options.SecondInstanceData) {
+	if a.ctx == nil {
+		return
+	}
+	// Unless it was the installer asking us to get out of the way, in which
+	// case shut down the way the tray's Quit does rather than being killed
+	// with a snapshot half written. See sysintegration.QuitFlag.
+	for _, arg := range data.Args {
+		if arg == sysintegration.QuitFlag {
+			a.quitFromTray()
+			return
+		}
+	}
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+}
+
+func (a *App) shutdown(ctx context.Context) {
+	a.stopTray()
+	if a.server != nil {
+		a.server.Stop()
+	}
+	if a.daemon != nil {
+		a.daemon.Stop()
+	}
+}
+
+// AppInfo returns static app metadata for the About dialog / status bar.
+func (a *App) AppInfo() map[string]string {
+	return map[string]string{
+		"name":      "SaveVault",
+		"version":   AppVersion,
+		"buildTime": strconv.FormatInt(version.BuildTimeMs(), 10),
+		"tagline":   "Peer-to-peer game save sync",
+		"license":   "MIT",
+		"copyright": "© 2026 SaveVault",
+		"tech":      "Go + Wails",
+	}
+}
+
+// Changelog returns the embedded CHANGELOG.md for the in-app "What's new"
+// view.
+func (a *App) Changelog() string {
+	return savevault.Changelog
+}
+
+// ChangelogReleases returns the changelog parsed into versions and sections,
+// so the UI can lay it out instead of showing raw markdown.
+func (a *App) ChangelogReleases() []changelog.Release {
+	return changelog.Parse(savevault.Changelog)
+}
+
+// WhatsNew returns only the releases newer than the version this install was
+// updated from — what the first launch after an update should greet with.
+// Empty when this isn't the first run on a new build, so the UI has a single
+// condition to check rather than reimplementing the comparison.
+func (a *App) WhatsNew() []changelog.Release {
+	if !a.started() || a.updatedFrom == "" {
+		return nil
+	}
+	return changelog.Since(changelog.Parse(savevault.Changelog), a.updatedFrom)
+}
+
+// UpdateGreeting reports the version this install was just updated FROM
+// ("" normally) so the UI can announce the update and offer the changelog.
+func (a *App) UpdateGreeting() map[string]string {
+	if !a.started() {
+		return map[string]string{"updatedFrom": ""}
+	}
+	return map[string]string{"updatedFrom": a.updatedFrom}
+}
+
+// DaemonAddr returns the local API address (host:port) or an error string
+// if the daemon failed to boot.
+//
+// It waits for startup to finish. The window asks as soon as it loads, and
+// with many games to watch startup is still running then; answering at once
+// gave it an empty address, and the first launch after boot failed with
+// "can't reach SaveVault's background service at http://" while Retry worked
+// (GitHub #17). Bound methods are called asynchronously, so the wait only
+// holds the window's first request back until there is an answer to give.
+func (a *App) DaemonAddr() map[string]string {
+	if !a.started() {
+		return map[string]string{"error": "SaveVault's background service is still starting after " +
+			startupWait.String() + " — its log (savevault.log in the .savevault folder) says what it is doing"}
+	}
+	if a.bootErr != "" {
+		return map[string]string{"error": a.bootErr}
+	}
+	return map[string]string{"addr": a.addr}
+}
+
+// SelectDirectory opens the native folder picker.
+func (a *App) SelectDirectory(title string) string {
+	if title == "" {
+		title = T("Select folder")
+	}
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: title})
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// SelectFile opens the native file picker (executables for game launch).
+func (a *App) SelectFile(title string) string {
+	if title == "" {
+		title = T("Select file")
+	}
+	file, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: title,
+		Filters: []runtime.FileFilter{
+			{DisplayName: T("Programs (*.exe;*.bat)"), Pattern: "*.exe;*.bat"},
+			{DisplayName: T("All files"), Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return file
+}
+
+// SelectBackupFile opens the native file picker filtered to .sscb
+// backup files (import source).
+func (a *App) SelectBackupFile(title string) string {
+	if title == "" {
+		title = T("Select backup file")
+	}
+	file, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: title,
+		Filters: []runtime.FileFilter{
+			{DisplayName: T("SaveVault backup (*.sscb)"), Pattern: "*.sscb"},
+			{DisplayName: T("All files"), Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return file
+}
+
+// SelectSaveFile opens the native save dialog (backup export target).
+func (a *App) SelectSaveFile(title, defaultName string) string {
+	file, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           title,
+		DefaultFilename: defaultName,
+		Filters: []runtime.FileFilter{
+			{DisplayName: T("SaveVault backup (*.sscb)"), Pattern: "*.sscb"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return file
+}
+
+// OpenExternal opens an http(s) URL in the system browser (Steam pages, OAuth).
+func (a *App) OpenExternal(rawURL string) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return
+	}
+	runtime.BrowserOpenURL(a.ctx, u.String())
+}
+
+// OpenFolder reveals a save location in the system file manager (Explorer,
+// Finder, or whatever handles directories on Linux — Dolphin on a Steam Deck).
+// Returns an empty string on success, or a message to show the user.
+//
+// If the path is a file, its containing folder is opened instead, so callers
+// can pass a game's save path without caring which it is.
+func (a *App) OpenFolder(path string) string {
+	dir, problem := revealTargetDir(path)
+	if problem != "" {
+		return problem
+	}
+
+	// Arguments are passed as a slice (never through a shell), so paths
+	// containing spaces or shell metacharacters are safe.
+	var cmd *exec.Cmd
+	switch goruntime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer.exe", dir)
+	case "darwin":
+		cmd = exec.Command("open", dir)
+	default:
+		cmd = exec.Command("xdg-open", dir)
+	}
+	if err := cmd.Start(); err != nil {
+		return T("Could not open the file manager: ") + err.Error()
+	}
+	// Explorer exits non-zero even when it succeeded, so the result is
+	// deliberately not waited on or inspected.
+	go func() { _ = cmd.Wait() }()
+	return ""
+}
+
+// revealTargetDir works out which directory to show for a tracked save
+// location, or returns a message explaining why it can't. Split out from
+// OpenFolder so the decision is testable without launching a file manager.
+// A save tracked as a single file resolves to its containing folder.
+func revealTargetDir(path string) (dir, problem string) {
+	if strings.TrimSpace(path) == "" {
+		return "", T("No save location set for this game.")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", T("That folder no longer exists on this device.")
+		}
+		return "", T("Could not open the folder: ") + err.Error()
+	}
+	if info.IsDir() {
+		return filepath.Clean(path), ""
+	}
+	return filepath.Dir(filepath.Clean(path)), ""
+}
+
+// ShowWindow surfaces the window (un-hides from tray, un-minimises, and
+// brings it to the front). Called from the UI when an event needs the
+// user's attention, e.g. an incoming pairing request.
+func (a *App) ShowWindow() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+}
+
+// Window controls for the custom title bar.
+// UserBusy reports whether a full-screen game or presentation has the screen,
+// for the frontend to hold back a chime and a window raise. See quiet_*.go.
+func (a *App) UserBusy() bool { return userIsBusy() }
+
+func (a *App) WindowMinimise() { runtime.WindowMinimise(a.ctx) }
+func (a *App) WindowToggleMaximise() {
+	runtime.WindowToggleMaximise(a.ctx)
+}
+func (a *App) WindowClose() { runtime.Quit(a.ctx) }
+
+// quitFromTray quits for good rather than hiding to the tray: the tray's
+// Quit, and the installer asking a running copy to get out of the way. Here
+// rather than beside the tray because the second happens on every platform —
+// defined only where there is a tray, it stopped the Mac app compiling.
+func (a *App) quitFromTray() {
+	a.reallyQuit = true
+	runtime.Quit(a.ctx)
+}
+
+var _ = fmt.Sprintf // reserved

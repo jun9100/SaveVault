@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
+	"github.com/jun9100/savevault/internal/cloud"
 )
 
 // A cloud copy that fails to go up — the network down, a name that will not

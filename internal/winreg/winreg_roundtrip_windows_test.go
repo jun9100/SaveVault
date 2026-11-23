@@ -14,7 +14,7 @@ import (
 // no test ever writes to a key a real game owns.
 func scratchKey(t *testing.T) string {
 	t.Helper()
-	sub := `Software\OpenSaveTest\` + strconv.FormatInt(time.Now().UnixNano(), 36)
+	sub := `Software\SaveVaultTest\` + strconv.FormatInt(time.Now().UnixNano(), 36)
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, sub, registry.WRITE)
 	if err != nil {
 		t.Fatalf("creating scratch key: %v", err)
@@ -154,7 +154,7 @@ func TestSubkeysAreCapturedAndRestored(t *testing.T) {
 // A game that has never run has never written its key. That is a correct
 // capture of "nothing here yet", not a failure.
 func TestAMissingKeyIsNotAnError(t *testing.T) {
-	_, found, err := Capture(`HKEY_CURRENT_USER\Software\OpenSaveTest\definitely-not-here`)
+	_, found, err := Capture(`HKEY_CURRENT_USER\Software\SaveVaultTest\definitely-not-here`)
 	if err != nil {
 		t.Errorf("Capture of a missing key errored: %v", err)
 	}

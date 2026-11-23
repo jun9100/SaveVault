@@ -15,9 +15,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // GameSaveScopeStatus is a read-only summary of one native game-save scope.
@@ -48,7 +48,7 @@ type GameSaveScopeStatus struct {
 
 // GameSaveScopeStatusItem is deliberately limited to the lineage and source
 // metadata a player needs to identify a version. Archive contents stay opaque
-// to both OpenSave and the service.
+// to both SaveVault and the service.
 type GameSaveScopeStatusItem struct {
 	ID         string    `json:"id"`
 	Parent     string    `json:"parent"`

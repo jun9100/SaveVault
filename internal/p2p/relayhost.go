@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/sysintegration/upnp"
-	"github.com/opensave/opensave/relay"
+	"github.com/jun9100/savevault/internal/sysintegration/upnp"
+	"github.com/jun9100/savevault/relay"
 )
 
 // upnpTimeout bounds the router conversation. A gateway that does not answer
@@ -15,7 +15,7 @@ import (
 // on a setting the user just ticked.
 const upnpTimeout = 12 * time.Second
 
-// RelayHost runs an OpenSave relay server inside this process when the
+// RelayHost runs an SaveVault relay server inside this process when the
 // user enables "host a relay" — so friends can connect directly to this
 // machine without a third-party relay. Safe for concurrent use.
 type RelayHost struct {
@@ -129,7 +129,7 @@ func (h *RelayHost) stopLocked() {
 		if err := upnp.Remove(ctx, h.mapped); err != nil {
 			h.logf("warn", fmt.Sprintf(
 				"could not close port %d on your router (%v) — remove the "+
-					"\"OpenSave Relay\" forward by hand if you want it gone", h.mapped, err))
+					"\"SaveVault Relay\" forward by hand if you want it gone", h.mapped, err))
 		} else {
 			h.logf("info", fmt.Sprintf("closed port %d on your router", h.mapped))
 		}

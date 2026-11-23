@@ -15,17 +15,17 @@
 | GS-03 | 通过 | `snap-b` 以 `snap-a` 为父发布成功；过期的 `snap-c` 被拒（409），之后保留为冲突，执行清理后仍在。 |
 | GS-04 | 通过 | Bark 端点返回 502（共尝试 1 次），`emulator-ppsspp/regression-ppsspp` 仍发布成功，头可读。 |
 | GS-05 | 通过 | 复制完整数据目录后，新进程读到的头是 `snap-b`，冲突 `snap-c` 和管理概览都在。 |
-| GS-06 | 通过 | 只篡改副本中的 `pc/regression-pc__main__snap-a.zip`；校验检查 3 个对象，只报告这一个文件 `corrupt`；指标中有 `game_save_opensave_*` 和磁盘指标。 |
+| GS-06 | 通过 | 只篡改副本中的 `pc/regression-pc__main__snap-a.zip`；校验检查 3 个对象，只报告这一个文件 `corrupt`；指标中有 `game_save_savevault_*` 和磁盘指标。 |
 
 GS-06 在修复前未通过：完整性校验只检查 Eden 对象，篡改 SaveVault 归档后报告 0 个对象、无问题。
-同一分支已修复，并补了 `TestVerifyDetectsCorruptAndMissingOpenSaveArchives`。
+同一分支已修复，并补了 `TestVerifyDetectsCorruptAndMissingSaveVaultArchives`。
 
 ## Android（非 Root，2026-11-08）
 
 - 设备：华为 MAR-AL00，Android 10，无 Root。
-- 客户端：OpenSave `main`（`a306947`）的 `deviceTest` 构建，包名 `com.jun9100.opensave.test`，和正式版互不影响。
+- 客户端：SaveVault `main`（`a306947`）的 `deviceTest` 构建，包名 `com.jun9100.savevault.test`，和正式版互不影响。
 - 服务端：game-save `main`（`v1.6.0`），本机进程，一次性数据目录，随机令牌，`adb reverse tcp:18765`。
-- 授权：通过系统选择器只授权 `/sdcard/OpenSave-Regression`，没有授权其他目录。
+- 授权：通过系统选择器只授权 `/sdcard/SaveVault-Regression`，没有授权其他目录。
 - 测完已卸载测试版，并移除端口转发、停止服务。
 
 | 行 | 结果 | 证据摘要 |

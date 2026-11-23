@@ -8,7 +8,7 @@ import (
 
 // ── Plumbing ─────────────────────────────────────────────────────────────
 
-// Exit codes are the CLI's contract with scripts and with `opensave service`.
+// Exit codes are the CLI's contract with scripts and with `savevault service`.
 // A rejected command that exits 0 turns a typo into a silent no-op.
 func TestCLI_ExitCodes(t *testing.T) {
 	c := newCLI(t)
@@ -463,7 +463,7 @@ func TestCLI_Storage(t *testing.T) {
 	if r.ReclaimableSnapshots != 2 || r.Reclaimable <= 0 {
 		t.Errorf("reclaimable = %d in %d snapshot(s), want the 2 manual ones past a limit of 1", r.Reclaimable, r.ReclaimableSnapshots)
 	}
-	if out := c.mustRun("storage"); !strings.Contains(out, "Roomy") || !strings.Contains(out, "opensave prune") {
+	if out := c.mustRun("storage"); !strings.Contains(out, "Roomy") || !strings.Contains(out, "savevault prune") {
 		t.Errorf("storage said:\n%s", out)
 	}
 

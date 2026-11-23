@@ -3,7 +3,7 @@ package e2e
 import (
 	"net/http"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // suppressSyncOnTrack turns off the sync each of these devices fires when it

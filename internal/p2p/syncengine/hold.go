@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Holding back a save that was emptied.
@@ -25,7 +25,7 @@ import (
 // ErrHeld) and gives no other device its manifest (the serving side answers
 // HeldMessage, and the asking side skips it as peer_holding). Nothing is
 // deleted anywhere until someone says what was meant, in the app or with
-// `opensave emptied`:
+// `savevault emptied`:
 //
 //   - "Delete them there too" (ConfirmHold): the game syncs as it is; the
 //     other devices delete their copies, keeping a snapshot first as they

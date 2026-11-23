@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Getting Started with OpenSave — from a fresh install to syncing saves</title>
-  <meta name="description" content="A complete walkthrough for anyone new to OpenSave: find your game saves, read the scan results, pair a second device, get an old save back, handle conflicts, and every setting explained. Assumes nothing.">
-  <meta property="og:title" content="Getting Started with OpenSave">
+  <title>Getting Started with SaveVault — from a fresh install to syncing saves</title>
+  <meta name="description" content="A complete walkthrough for anyone new to SaveVault: find your game saves, read the scan results, pair a second device, get an old save back, handle conflicts, and every setting explained. Assumes nothing.">
+  <meta property="og:title" content="Getting Started with SaveVault">
   <meta property="og:description" content="From a fresh install to syncing saves across your devices. Explains every term as it comes up, including what to do when something looks wrong.">
   <meta property="og:type" content="article">
-  <meta property="og:url" content="https://www.opensave.org/getting-started.html">
-  <link rel="canonical" href="https://www.opensave.org/getting-started.html">
-  <meta property="og:image" content="https://opensave.org/screenshots/home-library.png">
+  <meta property="og:url" content="https://jun9100.github.io/SaveVault/getting-started.html">
+  <link rel="canonical" href="https://jun9100.github.io/SaveVault/getting-started.html">
+  <meta property="og:image" content="https://jun9100.github.io/SaveVault/screenshots/home-library.png">
   <meta name="theme-color" content="#0c0c0d">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" sizes="48x48" href="favicon-48x48.png">
@@ -33,24 +33,16 @@
   <!-- ===================== NAV ===================== -->
   <header class="navbar">
     <div class="nav-container">
-      <a class="logo" href="index.html" aria-label="OpenSave home">
+      <a class="logo" href="index.html" aria-label="SaveVault home">
         <img src="icon.png?v=2" alt="" class="logo-img">
-        <span class="logo-text">Open<span>Save</span></span>
+        <span class="logo-text">Save<span>Vault</span></span>
       </a>
       <nav class="nav-links" id="nav-links">
         <a href="index.html#features">Features</a>
         <a href="index.html#how">How it works</a>
         <a href="index.html#docs">Docs</a>
         <a href="index.html#faq">FAQ</a>
-        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="discord-link">
-          <svg viewBox="0 0 24 18" width="16" height="12" aria-hidden="true"><path fill="currentColor" d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z"/></svg>
-          Discord
-        </a>
-        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
-          Donate
-        </a>
-        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+        <a href="https://github.com/jun9100/SaveVault" target="_blank" rel="noopener" class="github-link">
           <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
           GitHub
         </a>
@@ -69,7 +61,7 @@
         <div class="guide-eyebrow">Getting started</div>
         <h1>From a fresh install to syncing saves.</h1>
         <p class="guide-lede">
-          This assumes you have never used OpenSave and starts from nothing, explaining each
+          This assumes you have never used SaveVault and starts from nothing, explaining each
           thing as it comes up. Read it start to finish the first time, or jump to the part
           you need.
         </p>
@@ -80,7 +72,7 @@
       <nav class="guide-toc" aria-label="Contents">
         <h2>Contents</h2>
         <ol>
-          <li><a href="#what">What OpenSave actually does</a></li>
+          <li><a href="#what">What SaveVault actually does</a></li>
           <li><a href="#install">Installing it</a></li>
           <li><a href="#first-run">First run: finding your saves</a></li>
           <li><a href="#scan-results">Reading the scan results</a></li>
@@ -102,14 +94,14 @@
 
       <!-- 1 -->
       <section class="guide-section" id="what">
-        <h2><span class="guide-num">1.</span>What OpenSave actually does</h2>
+        <h2><span class="guide-num">1.</span>What SaveVault actually does</h2>
         <p>
           You play a game on your desktop. Later you want to carry on from your laptop, or your
           Steam Deck. Unless the game supports Steam Cloud, your progress does not follow you —
           the save is a folder of files sitting on one machine.
         </p>
         <p>
-          OpenSave watches those folders. When a save changes, it does two things: it
+          SaveVault watches those folders. When a save changes, it does two things: it
           <strong>keeps a copy</strong> of how the folder looked, so you can go back to it, and it
           <strong>sends the change to your other devices</strong>, so they have the same save.
           Only the parts of the file that changed are sent, so it stays quick even on a large save.
@@ -136,23 +128,23 @@
         <h2><span class="guide-num">2.</span>Installing it</h2>
         <p>
           Download the latest build from the
-          <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">releases page</a>.
+          <a href="https://github.com/jun9100/SaveVault/releases" target="_blank" rel="noopener">releases page</a>.
         </p>
         <p>
-          <strong>Windows</strong> — download <code>OpenSave.exe</code> and run it. There is no
+          <strong>Windows</strong> — download <code>SaveVault.exe</code> and run it. There is no
           installer and nothing goes in the registry.
         </p>
         <p>
-          <strong>Linux</strong> — download the tarball, extract it, and run <code>./OpenSave</code>.
+          <strong>Linux</strong> — download the tarball, extract it, and run <code>./SaveVault</code>.
           There is also a <code>.deb</code>, an <code>.rpm</code> and a Flatpak.
         </p>
         <p>
-          <strong>macOS</strong> — from OpenSave 2.4.0. Download <code>OpenSave-macos.dmg</code>,
-          open it and drag OpenSave into Applications. It runs on Apple Silicon and Intel Macs.
+          <strong>macOS</strong> — from SaveVault 2.4.0. Download <code>SaveVault-macos.dmg</code>,
+          open it and drag SaveVault into Applications. It runs on Apple Silicon and Intel Macs.
         </p>
         <div class="guide-warn">
           <p>
-            macOS asks before opening OpenSave the first time, because the app is not notarized by
+            macOS asks before opening SaveVault the first time, because the app is not notarized by
             Apple. Open <strong>System Settings → Privacy &amp; Security</strong> and choose
             <strong>Open Anyway</strong>; after that it opens like any other app.
           </p>
@@ -172,13 +164,13 @@
       <!-- 3 -->
       <section class="guide-section" id="first-run">
         <h2><span class="guide-num">3.</span>First run: finding your saves</h2>
-        <p>Open OpenSave. Your library is empty. There are two ways to fill it.</p>
+        <p>Open SaveVault. Your library is empty. There are two ways to fill it.</p>
 
         <ol class="guide-steps">
           <li>
             <h3>Auto-scan — start here</h3>
             <p>
-              Click <strong>🔍 Auto-scan</strong>. OpenSave looks in all the usual places — Steam
+              Click <strong>🔍 Auto-scan</strong>. SaveVault looks in all the usual places — Steam
               libraries, Proton and Wine prefixes, emulator folders, the Windows locations games
               conventionally use — and checks them against a community-maintained list of save
               paths covering tens of thousands of titles. It takes a few seconds.
@@ -187,7 +179,7 @@
           <li>
             <h3>Or track a folder yourself</h3>
             <p>
-              If a game is not found, click <strong>+ Track folder</strong> and point OpenSave at
+              If a game is not found, click <strong>+ Track folder</strong> and point SaveVault at
               the folder (or single file) the game saves into. This always works; auto-scan is
               only a convenience.
             </p>
@@ -230,7 +222,7 @@
             <tbody>
               <tr>
                 <td><strong>the save folder</strong></td>
-                <td>The one to track. OpenSave picked the folder with the most recent files</td>
+                <td>The one to track. SaveVault picked the folder with the most recent files</td>
                 <td>Yes</td>
               </tr>
               <tr>
@@ -253,7 +245,7 @@
         </div>
         <p>
           The <strong>Track</strong> button does whatever is ticked. If two folders are one save,
-          it says <strong>Track all 2</strong> and creates one game with both. If OpenSave gets it
+          it says <strong>Track all 2</strong> and creates one game with both. If SaveVault gets it
           wrong — you know the old-looking folder is the one you play — open the list and tick the
           one you want instead.
         </p>
@@ -269,7 +261,7 @@
 
         <h3>Tracking several games at once</h3>
         <p>
-          Click tiles to select them, then <strong>Track selected</strong>. If OpenSave listed two
+          Click tiles to select them, then <strong>Track selected</strong>. If SaveVault listed two
           folders separately that you know are one game, tick both and use
           <strong>Track as one game</strong> instead.
         </p>
@@ -279,7 +271,7 @@
       <section class="guide-section" id="second-device">
         <h2><span class="guide-num">5.</span>Adding your second device</h2>
         <p>
-          Install and open OpenSave on the other machine too, then pick whichever situation
+          Install and open SaveVault on the other machine too, then pick whichever situation
           matches.
         </p>
 
@@ -299,7 +291,7 @@
         </ol>
         <p>
           If they do not see each other, your network is probably set to <em>Public</em>, which
-          blocks local discovery. Set it to <em>Private</em> on Windows, allow OpenSave through
+          blocks local discovery. Set it to <em>Private</em> on Windows, allow SaveVault through
           the firewall, or skip discovery entirely: under <strong>Devices → Add by IP
           address</strong>, type the other machine's local address (something like
           <code>192.168.1.42</code>) and port <code>8383</code>, then
@@ -314,7 +306,7 @@
           traffic and stores nothing; no copy of your saves is written to it.
         </p>
         <p>
-          From OpenSave 2.4.0, saves sent through the relay are sealed end to end: only your two
+          From SaveVault 2.4.0, saves sent through the relay are sealed end to end: only your two
           devices hold the key, so neither the relay nor anyone else with your room code can read
           them. Both devices need 2.4.0 or later, and two devices paired over the internet on an
           earlier version need pairing again — the app shows which. A relay can still see that two
@@ -331,7 +323,7 @@
         <p>
           Once paired, tracked games sync automatically. Both devices need to be
           <strong>tracking the same game</strong> for it to sync. If a game is named differently
-          on each machine, OpenSave can usually match them by Steam App ID, or you can link them
+          on each machine, SaveVault can usually match them by Steam App ID, or you can link them
           by hand.
         </p>
       </section>
@@ -341,7 +333,7 @@
         <h2><span class="guide-num">6.</span>What happens while you play</h2>
         <p>Nothing you have to think about. Concretely:</p>
         <ul>
-          <li>The moment the game writes a save, OpenSave notices.</li>
+          <li>The moment the game writes a save, SaveVault notices.</li>
           <li>It takes a <strong>snapshot</strong> — a copy of that moment you can return to.</li>
           <li>It sends the change to every paired device that is online and tracking that game.</li>
           <li>Only the parts of the file that changed are sent, not the whole save.</li>
@@ -349,7 +341,7 @@
         <p>If the other device is off, the change waits and syncs when it comes back.</p>
         <div class="guide-note">
           <p>
-            <strong>Closing the window does not quit.</strong> It hides OpenSave to the system
+            <strong>Closing the window does not quit.</strong> It hides SaveVault to the system
             tray so syncing keeps running. Right-click the tray icon to reopen it, sync
             everything, or actually quit.
           </p>
@@ -370,7 +362,7 @@
         </ul>
         <div class="guide-note">
           <p>
-            <strong>Restoring is safe.</strong> OpenSave snapshots your current save
+            <strong>Restoring is safe.</strong> SaveVault snapshots your current save
             <em>before</em> replacing it, so if you restore the wrong thing you can restore your
             way back.
           </p>
@@ -412,7 +404,7 @@
         <h2><span class="guide-num">9.</span>When two devices disagree</h2>
         <p>
           If you play on your desktop and then on your laptop <em>before the first sync
-          finished</em>, both have changes the other does not. OpenSave notices and stops.
+          finished</em>, both have changes the other does not. SaveVault notices and stops.
         </p>
         <p>
           It does not use timestamps to decide — clocks disagree between machines, and "newer" is
@@ -452,7 +444,7 @@
             and is skipped until you choose it.
           </p>
         </div>
-        <p>Removing a location never deletes anything — it only stops OpenSave covering it.</p>
+        <p>Removing a location never deletes anything — it only stops SaveVault covering it.</p>
 
         <h3>Files that shouldn't travel between machines</h3>
         <p>
@@ -509,7 +501,7 @@ logs/          <span class="c">a whole folder</span>
         <div class="guide-code">sudo bash install-relay.sh --domain relay.example.com</div>
         <p>
           Then point each of your gaming devices at it and join a room. The full walkthrough is in
-          <a href="https://github.com/Liquid-co/OpenSave/blob/main/docs/RELAY.md" target="_blank" rel="noopener">docs/RELAY.md</a>.
+          <a href="https://github.com/jun9100/SaveVault/blob/main/docs/RELAY.md" target="_blank" rel="noopener">docs/RELAY.md</a>.
         </p>
         <div class="guide-note">
           <p>
@@ -558,8 +550,8 @@ logs/          <span class="c">a whole folder</span>
         <h3>The same game named differently on two machines</h3>
         <p>
           If a title is tracked as "Elden Ring" here and "ELDEN RING" there, they will not sync —
-          they are two games as far as OpenSave is concerned. Either rename one, or link them
-          with <code>opensave link &lt;gameId&gt; &lt;otherGameId&gt;</code>. Games sharing a
+          they are two games as far as SaveVault is concerned. Either rename one, or link them
+          with <code>savevault link &lt;gameId&gt; &lt;otherGameId&gt;</code>. Games sharing a
           Steam App ID can be matched automatically with <strong>Settings → Sync → match by App
           ID</strong>, which is off by default so two genuinely separate copies are never merged
           behind your back.
@@ -575,10 +567,10 @@ logs/          <span class="c">a whole folder</span>
 
         <h3>A few smaller ones</h3>
         <ul>
-          <li><strong>Activity</strong> is the log of everything OpenSave has done. The first place to look when something did not happen and you want to know why.</li>
-          <li><strong>Launching games</strong> — set a game's executable in its Configuration tab and OpenSave gets a Play button.</li>
+          <li><strong>Activity</strong> is the log of everything SaveVault has done. The first place to look when something did not happen and you want to know why.</li>
+          <li><strong>Launching games</strong> — set a game's executable in its Configuration tab and SaveVault gets a Play button.</li>
           <li><strong>Untracking is safe.</strong> Removing a game never deletes a save file or a snapshot.</li>
-          <li><strong>Where your data lives</strong> — everything is in a <code>.opensave</code> folder in your home directory. Deleting it resets OpenSave completely and touches none of your actual game saves.</li>
+          <li><strong>Where your data lives</strong> — everything is in a <code>.savevault</code> folder in your home directory. Deleting it resets SaveVault completely and touches none of your actual game saves.</li>
         </ul>
       </section>
 
@@ -588,7 +580,7 @@ logs/          <span class="c">a whole folder</span>
         <div class="guide-trouble">
           <details open>
             <summary>My devices cannot see each other</summary>
-            <p>Set the network profile to <em>Private</em>, allow OpenSave through the firewall, and make sure both are on the same network. Failing that, use <strong>Devices → Add by IP address</strong>, or a room code under Internet Sync, which works even on the same network.</p>
+            <p>Set the network profile to <em>Private</em>, allow SaveVault through the firewall, and make sure both are on the same network. Failing that, use <strong>Devices → Add by IP address</strong>, or a room code under Internet Sync, which works even on the same network.</p>
           </details>
           <details>
             <summary>A game is not detected</summary>
@@ -600,11 +592,11 @@ logs/          <span class="c">a whole folder</span>
           </details>
           <details>
             <summary>My save did not sync</summary>
-            <p>Check both devices are tracking that game, that they show as paired under <strong>Devices</strong>, and that the game is not waiting on a conflict. <strong>Activity</strong> shows what OpenSave has been doing and usually says why.</p>
+            <p>Check both devices are tracking that game, that they show as paired under <strong>Devices</strong>, and that the game is not waiting on a conflict. <strong>Activity</strong> shows what SaveVault has been doing and usually says why.</p>
           </details>
           <details>
             <summary>A folder shows as empty but I know it has saves</summary>
-            <p>The scan hides folders with no files — tick <strong>Show N empty</strong> to see them. If a folder really does have files and still shows as empty, OpenSave could not read it; check permissions.</p>
+            <p>The scan hides folders with no files — tick <strong>Show N empty</strong> to see them. If a folder really does have files and still shows as empty, SaveVault could not read it; check permissions.</p>
           </details>
           <details>
             <summary>I restored the wrong snapshot</summary>
@@ -612,11 +604,11 @@ logs/          <span class="c">a whole folder</span>
           </details>
           <details>
             <summary>"404 Not Found" when the app opens</summary>
-            <p>Another program is using port <code>8383</code> — often a second copy of OpenSave still running. Check the system tray and Task Manager, or change the port under <strong>Settings → Advanced</strong>.</p>
+            <p>Another program is using port <code>8383</code> — often a second copy of SaveVault still running. Check the system tray and Task Manager, or change the port under <strong>Settings → Advanced</strong>.</p>
           </details>
           <details>
             <summary>I want to start over</summary>
-            <p>Untracking a game removes it from your library and leaves every save file and snapshot on disk. Nothing you do in OpenSave deletes a save file except explicitly restoring over one.</p>
+            <p>Untracking a game removes it from your library and leaves every save file and snapshot on disk. Nothing you do in SaveVault deletes a save file except explicitly restoring over one.</p>
           </details>
         </div>
       </section>
@@ -630,15 +622,15 @@ logs/          <span class="c">a whole folder</span>
               <tr><th>Term</th><th>What it means</th></tr>
             </thead>
             <tbody>
-              <tr><td><strong>Track</strong></td><td>Tell OpenSave to watch a folder. It does not move or change anything</td></tr>
+              <tr><td><strong>Track</strong></td><td>Tell SaveVault to watch a folder. It does not move or change anything</td></tr>
               <tr><td><strong>Snapshot</strong></td><td>A saved copy of how a save folder looked at one moment</td></tr>
               <tr><td><strong>Restore</strong></td><td>Put a save folder back to how a snapshot has it</td></tr>
               <tr><td><strong>Branch</strong></td><td>A separate line of saves for the same game — a second playthrough</td></tr>
-              <tr><td><strong>Peer</strong></td><td>Another machine running OpenSave that you have paired with</td></tr>
+              <tr><td><strong>Peer</strong></td><td>Another machine running SaveVault that you have paired with</td></tr>
               <tr><td><strong>Pairing</strong></td><td>Mutually approving two devices so they may sync. Both sides must agree</td></tr>
               <tr><td><strong>Relay</strong></td><td>A server that forwards sync traffic between devices on different networks. It stores nothing, but it can see what passes through, so run your own if that matters</td></tr>
               <tr><td><strong>Room code</strong></td><td>The shared word that lets two devices find each other through a relay</td></tr>
-              <tr><td><strong>Conflict</strong></td><td>Both devices changed a save independently. OpenSave asks rather than guessing</td></tr>
+              <tr><td><strong>Conflict</strong></td><td>Both devices changed a save independently. SaveVault asks rather than guessing</td></tr>
               <tr><td><strong>Save location</strong></td><td>An extra folder belonging to the same game, for saves split across places</td></tr>
               <tr><td><strong>Exclusion</strong></td><td>A file that should stay on its own machine. Still backed up, just never sent</td></tr>
             </tbody>
@@ -653,8 +645,7 @@ logs/          <span class="c">a whole folder</span>
           before they ship.
         </p>
         <div class="guide-end-ctas">
-          <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="btn-primary">Join the Discord</a>
-          <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener" class="btn-secondary">Report a bug</a>
+          <a href="https://github.com/jun9100/SaveVault/issues" target="_blank" rel="noopener" class="btn-secondary">Report a bug</a>
         </div>
       </div>
 
@@ -669,20 +660,18 @@ logs/          <span class="c">a whole folder</span>
     <div class="footer-container">
       <div class="footer-brand">
         <img src="icon.png?v=2" alt="" class="logo-img">
-        <span class="logo-text">Open<span>Save</span></span>
+        <span class="logo-text">Save<span>Vault</span></span>
       </div>
       <nav class="footer-links">
         <a href="getting-started.html">Guide</a>
         <a href="compare.html">Compare</a>
-        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="footer-discord">Discord</a>
-        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
-        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/jun9100/SaveVault" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/jun9100/SaveVault/releases" target="_blank" rel="noopener">Releases</a>
         <a href="cli.html">CLI</a>
-        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="https://github.com/jun9100/SaveVault/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
         <a href="privacy.html">Privacy</a>
-        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
-        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+        <a href="https://github.com/jun9100/SaveVault/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/jun9100/SaveVault/issues" target="_blank" rel="noopener">Report a bug</a>
       </nav>
       <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
     </div>

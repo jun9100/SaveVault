@@ -1,6 +1,6 @@
 package sysintegration
 
-// StartHiddenFlag is the argument the autostart entry launches OpenSave with.
+// StartHiddenFlag is the argument the autostart entry launches SaveVault with.
 //
 // It exists because starting with the OS and starting by hand are different
 // requests that used to be indistinguishable. The Run key launched the bare
@@ -13,7 +13,7 @@ package sysintegration
 // reader cannot drift apart.
 const StartHiddenFlag = "--start-hidden"
 
-// QuitFlag asks a running OpenSave to shut down cleanly and exit.
+// QuitFlag asks a running SaveVault to shut down cleanly and exit.
 //
 // For the installer, which has to get the app out of the way before it can
 // replace or delete its files. The alternative is taskkill, and this app is

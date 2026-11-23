@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // The relay's OAuth proxy pairs whatever client id it is handed with the

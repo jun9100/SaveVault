@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/presets"
+	"github.com/jun9100/savevault/internal/presets"
 )
 
 // A square icon with a red middle on a white field.

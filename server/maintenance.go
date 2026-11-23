@@ -84,14 +84,14 @@ type pruneReport struct {
 	ReclaimedBytes   int64    `json:"reclaimed_bytes"`
 	TemporaryRemoved int      `json:"temporary_removed"`
 
-	OpenSaveVersions       int   `json:"opensave_versions,omitempty"`
-	OpenSaveArchives       int   `json:"opensave_archives,omitempty"`
-	OpenSaveFailed         int   `json:"opensave_failed,omitempty"`
-	OpenSaveFreedBytes     int64 `json:"opensave_freed_bytes,omitempty"`
-	OpenSaveOrphanArchives int   `json:"opensave_orphan_archives,omitempty"`
-	OpenSaveOrphanBytes    int64 `json:"opensave_orphan_bytes,omitempty"`
-	OpenSaveOrphansRemoved int   `json:"opensave_orphans_removed,omitempty"`
-	OpenSaveHeadsRepaired  int   `json:"opensave_heads_repaired,omitempty"`
+	SaveVaultVersions       int   `json:"savevault_versions,omitempty"`
+	SaveVaultArchives       int   `json:"savevault_archives,omitempty"`
+	SaveVaultFailed         int   `json:"savevault_failed,omitempty"`
+	SaveVaultFreedBytes     int64 `json:"savevault_freed_bytes,omitempty"`
+	SaveVaultOrphanArchives int   `json:"savevault_orphan_archives,omitempty"`
+	SaveVaultOrphanBytes    int64 `json:"savevault_orphan_bytes,omitempty"`
+	SaveVaultOrphansRemoved int   `json:"savevault_orphans_removed,omitempty"`
+	SaveVaultHeadsRepaired  int   `json:"savevault_heads_repaired,omitempty"`
 	TombstonesPurged       int   `json:"tombstones_purged,omitempty"`
 }
 
@@ -115,28 +115,28 @@ func (s *server) runMaintenanceLocked(dryRun bool) (pruneReport, error) {
 	report := pruneReport{DryRun: dryRun, Scopes: []string{}}
 	now := time.Now().UTC()
 
-	// C6 SaveVault maintenance uses openSaveMu/manageMu and records its own
+	// C6 SaveVault maintenance uses saveVaultMu/manageMu and records its own
 	// event, so it runs before the Eden state lock below.
-	openSaveReport, err := s.runOpenSaveMaintenance(dryRun, now)
+	saveVaultReport, err := s.runSaveVaultMaintenance(dryRun, now)
 	if err != nil {
 		return report, err
 	}
-	report.OpenSaveVersions = openSaveReport.Versions
-	report.OpenSaveArchives = openSaveReport.Archives
-	report.OpenSaveFailed = openSaveReport.Failed
-	report.OpenSaveFreedBytes = openSaveReport.FreedBytes
-	report.OpenSaveOrphanArchives = openSaveReport.OrphanArchives
-	report.OpenSaveOrphanBytes = openSaveReport.OrphanBytes
-	report.OpenSaveOrphansRemoved = openSaveReport.OrphanRemoved
-	report.TombstonesPurged = openSaveReport.TombstonesPurged
+	report.SaveVaultVersions = saveVaultReport.Versions
+	report.SaveVaultArchives = saveVaultReport.Archives
+	report.SaveVaultFailed = saveVaultReport.Failed
+	report.SaveVaultFreedBytes = saveVaultReport.FreedBytes
+	report.SaveVaultOrphanArchives = saveVaultReport.OrphanArchives
+	report.SaveVaultOrphanBytes = saveVaultReport.OrphanBytes
+	report.SaveVaultOrphansRemoved = saveVaultReport.OrphanRemoved
+	report.TombstonesPurged = saveVaultReport.TombstonesPurged
 
 	// A head whose archive vanished must never stay advertised: clients answer
 	// 404 on download and cannot replace it without deleting the scope.
 	if !dryRun {
-		if repaired, err := s.repairOpenSaveHeads(); err != nil {
-			slog.Warn("repair OpenSave heads", "error", err)
+		if repaired, err := s.repairSaveVaultHeads(); err != nil {
+			slog.Warn("repair SaveVault heads", "error", err)
 		} else {
-			report.OpenSaveHeadsRepaired = repaired
+			report.SaveVaultHeadsRepaired = repaired
 		}
 	}
 
@@ -221,7 +221,7 @@ func (s *server) runMaintenanceLocked(dryRun bool) (pruneReport, error) {
 	if err != nil {
 		return report, err
 	}
-	for _, tempDir := range []string{s.openSaveNativeDirectory(), s.openSaveDirectory()} {
+	for _, tempDir := range []string{s.saveVaultNativeDirectory(), s.saveVaultDirectory()} {
 		_ = filepath.WalkDir(tempDir, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil || entry.IsDir() {
 				return nil
@@ -240,7 +240,7 @@ func (s *server) runMaintenanceLocked(dryRun bool) (pruneReport, error) {
 			return nil
 		})
 	}
-	covers, err := s.removeUnreferencedOpenSaveCovers(now, dryRun)
+	covers, err := s.removeUnreferencedSaveVaultCovers(now, dryRun)
 	if err != nil {
 		return report, err
 	}
@@ -268,11 +268,11 @@ func (s *server) maintenanceLoop(ctx context.Context, interval time.Duration) {
 				continue
 			}
 			if report.Snapshots > 0 || report.Objects > 0 || report.Covers > 0 ||
-				report.OpenSaveVersions > 0 || report.OpenSaveArchives > 0 || report.OpenSaveOrphansRemoved > 0 {
+				report.SaveVaultVersions > 0 || report.SaveVaultArchives > 0 || report.SaveVaultOrphansRemoved > 0 {
 				slog.Info("scheduled maintenance", "snapshots", report.Snapshots,
 					"objects", report.Objects, "covers", report.Covers, "reclaimed_bytes", report.ReclaimedBytes,
-					"opensave_versions", report.OpenSaveVersions, "opensave_archives", report.OpenSaveArchives,
-					"opensave_orphans", report.OpenSaveOrphansRemoved)
+					"savevault_versions", report.SaveVaultVersions, "savevault_archives", report.SaveVaultArchives,
+					"savevault_orphans", report.SaveVaultOrphansRemoved)
 			}
 		}
 	}
@@ -283,7 +283,7 @@ type verifyProblem struct {
 	Problem   string   `json:"problem"`
 	Scopes    []string `json:"scopes"`
 	Snapshots []string `json:"snapshots"`
-	// SaveVault (OpenSave) archives are named rather than content-addressed:
+	// SaveVault (SaveVault) archives are named rather than content-addressed:
 	// Type is the native namespace and Archive the file name.
 	Type    string `json:"type,omitempty"`
 	Archive string `json:"archive,omitempty"`
@@ -354,7 +354,7 @@ func (s *server) verifyObjects(ctx context.Context) (verifyReport, error) {
 			})
 		}
 	}
-	if err := s.verifyOpenSaveArchives(ctx, &report, buffer); err != nil {
+	if err := s.verifySaveVaultArchives(ctx, &report, buffer); err != nil {
 		return report, err
 	}
 	report.Duration = time.Since(started).Seconds()
@@ -366,17 +366,17 @@ func (s *server) verifyObjects(ctx context.Context) (verifyReport, error) {
 	return report, nil
 }
 
-// verifyOpenSaveArchives re-hashes every SaveVault archive referenced by a
+// verifySaveVaultArchives re-hashes every SaveVault archive referenced by a
 // native scope snapshot or retained conflict and compares it with the content
 // digest the server accepted it under.
-func (s *server) verifyOpenSaveArchives(ctx context.Context, report *verifyReport, buffer []byte) error {
+func (s *server) verifySaveVaultArchives(ctx context.Context, report *verifyReport, buffer []byte) error {
 	type reference struct {
 		kind, archive, digest string
 		scopes, snapshots     []string
 	}
 	references := make(map[string]*reference)
-	s.openSaveMu.Lock()
-	for key, stored := range s.openSaveState.Scopes {
+	s.saveVaultMu.Lock()
+	for key, stored := range s.saveVaultState.Scopes {
 		kind, gameID, _ := strings.Cut(key, "\x00")
 		for _, item := range stored.Snapshots {
 			id := kind + "/" + item.Archive
@@ -389,14 +389,14 @@ func (s *server) verifyOpenSaveArchives(ctx context.Context, report *verifyRepor
 			entry.snapshots = append(entry.snapshots, item.ID)
 		}
 	}
-	s.openSaveMu.Unlock()
+	s.saveVaultMu.Unlock()
 
 	for _, entry := range references {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		problem := ""
-		path, ok := s.openSavePath(entry.kind, entry.archive)
+		path, ok := s.saveVaultPath(entry.kind, entry.archive)
 		var file *os.File
 		var err error
 		if ok {

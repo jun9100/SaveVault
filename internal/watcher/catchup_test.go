@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // Snapshotting a change that happened while nobody was watching.
 //
 // A watch reports what happens next; it says nothing about what happened while
-// it was not running. Between OpenSave being closed and reopened, or a watch
+// it was not running. Between SaveVault being closed and reopened, or a watch
 // failing to start and being retried a minute later, a save could change with
 // no snapshot ever taken of it — the peer reconcile would still carry the
 // files to another device, so nothing was lost, but the local history you

@@ -3,8 +3,8 @@ package p2p
 import (
 	"fmt"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // A Switch game is the same game on every device whatever id each tracks it

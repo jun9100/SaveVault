@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // webhook posts each snapshot to a URL and forgets it: the receiving end is

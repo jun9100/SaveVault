@@ -1,12 +1,9 @@
-# Shown on the "New issue" chooser, above the blank-issue option. A fair
-# share of what arrives as an issue is a question with an answer already
-# known, and a chat server answers those in minutes where an issue thread
-# takes days. Bugs still belong here — the blank option stays enabled.
+# Shown on the "New issue" chooser, above the blank-issue option.
 blank_issues_enabled: true
 contact_links:
-  - name: 💬 Ask on Discord
-    url: https://discord.gg/hvBv92DZvn
-    about: Questions, help with a save that will not sync, or just saying hello — this is the fastest way to get an answer.
   - name: 📖 User Guide
-    url: https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md
+    url: https://github.com/jun9100/SaveVault/blob/main/USER_GUIDE.md
     about: Setup, syncing, snapshots, cloud backup and troubleshooting.
+  - name: 📖 使用手册（简体中文）
+    url: https://github.com/jun9100/SaveVault/blob/main/USER_GUIDE.zh-CN.md
+    about: 安装、添加游戏与模拟器、快照恢复与云端同步说明。

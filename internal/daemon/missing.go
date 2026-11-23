@@ -7,14 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/logging"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/logging"
 )
 
 // Save folders that are not there.
 //
 // A tracked game's save folder can go: deleted, moved by a reinstall, on a
-// drive or an SD card that is not plugged in. OpenSave does not create it
+// drive or an SD card that is not plugged in. SaveVault does not create it
 // again (see watcher.WatchWithLocations for what that used to cost); it says
 // so, watches nothing there, and picks the folder up again within a minute
 // of it coming back (ResyncWatchers).
@@ -57,7 +57,7 @@ func (d *Daemon) noteMissing(gameID, name, savePath string, missing bool) {
 	}
 	if missing {
 		d.Log.Log("warn", fmt.Sprintf("the save folder of %q is not there (%s) — it is not watched or synced until it is back; "+
-			"OpenSave will not create it, since an empty folder in its place would read as every file deleted", name, logging.Quote(savePath)))
+			"SaveVault will not create it, since an empty folder in its place would read as every file deleted", name, logging.Quote(savePath)))
 	} else {
 		d.Log.Log("success", fmt.Sprintf("the save folder of %q is back (%s); watching it again", name, logging.Quote(savePath)))
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // settledWithin reports whether the game's save could be read within d —

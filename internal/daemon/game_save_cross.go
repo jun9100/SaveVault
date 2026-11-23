@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Cross-device restore: taking a save another device uploaded for the same
@@ -239,7 +239,7 @@ func (d *Daemon) crossRestoreSource(gameID, memberGameID, snapshotID string) (
 		return game, snap, "", cleanup, fmt.Errorf("game-save scope returned an invalid archive name")
 	}
 
-	tmp, err := os.MkdirTemp("", "opensave-cross-restore-*")
+	tmp, err := os.MkdirTemp("", "savevault-cross-restore-*")
 	if err != nil {
 		return game, snap, "", cleanup, err
 	}

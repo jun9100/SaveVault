@@ -25,7 +25,7 @@ func TestSlowDaemonIsNotReportedAsMissing(t *testing.T) {
 	for _, v := range []string{"HOME", "USERPROFILE"} {
 		t.Setenv(v, home)
 	}
-	dataDir := filepath.Join(home, ".opensave")
+	dataDir := filepath.Join(home, ".savevault")
 	if err := os.MkdirAll(dataDir, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestBackupCommandsWaitForTheDaemon(t *testing.T) {
 	for _, v := range []string{"HOME", "USERPROFILE"} {
 		t.Setenv(v, home)
 	}
-	dataDir := filepath.Join(home, ".opensave")
+	dataDir := filepath.Join(home, ".savevault")
 	if err := os.MkdirAll(dataDir, 0o777); err != nil {
 		t.Fatal(err)
 	}

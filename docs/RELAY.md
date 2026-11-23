@@ -4,7 +4,7 @@ Two devices on the same network find each other by themselves. On different
 networks — your PC at home and a laptop somewhere else — they need something
 with a public address to introduce them. That is the relay.
 
-OpenSave ships pointed at a free hosted one, so **you do not need this guide
+SaveVault ships pointed at a free hosted one, so **you do not need this guide
 to use internet sync**. Run your own if you want to not depend on someone
 else's server, or want it to wake instantly instead of cold-starting.
 
@@ -17,7 +17,7 @@ else's server, or want it to wake instantly instead of cold-starting.
 This is the most common confusion, so it is worth being blunt about. The relay
 is a dumb pipe. It has no configuration beyond a port, no idea which room codes
 exist until clients turn up, and nothing to sign in to. There is no
-`opensave relay join` to run *on the relay* — that command belongs on your
+`savevault relay join` to run *on the relay* — that command belongs on your
 **gaming devices**, and there is nothing to install on the server beyond the
 relay binary itself.
 
@@ -42,7 +42,7 @@ On a Linux server, one command does the lot — binary, systemd service,
 firewall, and a certificate if you have a domain pointed here:
 
 ```bash
-curl -fsSL https://opensave.org/relay.sh -o install-relay.sh
+curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/packaging/relay/install-relay.sh -o install-relay.sh
 sudo bash install-relay.sh
 ```
 
@@ -57,7 +57,7 @@ Every answer is also a flag, if you would rather say it all up front:
 sudo bash install-relay.sh --domain relay.example.com
 ```
 
-Leave `--domain` off and the relay speaks unencrypted `ws://`, which OpenSave
+Leave `--domain` off and the relay speaks unencrypted `ws://`, which SaveVault
 accepts only at a private address — a LAN or a VPN. On a hosted server, whose
 only address is public, the installer will say so and print no address to copy,
 because anything it printed would be refused. See [Why `ws://` is not enough](#3-put-tls-in-front-of-it).
@@ -85,8 +85,8 @@ does not work.
 ### Docker
 
 ```bash
-docker build -f relay/Dockerfile -t opensave-relay .
-docker run -d --name opensave-relay --restart unless-stopped -p 8386:10000 opensave-relay
+docker build -f relay/Dockerfile -t savevault-relay .
+docker run -d --name savevault-relay --restart unless-stopped -p 8386:10000 savevault-relay
 ```
 
 The image sets `PORT=10000` internally; the `-p` maps it to 8386 on the host.
@@ -95,8 +95,8 @@ Use whatever host port you like.
 ### Binary
 
 ```bash
-go build -o opensave-relay ./cmd/opensave-relay
-./opensave-relay
+go build -o savevault-relay ./cmd/savevault-relay
+./savevault-relay
 ```
 
 It prints where it is listening and stays in the foreground. For a permanent
@@ -110,7 +110,7 @@ Settings that are not secrets are environment variables — there are no flags:
 | --- | --- | --- |
 | `PORT` | `8386` (`10000` in the image) | Port to listen on |
 | `MAX_PER_ROOM` | `20` | Most devices allowed in one room |
-| `OPENSAVE_RELAY_SECRETS` | see below | Where the secrets file lives |
+| `SAVEVAULT_RELAY_SECRETS` | see below | Where the secrets file lives |
 
 ### Secrets
 
@@ -122,10 +122,10 @@ with neither configured starts normally and simply does not offer them:
 | Google OAuth client secret | Google Drive sign-in through this relay | [3b](#3b-google-drive-sign-in-optional) |
 | SteamGridDB API key | Cover art for games Steam has none for | [3c](#3c-cover-art-optional) |
 
-The way to set them is `opensave-relay setup`, which asks for each in turn:
+The way to set them is `savevault-relay setup`, which asks for each in turn:
 
 ```bash
-opensave-relay setup
+savevault-relay setup
 ```
 
 Nothing is echoed while you type, and the file it writes is created `0600`
@@ -133,28 +133,28 @@ before a byte goes into it. That is the point of the command: a secret given
 any other way tends to end up somewhere it outlives its usefulness — on a
 command line your shell records, or in a unit file that gets committed.
 
-It writes to `/etc/opensave/relay-secrets.json` where that is writable, and
-`~/.opensave/relay-secrets.json` otherwise. `OPENSAVE_RELAY_SECRETS` overrides
+It writes to `/etc/savevault/relay-secrets.json` where that is writable, and
+`~/.savevault/relay-secrets.json` otherwise. `SAVEVAULT_RELAY_SECRETS` overrides
 the location.
 
 Run it with `sudo` on a machine set up by `install-relay.sh` and it hands the
-file to the `opensave-relay` account the service runs as, and says so. That
+file to the `savevault-relay` account the service runs as, and says so. That
 step matters more than it sounds: the file is `0600`, so a root-owned one is
 unreadable to the service — the key would be stored, reported as configured by
-`opensave-relay config`, and never reach the relay. If the handover cannot be
+`savevault-relay config`, and never reach the relay. If the handover cannot be
 done it says so instead of reporting success, and `config` warns whenever the
 owner and the service account disagree.
 
 `GOOGLE_DRIVE_CLIENT_SECRET` and `STEAMGRIDDB_KEY` still work as environment
 variables, and **take precedence over the file**, so a container or systemd
-unit that already injects them keeps working untouched. `opensave-relay
+unit that already injects them keeps working untouched. `savevault-relay
 config` prints what is configured and which of the two it came from — worth
 running when a value you did not expect is in effect, because "it is in the
 file but the environment is overriding it" is otherwise a genuinely confusing
 hour. Both commands show only the last four characters of a key, enough to
 tell two apart without revealing either.
 
-`opensave-relay --help` prints all of this. Note that `relay-url` is a
+`savevault-relay --help` prints all of this. Note that `relay-url` is a
 *client* setting and does nothing here; see step 4.
 
 ## 2. Check it is up
@@ -170,7 +170,7 @@ when devices connect.
 
 ## 3. Put TLS in front of it
 
-Not optional across the internet, and the app enforces it. Nothing in OpenSave
+Not optional across the internet, and the app enforces it. Nothing in SaveVault
 encrypts the sync payload — the save file travels gzipped inside JSON — so the
 relay connection is the only thing between a save and the network it crosses.
 A bare relay speaks plain `ws://`, and the app refuses that to any public
@@ -214,17 +214,17 @@ a certificate rather than an open port.
 ## 3b. Google Drive sign-in (optional)
 
 Only relevant if the people using this relay sign in to Google Drive with
-OpenSave's built-in credentials. Sync itself needs none of this, and neither
+SaveVault's built-in credentials. Sync itself needs none of this, and neither
 does anyone who enters their own OAuth client ID and secret in the app — that
 path talks to Google directly and never touches the relay.
 
 **Running your own relay? You almost certainly want to skip this section.**
 The relay sends Google the client ID the app gave it, paired with the secret
 configured here, and Google refuses the pair unless both halves belong to the
-same OAuth app. The app sends OpenSave's built-in client ID, whose secret only
+same OAuth app. The app sends SaveVault's built-in client ID, whose secret only
 the official relay holds — so there is nothing you could put here that would
 work. Anyone syncing to Drive through your relay should enter their own OAuth
-client ID and secret in OpenSave instead: that path talks to Google directly,
+client ID and secret in SaveVault instead: that path talks to Google directly,
 never touches your relay, and needs nothing from you. This section is for
 whoever operates the relay the built-in credentials belong to.
 
@@ -236,7 +236,7 @@ and point the installer at it:
 sudo bash install-relay.sh --domain relay.example.com --google-secret-file /root/gd-secret.txt
 ```
 
-It is copied to `/etc/opensave-relay/env`, mode `0600`, root-owned, and the
+It is copied to `/etc/savevault-relay/env`, mode `0600`, root-owned, and the
 service unit loads it with `EnvironmentFile=`. Two things that are deliberate:
 
 - **A file, not an argument.** `--google-client-secret <value>` would be
@@ -255,7 +255,7 @@ works.
 
 ## 3c. Cover art (optional)
 
-OpenSave gets a game's cover from Steam by AppID. That covers most of a
+SaveVault gets a game's cover from Steam by AppID. That covers most of a
 library and none of the rest: a game sold only on GOG, itch or Epic has no
 AppID at all, and one found under a folder name nothing could be resolved from
 has none either. Those are the games that show up blank.
@@ -277,7 +277,7 @@ sudo bash install-relay.sh --domain relay.example.com --steamgriddb-key-file /ro
 **or** run setup on the server and paste it at the prompt:
 
 ```bash
-opensave-relay setup
+savevault-relay setup
 ```
 
 Both end up in the same place, root-readable only. As with the Google secret,
@@ -308,7 +308,7 @@ curl 'https://relay.example.com/api/cover/lookup?name=Hollow%20Knight'
 ```
 
 `200` with a `url` means it is working. `503` means the key did not reach the
-relay; `opensave-relay config` will say whether it sees one.
+relay; `savevault-relay config` will say whether it sees one.
 
 ## 4. Point your devices at it
 
@@ -321,21 +321,21 @@ paste the one you are already using.
 From the command line:
 
 ```bash
-opensave config set relay-url wss://relay.example.com
-opensave relay join purple-otter-42     # the same code on every device
-opensave relay status                   # shows the room and the relay in use
+savevault config set relay-url wss://relay.example.com
+savevault relay join purple-otter-42     # the same code on every device
+savevault relay status                   # shows the room and the relay in use
 ```
 
 Provisioning devices rather than configuring them by hand? Set
-`OPENSAVE_RELAY_URL` in the environment instead and skip the `config set` — it
+`SAVEVAULT_RELAY_URL` in the environment instead and skip the `config set` — it
 overrides the stored value for as long as it is set, so a container gets the
 right relay without anyone running a command inside it:
 
 ```bash
-OPENSAVE_RELAY_URL=wss://relay.example.com opensave daemon start
+SAVEVAULT_RELAY_URL=wss://relay.example.com savevault daemon start
 ```
 
-Note the prefix: it is `OPENSAVE_RELAY_URL`, not a bare `RELAY_URL`, so it
+Note the prefix: it is `SAVEVAULT_RELAY_URL`, not a bare `RELAY_URL`, so it
 cannot collide with something else on the same box and quietly redirect your
 sync traffic.
 
@@ -347,14 +347,14 @@ sync anything without you approving the pairing on the device itself.
 To check they have met:
 
 ```bash
-opensave peers
+savevault peers
 ```
 
-To stop using internet sync on a device: `opensave relay leave`.
+To stop using internet sync on a device: `savevault relay leave`.
 
 ## If it does not connect
 
-**`opensave relay status` shows the room but no peers appear.** Check the other
+**`savevault relay status` shows the room but no peers appear.** Check the other
 device has the *same* code and the *same* relay URL — a typo in either produces
 exactly this, silently. `curl .../health` on both machines proves they can
 reach the server at all.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A push over the relay has to land when it is pushed, not when the receiving

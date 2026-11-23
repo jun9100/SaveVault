@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // Peer-to-peer app updates: a paired peer running a newer build serves its

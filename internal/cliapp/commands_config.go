@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/selfupdate"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/selfupdate"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // Settings and game-linking management, so a headless install isn't forced
@@ -50,7 +50,7 @@ func cmdExclude(d *daemon.Daemon, args []string) int {
 
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: opensave exclude add <path>")
+			fmt.Fprintln(os.Stderr, "usage: savevault exclude add <path>")
 			return 1
 		}
 		abs, err := filepath.Abs(args[1])
@@ -78,7 +78,7 @@ func cmdExclude(d *daemon.Daemon, args []string) int {
 
 	case "remove":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: opensave exclude remove <path>")
+			fmt.Fprintln(os.Stderr, "usage: savevault exclude remove <path>")
 			return 1
 		}
 		abs, _ := filepath.Abs(args[1])
@@ -111,9 +111,9 @@ func cmdExclude(d *daemon.Daemon, args []string) int {
 }
 
 const excludeUsage = `usage:
-  opensave exclude list            Folders auto-scan skips
-  opensave exclude add <path>      Skip a folder (and everything inside it)
-  opensave exclude remove <path>   Stop skipping it`
+  savevault exclude list            Folders auto-scan skips
+  savevault exclude add <path>      Skip a folder (and everything inside it)
+  savevault exclude remove <path>   Stop skipping it`
 
 // cmdLink merges one tracked game into another so both ids sync to the same
 // save — the same title tracked under different names on two machines.
@@ -121,7 +121,7 @@ func cmdLink(d *daemon.Daemon, args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr,
-			"usage: opensave link <gameId> <otherGameId>\n"+
+			"usage: savevault link <gameId> <otherGameId>\n"+
 				"  Treats both as the same game. <otherGameId> is merged in and\n"+
 				"  removed from the library; its save files are left alone.")
 		return 1
@@ -141,7 +141,7 @@ func cmdLink(d *daemon.Daemon, args []string) int {
 func cmdUnlinkGame(d *daemon.Daemon, args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: opensave unlink <aliasGameId>")
+		fmt.Fprintln(os.Stderr, "usage: savevault unlink <aliasGameId>")
 		return 1
 	}
 	if err := d.UnlinkGame(args[0]); err != nil {
@@ -158,7 +158,7 @@ func cmdUnlinkGame(d *daemon.Daemon, args []string) int {
 func cmdLinks(d *daemon.Daemon, args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: opensave links <gameId>")
+		fmt.Fprintln(os.Stderr, "usage: savevault links <gameId>")
 		return 1
 	}
 	// Confirm the game exists first. Listing aliases for an id nobody tracks
@@ -270,10 +270,10 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 		if settings.RelayURLLocked {
 			return fail(asJSON, fmt.Errorf(
 				"relay-url is pinned to %q by the %s environment variable, so it cannot be changed here.\n"+
-					"Change the variable and restart OpenSave, or unset it to go back to the stored setting.",
+					"Change the variable and restart SaveVault, or unset it to go back to the stored setting.",
 				settings.RelayURL, store.RelayURLEnv))
 		}
-		// A relay carries the save file itself, and nothing in OpenSave
+		// A relay carries the save file itself, and nothing in SaveVault
 		// encrypts it — so ws:// to a public host is the save on the wire in
 		// the clear. Caught here rather than at the dial, where it would look
 		// like a connection problem.
@@ -318,21 +318,21 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 }
 
 const configUsage = `usage:
-  opensave config [list]                    Show current settings
-  opensave config set device-name <name>    How other devices see this one
-  opensave config set match-by-app-id <t/f> Link same-App-ID games across devices
-  opensave config set unknown-game-from-peer <track|ask>
+  savevault config [list]                    Show current settings
+  savevault config set device-name <name>    How other devices see this one
+  savevault config set match-by-app-id <t/f> Link same-App-ID games across devices
+  savevault config set unknown-game-from-peer <track|ask>
                                             Another device syncs a game this one
                                             lacks: work out a folder and start
                                             (default), or wait to be told where
-  opensave config set snapshot-limit <n>    Automatic snapshots kept per branch (0 = all)
-  opensave config set manual-snapshot-limit <n>
+  savevault config set snapshot-limit <n>    Automatic snapshots kept per branch (0 = all)
+  savevault config set manual-snapshot-limit <n>
                                             Manual snapshots kept per branch (0 = keep forever)
-  opensave config set port <n>              Local API/peer port (default 8383)
-  opensave config set relay-url <url>       Relay server for internet sync
-  opensave config set update-channel <stable|beta>
+  savevault config set port <n>              Local API/peer port (default 8383)
+  savevault config set relay-url <url>       Relay server for internet sync
+  savevault config set update-channel <stable|beta>
                                             Whether updates include pre-releases
-  opensave config set verify-every <days|off>
+  savevault config set verify-every <days|off>
                                             How often every snapshot is checked
                                             it can be restored (default 7)`
 

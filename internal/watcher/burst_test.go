@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // What happens when more changes arrive than the watcher can hold.

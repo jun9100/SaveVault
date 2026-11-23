@@ -189,7 +189,7 @@ func (s *Service) ExchangeAuthCode(provider, code, codeVerifier string) error {
 	// "insufficient permissions". Catch that here with a clear message
 	// instead of persisting a useless token.
 	if provider == "google_drive" && tok.Scope != "" && !strings.Contains(tok.Scope, "drive.file") {
-		return fmt.Errorf("Google sign-in succeeded but Drive access wasn't granted — sign in again and TICK THE CHECKBOX allowing OpenSave to \"See, edit, create and delete only the specific Google Drive files that you use with this app\"")
+		return fmt.Errorf("Google sign-in succeeded but Drive access wasn't granted — sign in again and TICK THE CHECKBOX allowing SaveVault to \"See, edit, create and delete only the specific Google Drive files that you use with this app\"")
 	}
 
 	email := s.fetchUserProfile(provider, tok.AccessToken)

@@ -1,6 +1,6 @@
 package syncengine
 
-import "github.com/opensave/opensave/internal/delta"
+import "github.com/jun9100/savevault/internal/delta"
 
 // filesAtRisk lists the local files this sync is about to destroy: the ones a
 // pull will write over, and the ones a peer's deletion will remove.

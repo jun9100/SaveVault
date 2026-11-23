@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
 )
 
 // wanTransport tunnels the sync protocol through the relay RPC channel.

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // emptyFolder deletes every file in a save folder and leaves the folder:

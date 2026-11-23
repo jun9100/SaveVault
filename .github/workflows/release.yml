@@ -53,40 +53,33 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v'
-          $ldflags = "-s -w -X github.com/opensave/opensave/internal/version.Version=$version -X github.com/opensave/opensave/internal/version.BuildTime=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+          $ldflags = "-s -w -X github.com/jun9100/savevault/internal/version.Version=$version -X github.com/jun9100/savevault/internal/version.BuildTime=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
           if (-not $env:NSIS_MAKENSIS -or -not (Test-Path -LiteralPath $env:NSIS_MAKENSIS -PathType Leaf)) {
             throw 'makensis.exe was not prepared by the dependency step'
           }
           $env:PATH = "$(Split-Path -Parent $env:NSIS_MAKENSIS);$env:PATH"
 
-          Push-Location cmd/opensave-app
-          $env:OPENSAVE_VERSION = $version
+          Push-Location cmd/savevault-app
+          $env:SAVEVAULT_VERSION = $version
           wails build -nsis -ldflags $ldflags
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # The portable exe is SaveVault.exe now. Keep an opensave.exe copy
-          # beside it: builds installed before the rename look for that exact
-          # name when they check for updates.
-          Copy-Item -Force build/bin/SaveVault.exe build/bin/opensave.exe
           Pop-Location
 
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          go build -ldflags $ldflags -o dist/opensave-cli.exe ./cmd/opensave-cli
+          go build -ldflags $ldflags -o dist/savevault-cli.exe ./cmd/savevault
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go build -ldflags $ldflags -o dist/opensave-relay.exe ./cmd/opensave-relay
+          go build -ldflags $ldflags -o dist/savevault-relay.exe ./cmd/savevault-relay
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          $installer = Get-ChildItem cmd/opensave-app/build/bin -Filter '*installer*.exe' | Select-Object -First 1
+          $installer = Get-ChildItem cmd/savevault-app/build/bin -Filter '*installer*.exe' | Select-Object -First 1
           if (-not $installer) { throw 'Wails did not produce an NSIS installer' }
-          Copy-Item -Force $installer.FullName cmd/opensave-app/build/bin/SaveVault.Setup.exe
-          # Same reason as the portable exe: old download links and scripts
-          # still ask for OpenSave.Setup.exe.
-          Copy-Item -Force $installer.FullName cmd/opensave-app/build/bin/OpenSave.Setup.exe
+          Copy-Item -Force $installer.FullName cmd/savevault-app/build/bin/SaveVault.Setup.exe
           Remove-Item -Force $installer.FullName
       - uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
-            cmd/opensave-app/build/bin/*.exe
+            cmd/savevault-app/build/bin/*.exe
             dist/*.exe
   release:
     needs: windows

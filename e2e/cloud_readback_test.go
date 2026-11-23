@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Two devices that never meet, sharing one cloud folder — the case the cloud

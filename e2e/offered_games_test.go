@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // "Ask me where to put it" — the alternative to guessing a folder from the
 // peer's save path.
 //
-// Auto-tracking stays the default and is what makes OpenSave zero-config. This
+// Auto-tracking stays the default and is what makes SaveVault zero-config. This
 // is for the setups where the guess is least reliable: several drives, folders
 // moved with a junction, saves kept in a per-account directory whose name is
 // different on every machine.

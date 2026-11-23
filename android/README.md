@@ -1,6 +1,6 @@
 # SaveVault Android
 
-这是 SaveVault（原名 OpenSave）的原生 Android 客户端，适配 Android 手机和掌机（Android 8 及以上；无 Root 时用系统授权目录，Android 10 及以下可一次授权整个内部存储）。应用 ID 仍是 `com.jun9100.opensave`，旧版可直接覆盖升级。界面使用 Jetpack Compose；默认通过 Storage Access Framework (SAF) 访问用户授权的目录，在已经 Root 并由 Magisk 授权的设备上也可以读取受限的模拟器或 GameHub 本地路径。
+这是 SaveVault（原名 SaveVault）的原生 Android 客户端，适配 Android 手机和掌机（Android 8 及以上；无 Root 时用系统授权目录，Android 10 及以下可一次授权整个内部存储）。应用 ID 仍是 `com.jun9100.savevault`，旧版可直接覆盖升级。界面使用 Jetpack Compose；默认通过 Storage Access Framework (SAF) 访问用户授权的目录，在已经 Root 并由 Magisk 授权的设备上也可以读取受限的模拟器或 GameHub 本地路径。
 
 ## 已实现
 
@@ -9,14 +9,14 @@
 - 识别 Eden/Yuzu 系 NAND 与 Ryujinx/Ryubing BIS 中的 Switch TitleID；常见 Switch 游戏显示中文名并缓存 TitleID 封面，Steam AppID 游戏可解析中文名并缓存封面。没有可用封面时显示对应平台图标。
 - 创建流式 ZIP 快照、本地历史、SHA-256、稳定 manifest hash、恢复前安全副本，以及恢复时的路径/ZIP-slip 防护。
 - 通过 `game-save` 原生范围 API 上传不可变 ZIP、读取每个游戏的权威 head，并在 CAS 竞争时保留冲突副本。同步密钥使用 Android Keystore 的 AES-GCM 密文保存，应用数据不会参与 Android 云备份或设备迁移。
-- 只有父链明确延续本机已确认 head、且本机内容未变化时，Windows OpenSave 才可自动拉取。Android 后台任务不会静默写回游戏目录；连续更新、分叉、未知基线、本机已变化和未完成上传一律保留并在应用中等待确认恢复。
+- 只有父链明确延续本机已确认 head、且本机内容未变化时，Windows SaveVault 才可自动拉取。Android 后台任务不会静默写回游戏目录；连续更新、分叉、未知基线、本机已变化和未完成上传一律保留并在应用中等待确认恢复。
 - Wi-Fi 条件下，WorkManager 每 15 分钟检查所有当前可访问的预设来源和用户授权来源；未变化的游戏跳过，临时网络失败会重试。
 
-扫描只访问预设路径和已经授权的目录；Root 下的共享存储扫描会自动排除 OpenSave 测试目录、Eden 迁移归档、ROM、密钥、固件、着色器缓存、日志和游戏安装文件。Root 下会检查已识别 Android 游戏的内部持久数据，并从共享存储发现外部数据；非 Root 下只能扫描用户逐个授予的目录。GameHub 云游戏、串流游戏的存档若实际在远端电脑或服务器，必须由对应电脑上的 OpenSave 备份。
+扫描只访问预设路径和已经授权的目录；Root 下的共享存储扫描会自动排除 SaveVault 测试目录、Eden 迁移归档、ROM、密钥、固件、着色器缓存、日志和游戏安装文件。Root 下会检查已识别 Android 游戏的内部持久数据，并从共享存储发现外部数据；非 Root 下只能扫描用户逐个授予的目录。GameHub 云游戏、串流游戏的存档若实际在远端电脑或服务器，必须由对应电脑上的 SaveVault 备份。
 
 ## game-save 云端
 
-Android 和新版 Windows OpenSave 使用同一个 `game-save` 服务根地址和同步密钥，不配置 WebDAV 地址、用户名或密码。例如服务根地址是：
+Android 和新版 Windows SaveVault 使用同一个 `game-save` 服务根地址和同步密钥，不配置 WebDAV 地址、用户名或密码。例如服务根地址是：
 
 ```text
 https://game-save.example:8788
@@ -25,10 +25,10 @@ https://game-save.example:8788
 客户端会以 `Authorization: Bearer <同步密钥>` 调用。新版同步协议先读取一个固定的类型和游戏范围，再以已确认 head 为父版本进行 CAS 写入：
 
 ```text
-GET    /v1/opensave/scopes/{type}/{gameId}
-GET    /v1/opensave/scopes/{type}/{gameId}/head
-PUT    /v1/opensave/scopes/{type}/{gameId}/snapshots/{snapshotId}
-PUT    /v1/opensave/scopes/{type}/{gameId}/conflicts/{snapshotId}
+GET    /v1/savevault/scopes/{type}/{gameId}
+GET    /v1/savevault/scopes/{type}/{gameId}/head
+PUT    /v1/savevault/scopes/{type}/{gameId}/snapshots/{snapshotId}
+PUT    /v1/savevault/scopes/{type}/{gameId}/conflicts/{snapshotId}
 ```
 
 每个 `snapshots` 写入带有 `If-Match: "<已确认的 head>"`，并同时提交归档名、父快照、SHA-256 和创建时间。服务端只会在请求父版本仍是当前 head 时推进权威版本；否则客户端将已上传的不可变归档登记为冲突副本。它不会依据文件修改时间覆盖另一台设备的进度。
@@ -36,10 +36,10 @@ PUT    /v1/opensave/scopes/{type}/{gameId}/conflicts/{snapshotId}
 归档文件端点只承载上述范围引用的不可变 ZIP，以及供旧服务短暂兼容的旧协议：
 
 ```text
-GET    /v1/opensave/files
-PUT    /v1/opensave/files/{type}/{name}
-GET    /v1/opensave/files/{type}/{name}
-DELETE /v1/opensave/files/{type}/{name}
+GET    /v1/savevault/files
+PUT    /v1/savevault/files/{type}/{name}
+GET    /v1/savevault/files/{type}/{name}
+DELETE /v1/savevault/files/{type}/{name}
 ```
 
 客户端仅在范围 `GET` 返回路由级 `404` 时回退到旧 ZIP-head 协议。认证失败、校验失败、网络错误、服务端错误和 CAS 冲突都不会回退。被 scope 引用的当前、历史或冲突归档不可删除；删除端点不是新版同步的版本清理机制。
@@ -56,7 +56,7 @@ DELETE /v1/opensave/files/{type}/{name}
 
 ## Root 模式
 
-1. 在 Magisk 的超级用户页面授予 `OpenSave` 的 `su` 权限；ADB 可 root 不代表 APK 已获得权限。
+1. 在 Magisk 的超级用户页面授予 `SaveVault` 的 `su` 权限；ADB 可 root 不代表 APK 已获得权限。
 2. 在“备份与设置”切换到“Root 路径”，选择一个专用存档目录，例如某个 Eden TitleID 目录或特定游戏目录。
 3. 应用会扫描所有存在的已知 Root 来源；手动路径只作为额外来源，不会关闭其他已发现来源。
 4. 恢复前应用创建私有安全快照，随后通过临时目录替换目标存档内容，并尽量保留 Root 目标目录的 UID/GID 与顶层权限。
@@ -66,7 +66,7 @@ Root 模式拒绝 `/`、`/data`、`/storage/emulated/0`、系统分区等过宽�
 ## 非 Root 模式
 
 1. 在“备份与设置”的“系统授权”中点“添加并授权目录”，可重复添加多个模拟器或游戏目录。
-2. OpenSave 保存每个目录的持久权限，并在手动扫描和 Wi-Fi 自动备份时一起使用。
+2. SaveVault 保存每个目录的持久权限，并在手动扫描和 Wi-Fi 自动备份时一起使用。
 3. 只读授权可用于备份；恢复需要该目录具有读写授权。
 4. Android 13 通常禁止普通应用访问其他应用的 `/data/user/0/<包名>`。若系统文件选择器不让选择某个 `Android/data` 目录，只有该应用自身提供文档树、导出功能或 Root 才能读取它。
 

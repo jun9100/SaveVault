@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/winreg"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/winreg"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A registry save has to reach the other device, or the feature only protects

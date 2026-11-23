@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/opensave/opensave/internal/fsx"
+	"github.com/jun9100/savevault/internal/fsx"
 )
 
 // BlockSource supplies the bytes for one block index, either from the
@@ -66,7 +66,7 @@ var renameFile = os.Rename
 // freshly written files (especially .exe payloads) for scanning, which
 // makes the finalizing rename fail with a sharing violation even though
 // nothing is actually wrong. One failed rename here used to strand the
-// .opensave.tmp file on disk, which then leaked into manifests and synced
+// .savevault.tmp file on disk, which then leaked into manifests and synced
 // to peers as a real file.
 func replaceWithRetry(tmpPath, filePath string) error {
 	var err error

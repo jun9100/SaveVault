@@ -1,8 +1,8 @@
-# OpenSave Android 实施计划
+# SaveVault Android 实施计划
 
 ## 当前目标
 
-OpenSave Android 作为 `game-save` 的原生客户端，与 Windows OpenSave 使用相同的服务根地址和同步密钥。它不再接入 WebDAV，也不依赖某一台开机的 PC 作为服务器。
+SaveVault Android 作为 `game-save` 的原生客户端，与 Windows SaveVault 使用相同的服务根地址和同步密钥。它不再接入 WebDAV，也不依赖某一台开机的 PC 作为服务器。
 
 本计划只改变 Android 客户端；桌面端的既有 WebDAV、P2P 和其他云端提供者保持兼容。GitHub Release 工作流当前仍只构建 Windows，Android Debug APK 在本地构建和真机验证完成前不加入 Release 发布矩阵。
 
@@ -15,7 +15,7 @@ OpenSave Android 作为 `game-save` 的原生客户端，与 Windows OpenSave �
 - 游戏库：中文界面、按来源展示、`PC` / `Switch` / 各模拟器类别筛选、当前分类全选/取消全选、批量备份、候选位置显式确认。
 - 游戏呈现：常用 Switch TitleID 中文名、Steam AppID 中文名解析与封面缓存、平台后备图标。
 - 原生 `game-save` 客户端：Bearer 同步密钥、连接测试、按类型列举、上传、下载和删除；同步密钥经 Android Keystore AES-GCM 加密后保存。
-- 单目录 Switch TitleID 快照上传后发布与 Windows OpenSave 兼容的当前存档公告；连续版本可由 Windows 自动拉取，首次分叉仍要求确认。
+- 单目录 Switch TitleID 快照上传后发布与 Windows SaveVault 兼容的当前存档公告；连续版本可由 Windows 自动拉取，首次分叉仍要求确认。
 - 自动备份：Wi-Fi WorkManager 周期扫描所有可访问预设及授权来源，按 manifest hash 跳过未变化的游戏并重试临时故障。
 - 来源访问能力：每个来源和已发现游戏都显示为应用可访问、SAF 已授权、仅 Root 可访问或不可访问；不可访问来源保留原因，不会被误判为“没有存档”。
 - 本地验证：`testDebugUnitTest`、`lintDebug` 和 `assembleDebug` 已通过。
@@ -25,10 +25,10 @@ OpenSave Android 作为 `game-save` 的原生客户端，与 Windows OpenSave �
 服务根地址后由客户端拼接下列接口：
 
 ```text
-GET    /v1/opensave/files
-PUT    /v1/opensave/files/{type}/{name}
-GET    /v1/opensave/files/{type}/{name}
-DELETE /v1/opensave/files/{type}/{name}
+GET    /v1/savevault/files
+PUT    /v1/savevault/files/{type}/{name}
+GET    /v1/savevault/files/{type}/{name}
+DELETE /v1/savevault/files/{type}/{name}
 ```
 
 认证头：
@@ -53,8 +53,8 @@ Authorization: Bearer <同步密钥>
 
 ### Windows 与 Android 互通
 
-- 已识别的单 TitleID Switch 存档以 `switch-<titleid>__main__snap_<timestamp>.zip` 保存，符合 Windows OpenSave 的游戏 ID 和 ZIP 根目录约定。
-- Android 多位置、PC 与通用模拟器快照保留 Android 的 `opensave-game.json` 清单，只有同一来源/布局的客户端才能恢复，防止错误覆盖。
+- 已识别的单 TitleID Switch 存档以 `switch-<titleid>__main__snap_<timestamp>.zip` 保存，符合 Windows SaveVault 的游戏 ID 和 ZIP 根目录约定。
+- Android 多位置、PC 与通用模拟器快照保留 Android 的 `savevault-game.json` 清单，只有同一来源/布局的客户端才能恢复，防止错误覆盖。
 - 云端恢复从对应游戏卡片发起，先校验类型、游戏身份和路径，再创建安全副本。自动任务只上传，不会静默覆盖本地游戏存档。
 
 ## Android 端产品行为
@@ -70,9 +70,9 @@ Authorization: Bearer <同步密钥>
 
 | 状态 | 含义 | 备份 / 恢复行为 |
 | --- | --- | --- |
-| 应用可访问 | 仅适用于未来由 OpenSave 自身或明确集成的应用直接提供的数据。第三方私有目录不会被标成此状态。 | 按该来源实际读写能力执行。 |
+| 应用可访问 | 仅适用于未来由 SaveVault 自身或明确集成的应用直接提供的数据。第三方私有目录不会被标成此状态。 | 按该来源实际读写能力执行。 |
 | SAF 已授权 | 用户通过系统文件选择器持久授权的目录。 | 只读授权可备份；读写授权才可恢复。 |
-| 仅 Root 可访问 | 预设或精确 Root 路径，例如 Eden、GameHub、其他应用的私有目录。 | 必须由 Magisk 向 OpenSave 授权；未授权时不读取、不备份、不恢复。 |
+| 仅 Root 可访问 | 预设或精确 Root 路径，例如 Eden、GameHub、其他应用的私有目录。 | 必须由 Magisk 向 SaveVault 授权；未授权时不读取、不备份、不恢复。 |
 | 不可访问 | 授权失效、Root 未授权、路径缺失或扫描失败。 | 保留原因；绝不把它显示为零存档，也不尝试写入。 |
 
 `/data/user/0/<其他应用>` 和 Android 13 受限的 `Android/data` 不能因“路径已识别”就被视为可读。非 Root 设备只能通过系统实际授予的 SAF 目录加入备份。

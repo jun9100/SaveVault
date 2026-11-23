@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func TestListGameSaveGamesReadsGroupingIndex(t *testing.T) {
@@ -25,7 +25,7 @@ func TestListGameSaveGamesReadsGroupingIndex(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.URL.Path != "/v1/opensave/games" {
+		if r.URL.Path != "/v1/savevault/games" {
 			t.Errorf("ListGameSaveGames path = %q", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -35,7 +35,7 @@ func TestListGameSaveGamesReadsGroupingIndex(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if got := r.Header.Get("X-OpenSave-Device-ID"); got != "" {
+		if got := r.Header.Get("X-SaveVault-Device-ID"); got != "" {
 			t.Errorf("read-only games request sent device id %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")

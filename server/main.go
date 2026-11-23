@@ -23,11 +23,15 @@ import (
 // remain accepted so an in-place container upgrade does not require rewriting
 // secrets before the new image has proved healthy.
 func envString(name, legacyName, fallback string) string {
-	if value, ok := os.LookupEnv(name); ok && value != "" {
-		return value
-	}
-	if legacyName != "" {
-		if value, ok := os.LookupEnv(legacyName); ok && value != "" {
+	return envStringAny(fallback, name, legacyName)
+}
+
+func envStringAny(fallback string, names ...string) string {
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if value, ok := os.LookupEnv(name); ok && value != "" {
 			return value
 		}
 	}
@@ -79,7 +83,7 @@ func runHealthcheck(arguments []string) int {
 	return 0
 }
 
-// runRebuildHeads re-creates a missing current version for every OpenSave
+// runRebuildHeads re-creates a missing current version for every SaveVault
 // scope of one vault, straight from the archives on disk. It needs no token and
 // no HTTP client, so an operator can repair a copied or half-lost data
 // directory from inside the container:
@@ -97,12 +101,16 @@ func runRebuildHeads(arguments []string) int {
 		fmt.Fprintf(os.Stderr, "vault %q not found under %s: %v\n", *vault, *root, err)
 		return 1
 	}
+	if err := migrateLegacySaveVaultData(dataDir); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate legacy OpenSave data:", err)
+		return 1
+	}
 	s := &server{dataDir: dataDir, maxObjectBytes: 1 << 40, now: time.Now}
-	if err := s.loadOpenSaveState(); err != nil {
+	if err := s.loadSaveVaultState(); err != nil {
 		fmt.Fprintln(os.Stderr, "load SaveVault state:", err)
 		return 1
 	}
-	report, err := s.rebuildOpenSaveHeadsFromArchives(*dryRun)
+	report, err := s.rebuildSaveVaultHeadsFromArchives(*dryRun)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "rebuild:", err)
 		return 1
@@ -127,10 +135,14 @@ func main() {
 	listenAddress := flag.String("listen", envString("GAME_SAVE_LISTEN", "EDEN_SYNCD_LISTEN", ":8787"), "HTTP listen address")
 	token := flag.String("token", envString("GAME_SAVE_TOKEN", "EDEN_SYNCD_TOKEN", ""), "bearer token")
 	adminToken := flag.String("admin-token", envString("GAME_SAVE_ADMIN_TOKEN", "EDEN_SYNCD_ADMIN_TOKEN", ""), "administrator token for the web dashboard")
-	openSaveUsername := flag.String("opensave-username", envString("GAME_SAVE_OPENSAVE_USERNAME", "EDEN_SYNCD_OPENSAVE_USERNAME", ""),
-		"OpenSave WebDAV username")
-	openSavePassword := flag.String("opensave-password", envString("GAME_SAVE_OPENSAVE_PASSWORD", "EDEN_SYNCD_OPENSAVE_PASSWORD", ""),
-		"OpenSave WebDAV password")
+	saveVaultUsername := flag.String("savevault-username",
+		envStringAny("", "GAME_SAVE_SAVEVAULT_USERNAME", "GAME_SAVE_OPENSAVE_USERNAME", "EDEN_SYNCD_SAVEVAULT_USERNAME", "EDEN_SYNCD_OPENSAVE_USERNAME"),
+		"SaveVault WebDAV username")
+	saveVaultPassword := flag.String("savevault-password",
+		envStringAny("", "GAME_SAVE_SAVEVAULT_PASSWORD", "GAME_SAVE_OPENSAVE_PASSWORD", "EDEN_SYNCD_SAVEVAULT_PASSWORD", "EDEN_SYNCD_OPENSAVE_PASSWORD"),
+		"SaveVault WebDAV password")
+	legacyOpenSaveUsername := flag.String("opensave-username", "", "deprecated alias for --savevault-username")
+	legacyOpenSavePassword := flag.String("opensave-password", "", "deprecated alias for --savevault-password")
 	barkURL := flag.String("bark-url", envString("GAME_SAVE_BARK_URL", "EDEN_SYNCD_BARK_URL", ""),
 		"Bark base URL including the device path")
 	barkGroup := flag.String("bark-group", envString("GAME_SAVE_BARK_GROUP", "EDEN_SYNCD_BARK_GROUP", "game-save"),
@@ -158,6 +170,12 @@ func main() {
 		fmt.Println(version)
 		return
 	}
+	if *saveVaultUsername == "" && *legacyOpenSaveUsername != "" {
+		*saveVaultUsername = *legacyOpenSaveUsername
+	}
+	if *saveVaultPassword == "" && *legacyOpenSavePassword != "" {
+		*saveVaultPassword = *legacyOpenSavePassword
+	}
 	var logHandler slog.Handler = slog.NewTextHandler(os.Stderr, nil)
 	if *logFormat == "json" {
 		logHandler = slog.NewJSONHandler(os.Stderr, nil)
@@ -166,8 +184,8 @@ func main() {
 
 	vaults, err := newVaultRegistry(*dataDir, *token, *maxObjectMiB*1024*1024, serverOptions{
 		adminToken:       *adminToken,
-		openSaveUsername: *openSaveUsername,
-		openSavePassword: *openSavePassword,
+		saveVaultUsername: *saveVaultUsername,
+		saveVaultPassword: *saveVaultPassword,
 		settings: serverSettings{Retention: retentionPolicy{
 			KeepSnapshots: *keepSnapshots,
 			KeepDays:      *keepDays,
@@ -212,7 +230,7 @@ func main() {
 	}()
 
 	slog.Info("game-save listening", "address", *listenAddress, "version", version,
-		"data_dir", *dataDir, "dashboard", *adminToken != "", "opensave_webdav", *openSaveUsername != "")
+		"data_dir", *dataDir, "dashboard", *adminToken != "", "savevault_webdav", *saveVaultUsername != "")
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("serve", "error", err)
 		os.Exit(1)

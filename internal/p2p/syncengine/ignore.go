@@ -3,9 +3,9 @@ package syncengine
 import (
 	"context"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Applying a game's exclusion rules.

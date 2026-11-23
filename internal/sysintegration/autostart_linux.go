@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 )
 
-// desktopEntry mirrors the .desktop file the Electron app wrote.
+// desktopEntry writes the XDG autostart desktop file for SaveVault.
 const desktopEntry = `[Desktop Entry]
 Type=Application
-Name=OpenSave
-Comment=P2P game save sync
+Name=SaveVault
+Comment=P2P and cloud game save sync
 Exec=%s
 Terminal=false
 X-GNOME-Autostart-enabled=true
@@ -23,14 +23,26 @@ func autostartFilePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return filepath.Join(home, ".config", "autostart", "savevault.desktop"), nil
+}
+
+func legacyAutostartFilePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(home, ".config", "autostart", "opensave.desktop"), nil
 }
 
-// SetAutostart writes or removes ~/.config/autostart/opensave.desktop.
+// SetAutostart writes or removes ~/.config/autostart/savevault.desktop and
+// cleans up any legacy opensave.desktop entry from earlier releases.
 func SetAutostart(enabled bool) error {
 	path, err := autostartFilePath()
 	if err != nil {
 		return err
+	}
+	if legacy, lerr := legacyAutostartFilePath(); lerr == nil {
+		_ = os.Remove(legacy)
 	}
 	if !enabled {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -39,7 +51,7 @@ func SetAutostart(enabled bool) error {
 		return nil
 	}
 
-	// Inside a Flatpak sandbox os.Executable() is /app/bin/opensave, a path
+	// Inside a Flatpak sandbox os.Executable() is /app/bin/savevault, a path
 	// that doesn't exist on the host session that runs autostart entries —
 	// launch through flatpak instead.
 	//

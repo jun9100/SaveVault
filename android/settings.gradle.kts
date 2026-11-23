@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenSaveAndroid"
+rootProject.name = "SaveVaultAndroid"
 include(":app")

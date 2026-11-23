@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
 // cmdEmptied lists the games whose save files were all deleted on this
 // device, held back from the others until someone says whether that was
 // meant (p2p/syncengine/hold.go), and answers for one:
 //
-//	opensave emptied                     what is held back
-//	opensave emptied <game> delete       delete them on the other devices too
-//	opensave emptied <game> restore      put them back here
+//	savevault emptied                     what is held back
+//	savevault emptied <game> delete       delete them on the other devices too
+//	savevault emptied <game> restore      put them back here
 func cmdEmptied(d *daemon.Daemon, args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) == 0 {
@@ -42,12 +42,12 @@ func cmdEmptied(d *daemon.Daemon, args []string) int {
 				fmt.Printf("      %s\n", faint("in "+describeEmptied(e.Locations)))
 			}
 		}
-		hint("opensave emptied <gameId> delete    (delete them on your other devices too)",
-			"opensave emptied <gameId> restore   (put them back here)")
+		hint("savevault emptied <gameId> delete    (delete them on your other devices too)",
+			"savevault emptied <gameId> restore   (put them back here)")
 		return 0
 	}
 	if len(args) != 2 {
-		return fail(asJSON, errors.New("usage: opensave emptied [<gameId> delete|restore]"))
+		return fail(asJSON, errors.New("usage: savevault emptied [<gameId> delete|restore]"))
 	}
 	game, err := d.Store.GetGame(args[0])
 	if err != nil {

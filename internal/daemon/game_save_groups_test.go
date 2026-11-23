@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 const gameSaveGroupsTestToken = "game-save-groups-test-token"
@@ -72,7 +72,7 @@ func (s *gameSaveGroupsTestServer) serveHTTP(w http.ResponseWriter, r *http.Requ
 	}
 	s.mu.Lock()
 	s.methods = append(s.methods, r.Method)
-	s.deviceIDs = append(s.deviceIDs, r.Header.Get("X-OpenSave-Device-ID"))
+	s.deviceIDs = append(s.deviceIDs, r.Header.Get("X-SaveVault-Device-ID"))
 	s.mu.Unlock()
 
 	if r.Method != http.MethodGet {
@@ -80,7 +80,7 @@ func (s *gameSaveGroupsTestServer) serveHTTP(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.Path == "/v1/opensave/games" {
+	if r.URL.Path == "/v1/savevault/games" {
 		s.mu.Lock()
 		status := s.gamesStatus
 		games := append([]cloud.GameSaveGame(nil), s.games...)
@@ -92,7 +92,7 @@ func (s *gameSaveGroupsTestServer) serveHTTP(w http.ResponseWriter, r *http.Requ
 		writeGameSaveGroupsJSON(w, http.StatusOK, map[string]any{"games": games})
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/") {
+	if strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/") {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(parts) != 5 {
 			w.WriteHeader(http.StatusNotFound)
@@ -161,11 +161,11 @@ func TestGameSaveGroupListsOtherDevices(t *testing.T) {
 	const localID = "switch-0100000000010000"
 	base := time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC)
 	localHead := gameSaveGroupsSnapshot("local-head", "local.zip", base.Add(4*time.Hour))
-	localHead.DeviceName, localHead.Platform = "Desktop", "opensave-windows"
+	localHead.DeviceName, localHead.Platform = "Desktop", "savevault-windows"
 	newHead := gameSaveGroupsSnapshot("new-head", "new.zip", base.Add(2*time.Hour))
 	newHead.DeviceName, newHead.Platform = "Pixel 8", "android"
 	oldHead := gameSaveGroupsSnapshot("old-head", "old.zip", base.Add(time.Hour))
-	oldHead.DeviceName, oldHead.Platform = "Steam Deck", "opensave-linux"
+	oldHead.DeviceName, oldHead.Platform = "Steam Deck", "savevault-linux"
 	service.setGames([]cloud.GameSaveGame{{
 		Key: "switch/title:0100000000010000", Type: "switch", Name: "Super Mario Odyssey",
 		LastReceivedAt: base.Add(4 * time.Hour),
@@ -214,7 +214,7 @@ func TestGameSaveGroupListsOtherDevices(t *testing.T) {
 		t.Fatalf("headless member = %+v", nullMember)
 	}
 	oldMember := group.Members[2]
-	if oldMember.DeviceName != "Steam Deck" || oldMember.Platform != "opensave-linux" ||
+	if oldMember.DeviceName != "Steam Deck" || oldMember.Platform != "savevault-linux" ||
 		!oldMember.LastVersionAt.Equal(base.Add(time.Hour)) {
 		t.Fatalf("member without lastReceivedAt = %+v", oldMember)
 	}
@@ -259,7 +259,7 @@ func TestGameSaveGroupFindsCanonicalKeyBeforeAnyUpload(t *testing.T) {
 	t.Run("steam app id", func(t *testing.T) {
 		service := newGameSaveGroupsTestServer(t)
 		pcHead := gameSaveGroupsSnapshot("pc-head", "pc.zip", base)
-		pcHead.DeviceName, pcHead.Platform = "Desktop", "opensave-windows"
+		pcHead.DeviceName, pcHead.Platform = "Desktop", "savevault-windows"
 		service.setGames([]cloud.GameSaveGame{
 			// A same-key group of another type must not be selected.
 			{Key: "pc/steam:1245620", Type: "switch", Name: "wrong type"},

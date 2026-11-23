@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // The stranded-base repair advances the merge-base to a state the peer is

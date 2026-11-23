@@ -34,11 +34,11 @@ func TestAutoSnapshotDelayWaitsOutTheMinimumGap(t *testing.T) {
 }
 
 func TestAutoSnapshotIntervalFromEnv(t *testing.T) {
-	t.Setenv("OPENSAVE_AUTO_SNAPSHOT_MIN_INTERVAL", "0s")
+	t.Setenv("SAVEVAULT_AUTO_SNAPSHOT_MIN_INTERVAL", "0s")
 	if got := autoSnapshotIntervalFromEnv(time.Minute); got != 0 {
 		t.Fatalf("got %v, want 0", got)
 	}
-	t.Setenv("OPENSAVE_AUTO_SNAPSHOT_MIN_INTERVAL", "nonsense")
+	t.Setenv("SAVEVAULT_AUTO_SNAPSHOT_MIN_INTERVAL", "nonsense")
 	if got := autoSnapshotIntervalFromEnv(time.Minute); got != time.Minute {
 		t.Fatalf("got %v, want the fallback", got)
 	}

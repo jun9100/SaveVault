@@ -12,16 +12,13 @@ import (
 )
 
 const runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
-const runValueName = "OpenSave"
+const runValueName = "SaveVault"
 
-// strayRunValueName is what the 2.5 and 2.6 installers wrote for their "start
-// when Windows starts" checkbox: the product name after the rename, not the
-// name this code keeps. A machine with both started the app twice at every
-// boot. It is never written; SetAutostart removes it, and AutostartEnabled
-// counts it so that a box ticked in one of those installers is still adopted.
-const strayRunValueName = "SaveVault"
+// legacyRunValueName is cleaned up on SetAutostart so an upgraded install never
+// launches twice at login.
+const legacyRunValueName = "OpenSave"
 
-// SetAutostart registers or removes OpenSave in the current user's Run
+// SetAutostart registers or removes SaveVault in the current user's Run
 // key (no admin rights needed).
 func SetAutostart(enabled bool) error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
@@ -30,8 +27,8 @@ func SetAutostart(enabled bool) error {
 	}
 	defer key.Close()
 
-	if err := key.DeleteValue(strayRunValueName); err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("remove duplicate autostart entry: %w", err)
+	if err := key.DeleteValue(legacyRunValueName); err != nil && err != registry.ErrNotExist {
+		return fmt.Errorf("remove legacy autostart entry: %w", err)
 	}
 
 	if !enabled {
@@ -70,7 +67,7 @@ func AutostartEnabled() bool {
 		return false
 	}
 	defer key.Close()
-	for _, name := range []string{runValueName, strayRunValueName} {
+	for _, name := range []string{runValueName, legacyRunValueName} {
 		if _, _, err := key.GetStringValue(name); err == nil {
 			return true
 		}

@@ -3,7 +3,7 @@ package p2p
 import (
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // The rule that keeps files where they belong: a root name this device does

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func configureGameSave(t *testing.T, s *store.Store, serverURL string) {
@@ -182,7 +182,7 @@ func TestGameSaveWhoami(t *testing.T) {
 			if got := r.Header.Get("Authorization"); got != "Bearer sync-key" {
 				t.Errorf("Authorization = %q", got)
 			}
-			if got := r.Header.Get("X-OpenSave-Device-ID"); got != "" {
+			if got := r.Header.Get("X-SaveVault-Device-ID"); got != "" {
 				t.Errorf("whoami sent a device header: %q", got)
 			}
 			_, _ = w.Write([]byte(`{"auth":"device","token_id":"tid","device_id":"dev","name":"书房的电脑","shared_token_mode":"allow"}`))

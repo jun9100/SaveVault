@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // A game's extra save locations — the folders beyond its main one that belong
@@ -65,7 +65,7 @@ func cmdLocations(d *daemon.Daemon, args []string) int {
 	// so the location silently never existed. Exactly the fault the relay had
 	// when it accepted arguments and ignored them.
 	if len(args) > 1 {
-		fmt.Fprintf(os.Stderr, "opensave locations: unexpected argument %q after the game id\n\n", args[1])
+		fmt.Fprintf(os.Stderr, "savevault locations: unexpected argument %q after the game id\n\n", args[1])
 		fmt.Fprintln(os.Stderr, locationsUsage)
 		return 1
 	}
@@ -109,7 +109,7 @@ func cmdLocations(d *daemon.Daemon, args []string) int {
 		// Known from a peer or a backup, but nowhere to put it here. Saying so
 		// matters: this location is being skipped by every sync and every
 		// restore until someone points it somewhere.
-		field(r.Name, warnText("no folder on this device — set one with `opensave locations add`"))
+		field(r.Name, warnText("no folder on this device — set one with `savevault locations add`"))
 	}
 	// 430 games in the manifest keep saves in the registry, and for 303 of them
 	// it is the only place a save exists — so a device that cannot read one is
@@ -142,9 +142,9 @@ func cmdLocations(d *daemon.Daemon, args []string) int {
 }
 
 const locationsUsage = `usage:
-  opensave locations <gameId>                        List a game's save locations
-  opensave locations add <gameId> <name> <path>      Add another folder to a game
-  opensave locations remove <gameId> <name>          Stop covering one
+  savevault locations <gameId>                        List a game's save locations
+  savevault locations add <gameId> <name> <path>      Add another folder to a game
+  savevault locations remove <gameId> <name>          Stop covering one
 
 A game can have its save split across several folders — data in one place,
 configuration in another. Name each extra folder, and give the SAME name on

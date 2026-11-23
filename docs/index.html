@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenSave — Steam Cloud for every game you own</title>
-  <meta name="description" content="OpenSave is a free, open-source, peer-to-peer game save sync. Auto-detect saves for 20,000+ games, snapshot every change, and sync between your PC, Mac, laptop, and Steam Deck — no accounts, no subscriptions, no telemetry.">
-  <meta property="og:title" content="OpenSave — Steam Cloud for every game you own">
+  <title>SaveVault — Steam Cloud for every game you own</title>
+  <meta name="description" content="SaveVault is a free, open-source, peer-to-peer game save sync. Auto-detect saves for 20,000+ games, snapshot every change, and sync between your PC, Mac, laptop, and Steam Deck — no accounts, no subscriptions, no telemetry.">
+  <meta property="og:title" content="SaveVault — Steam Cloud for every game you own">
   <meta property="og:description" content="Free, open-source, peer-to-peer game save sync. Snapshots, conflict handling, LAN + internet sync, optional cloud backup. No accounts. No telemetry.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://www.opensave.org/">
-  <link rel="canonical" href="https://www.opensave.org/">
-  <meta property="og:image" content="https://opensave.org/screenshots/home-library.png">
+  <meta property="og:url" content="https://jun9100.github.io/SaveVault/">
+  <link rel="canonical" href="https://jun9100.github.io/SaveVault/">
+  <meta property="og:image" content="https://jun9100.github.io/SaveVault/screenshots/home-library.png">
   <meta name="theme-color" content="#0c0c0d">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" sizes="48x48" href="favicon-48x48.png">
@@ -24,33 +24,6 @@
   <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
-  <!-- ===== STATUS BANNER: relay moved to its own domain. REMOVE once 2.3.0 has shipped. ===== -->
-  <style>
-    body.os-banner-on{padding-bottom:84px}
-    #os-status{position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#2a1f07;border-top:1px solid #7a5c12;color:#f2e4c4;font:500 14px/1.5 Inter,system-ui,sans-serif;padding:11px 46px 11px 18px;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:center;text-align:center;box-shadow:0 -8px 28px rgba(0,0,0,.5)}
-    #os-status code{background:#0f0c04;border:1px solid #7a5c12;border-radius:5px;padding:2px 7px;font:500 13px/1.4 'JetBrains Mono',ui-monospace,monospace;color:#ffcf5c;word-break:break-all}
-    #os-status a{color:#ffcf5c;text-decoration:underline;white-space:nowrap}
-    #os-status button{position:absolute;top:50%;right:6px;transform:translateY(-50%);background:none;border:0;color:#c9b071;font:600 22px/1 system-ui,sans-serif;cursor:pointer;padding:4px 10px;border-radius:6px}
-    #os-status button:hover{color:#ffcf5c;background:#3a2c0c}
-    @media(max-width:700px){
-      body.os-banner-on{padding-bottom:104px}
-      #os-status{font-size:12.5px;line-height:1.45;padding:9px 36px 9px 12px;gap:2px 8px}
-      #os-status code{font-size:12px}
-      #os-status .os-verbose{display:none}
-      #os-status button{top:2px;right:0;transform:none;font-size:20px}
-    }
-  </style>
-  <div id="os-status" role="status" aria-live="polite">
-    <strong style="color:#ffcf5c">Internet sync is working again.</strong>
-    <span class="os-verbose">It runs on our own server now.</span>
-    <span>If it still fails, set the relay on <em>both</em> devices to</span>
-    <code>wss://relay.opensave.org</code>
-    <a href="https://github.com/Liquid-co/OpenSave/issues/10">How &amp; why &rarr;</a>
-    <button type="button" aria-label="Dismiss this notice">&times;</button>
-  </div>
-  <script>(function(){var b=document.getElementById("os-status"),K="os-relay-domain-notice";try{if(localStorage.getItem(K)){b.remove();return}}catch(e){}document.body.classList.add("os-banner-on");function fit(){document.body.style.paddingBottom=(b.offsetHeight+16)+"px";}addEventListener("resize",fit);addEventListener("load",fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);b.querySelector("button").addEventListener("click",function(){b.remove();document.body.classList.remove("os-banner-on");document.body.style.paddingBottom="";try{localStorage.setItem(K,"1")}catch(e){}});fit();})();</script>
-
-
   <!-- ambient background -->
   <div class="ambient-layer" aria-hidden="true">
     <div class="ambient-glow glow-1"></div>
@@ -60,24 +33,16 @@
   <!-- ===================== NAV ===================== -->
   <header class="navbar">
     <div class="nav-container">
-      <a class="logo" href="#top" aria-label="OpenSave home">
+      <a class="logo" href="#top" aria-label="SaveVault home">
         <img src="icon.png?v=2" alt="" class="logo-img">
-        <span class="logo-text">Open<span>Save</span></span>
+        <span class="logo-text">Save<span>Vault</span></span>
       </a>
       <nav class="nav-links" id="nav-links">
         <a href="#features">Features</a>
         <a href="#how">How it works</a>
         <a href="#docs">Docs</a>
         <a href="#faq">FAQ</a>
-        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="discord-link">
-          <svg viewBox="0 0 24 18" width="16" height="12" aria-hidden="true"><path fill="currentColor" d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z"/></svg>
-          Discord
-        </a>
-        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
-          Donate
-        </a>
-        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+        <a href="https://github.com/jun9100/SaveVault" target="_blank" rel="noopener" class="github-link">
           <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
           GitHub
         </a>
@@ -110,14 +75,14 @@
       <div class="hero-ctas center">
         <a href="#download" class="btn-primary">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 4h14v-2H5v2z"/></svg>
-          Download OpenSave
+          Download SaveVault
         </a>
         <a href="#how" class="btn-secondary">How it works</a>
       </div>
 
       <p class="hero-meta">
         Free &amp; open source &middot; MIT licensed &middot; one native binary &middot;
-        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">all releases &rarr;</a>
+        <a href="https://github.com/jun9100/SaveVault/releases" target="_blank" rel="noopener">all releases &rarr;</a>
       </p>
     </div>
 
@@ -129,9 +94,9 @@
       <div class="app-window">
         <div class="win-bar">
           <div class="win-dots"><span></span><span></span><span></span></div>
-          <span class="win-title">OpenSave</span>
+          <span class="win-title">SaveVault</span>
         </div>
-        <img src="screenshots/home-library.png" alt="The OpenSave app: a library of games shown as cover-art tiles, each with its sync status and snapshot count." loading="eager" width="1920" height="1050">
+        <img src="screenshots/home-library.png" alt="The SaveVault app: a library of games shown as cover-art tiles, each with its sync status and snapshot count." loading="eager" width="1920" height="1050">
       </div>
     </figure>
   </section>
@@ -152,7 +117,7 @@
       </div>
       <div class="why-grid">
         <div class="why-card bad">
-          <h3><span class="why-mark">✕</span> Without OpenSave</h3>
+          <h3><span class="why-mark">✕</span> Without SaveVault</h3>
           <ul>
             <li>Manually copying <code>AppData</code> folders over USB or chat apps</li>
             <li>"Which device has the newest save?" roulette</li>
@@ -162,7 +127,7 @@
           </ul>
         </div>
         <div class="why-card good">
-          <h3><span class="why-mark">✓</span> With OpenSave</h3>
+          <h3><span class="why-mark">✓</span> With SaveVault</h3>
           <ul>
             <li>Saves sync automatically the moment a game writes them</li>
             <li>Every device always has the latest — LAN or across the internet</li>
@@ -265,8 +230,8 @@
           </p>
           <ul class="cluster-list">
             <li><strong>One timeline.</strong> Every sync, snapshot and play session, filtered by kind or by game.</li>
-            <li><strong>Play sessions.</strong> OpenSave notices a tracked game running, and snapshots and syncs its save when it closes.</li>
-            <li><strong>Nothing waits unseen.</strong> A bell keeps what happened and what needs you, and desktop notifications say so when OpenSave is not in front.</li>
+            <li><strong>Play sessions.</strong> SaveVault notices a tracked game running, and snapshots and syncs its save when it closes.</li>
+            <li><strong>Nothing waits unseen.</strong> A bell keeps what happened and what needs you, and desktop notifications say so when SaveVault is not in front.</li>
           </ul>
         </div>
       </div>
@@ -284,7 +249,7 @@
         <span class="section-eyebrow">Honestly</span>
         <h2>How it compares.</h2>
         <p class="section-sub">
-          Ludusavi is an excellent backup tool — OpenSave's auto-scan is built on its
+          Ludusavi is an excellent backup tool — SaveVault's auto-scan is built on its
           community manifest, and it deserves the credit. The difference is live sync.
         </p>
       </div>
@@ -293,7 +258,7 @@
           <thead>
             <tr>
               <th>Capability</th>
-              <th class="col-us">OpenSave</th>
+              <th class="col-us">SaveVault</th>
               <th>Steam Cloud</th>
               <th>Ludusavi</th>
             </tr>
@@ -342,7 +307,7 @@
         This describes what each project is built for, not every edge case.
         <a href="compare.html">See the full comparison</a>, including GameSave Manager —
         corrections welcome via a
-        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">GitHub issue</a>.
+        <a href="https://github.com/jun9100/SaveVault/issues" target="_blank" rel="noopener">GitHub issue</a>.
       </p>
     </div>
   </section>
@@ -396,10 +361,10 @@
         </div>
         <div class="arch-notes">
           <h3>Local-first by design</h3>
-          <p>The relay is a stateless room broker — it forwards WebSocket frames and <strong>writes no save to disk</strong>. From 2.4.0, saves are sealed end to end between your two devices, so the relay forwards what it cannot read. Ours is <code>wss://relay.opensave.org</code>. Don't want to take our word for it? <a href="https://github.com/Liquid-co/OpenSave#self-hosting-the-relay" target="_blank" rel="noopener">Self-host it</a> with one binary or a Dockerfile.</p>
-          <p>Prefer a terminal? The headless daemon + <code>opensave-cli</code> runs on servers and Steam Deck alike, and everything the app does is scriptable over a local REST/WebSocket API.</p>
+          <p>The relay is a stateless room broker — it forwards WebSocket frames and <strong>writes no save to disk</strong>. From 2.4.0, saves are sealed end to end between your two devices, so the relay forwards what it cannot read. Ours is <code>wss://relay.example.com</code>. Don't want to take our word for it? <a href="https://github.com/jun9100/SaveVault#self-hosting-the-relay" target="_blank" rel="noopener">Self-host it</a> with one binary or a Dockerfile.</p>
+          <p>Prefer a terminal? The headless daemon + <code>savevault-cli</code> runs on servers and Steam Deck alike, and everything the app does is scriptable over a local REST/WebSocket API.</p>
 
-          <!-- Filled from https://relay.opensave.org/health at load. Left as
+          <!-- Filled from https://relay.example.com/health at load. Left as
                "checking" in the markup rather than showing an optimistic
                "online" that a failed fetch would leave standing. -->
           <div class="relay-live" id="relay-live" data-state="checking">
@@ -430,38 +395,38 @@
           <span class="section-eyebrow">Open source</span>
           <h2>Your saves. Your devices. Your code.</h2>
           <p>
-            OpenSave is MIT-licensed and developed in the open — a single small native binary in
+            SaveVault is MIT-licensed and developed in the open — a single small native binary in
             <strong>Go</strong> with an embedded UI. No Electron, no runtime to install, no account
             to create.
           </p>
           <ul class="oss-list">
             <li>Read every line before you trust it with your saves</li>
-            <li>SQLite storage in <code>~/.opensave/</code> — your data in an open format</li>
+            <li>SQLite storage in <code>~/.savevault/</code> — your data in an open format</li>
             <li>Self-host the relay, script the CLI, build from source</li>
             <li>Issues and pull requests welcome</li>
           </ul>
           <div class="hero-ctas">
-            <a href="https://github.com/Liquid-co/OpenSave" class="btn-secondary" target="_blank" rel="noopener">
+            <a href="https://github.com/jun9100/SaveVault" class="btn-secondary" target="_blank" rel="noopener">
               <svg class="github-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
               Star on GitHub
             </a>
-            <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" class="btn-ghost" target="_blank" rel="noopener">Read the User Guide →</a>
+            <a href="https://github.com/jun9100/SaveVault/blob/main/USER_GUIDE.md" class="btn-ghost" target="_blank" rel="noopener">Read the User Guide →</a>
           </div>
         </div>
         <div class="oss-terminal" aria-hidden="true">
           <div class="win-bar">
             <div class="win-dots"><span></span><span></span><span></span></div>
-            <div class="win-title">opensave-cli</div>
+            <div class="win-title">savevault-cli</div>
           </div>
-          <pre class="terminal-body"><span class="t-prompt">$</span> opensave-cli scan
+          <pre class="terminal-body"><span class="t-prompt">$</span> savevault-cli scan
 <span class="t-ok">✓</span> found 158 game saves (Steam · repacks · emulators)
-<span class="t-prompt">$</span> opensave-cli add ~/games/skyrim/Saves
+<span class="t-prompt">$</span> savevault-cli add ~/games/skyrim/Saves
 <span class="t-ok">✓</span> tracking "Skyrim" — watching for changes
-<span class="t-prompt">$</span> opensave-cli status
+<span class="t-prompt">$</span> savevault-cli status
   Elden Ring        <span class="t-ok">synced</span>   2 peers · 41 snapshots
   Hollow Knight     <span class="t-sync">syncing</span>  214 KB → Steam Deck
   Skyrim            <span class="t-ok">synced</span>   just now
-<span class="t-prompt">$</span> opensave-cli rollback "Elden Ring" snap_40
+<span class="t-prompt">$</span> savevault-cli rollback "Elden Ring" snap_40
 <span class="t-ok">✓</span> restored — previous state kept as a branch</pre>
         </div>
       </div>
@@ -511,7 +476,7 @@
             set up once and never open again.
           </p>
           <ul class="docs-list">
-            <li>One-line install, then <code>opensave scan</code></li>
+            <li>One-line install, then <code>savevault scan</code></li>
             <li>Every command grouped, with JSON output on purpose</li>
             <li>Running as a systemd service</li>
             <li>Getting a Deck syncing on its own</li>
@@ -540,7 +505,7 @@
         </details>
         <details class="faq-item">
           <summary>What if two devices change the same save while offline?</summary>
-          <p>OpenSave records the exact state both devices last agreed on — a shared merge base, like git — and flags a conflict only when <em>both</em> sides changed relative to it. Then it asks what you want: keep yours, keep theirs, or keep both on a new branch. It never silently overwrites a playthrough.</p>
+          <p>SaveVault records the exact state both devices last agreed on — a shared merge base, like git — and flags a conflict only when <em>both</em> sides changed relative to it. Then it asks what you want: keep yours, keep theirs, or keep both on a new branch. It never silently overwrites a playthrough.</p>
         </details>
         <details class="faq-item">
           <summary>Does it work with emulators and non-Steam games?</summary>
@@ -552,11 +517,11 @@
         </details>
         <details class="faq-item">
           <summary>Is my data safe in transit?</summary>
-          <p>WAN sync goes through a stateless relay that stores nothing, and from 2.4.0 saves are sealed end to end between your two devices: the relay forwards them but cannot read them. It can still see that two devices are talking, roughly how much data moves, and which games by id. Ours runs on our own hardware at <code>wss://relay.opensave.org</code>, and you can replace it with your own in one command. On LAN, devices talk directly and no relay is involved. Saves are only ever persisted on <em>your</em> devices (and, if you enable it, your own cloud storage).</p>
+          <p>WAN sync goes through a stateless relay that stores nothing, and from 2.4.0 saves are sealed end to end between your two devices: the relay forwards them but cannot read them. It can still see that two devices are talking, roughly how much data moves, and which games by id. Ours runs on our own hardware at <code>wss://relay.example.com</code>, and you can replace it with your own in one command. On LAN, devices talk directly and no relay is involved. Saves are only ever persisted on <em>your</em> devices (and, if you enable it, your own cloud storage).</p>
         </details>
         <details class="faq-item">
           <summary>Can I use it without a GUI?</summary>
-          <p>Yes. The headless daemon + <code>opensave-cli</code> covers scan, add, status, snapshot, rollback, branch, and checkout — ideal for servers, NAS boxes, and scripts. Everything is also drivable over a local REST/WebSocket API.</p>
+          <p>Yes. The headless daemon + <code>savevault-cli</code> covers scan, add, status, snapshot, rollback, branch, and checkout — ideal for servers, NAS boxes, and scripts. Everything is also drivable over a local REST/WebSocket API.</p>
         </details>
       </div>
     </div>
@@ -567,7 +532,7 @@
     <div class="section-container">
       <div class="section-heading">
         <span class="section-eyebrow">Download</span>
-        <h2>Get OpenSave.</h2>
+        <h2>Get SaveVault.</h2>
         <p class="section-sub">Windows, macOS, Linux, and Steam Deck. One small app — install in seconds.</p>
       </div>
       <div class="dl-grid">
@@ -576,36 +541,36 @@
           <h3>Windows</h3>
           <p>Runs in the tray, updates itself, and can start with Windows. Not sure? The installer's the easy choice.</p>
           <div class="dl-choices">
-            <a class="btn-primary" data-dl="windows-installer" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">
+            <a class="btn-primary" data-dl="windows-installer" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">
               Installer
               <span class="dl-sub">recommended</span>
             </a>
-            <a class="btn-secondary" data-dl="windows-portable" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">
+            <a class="btn-secondary" data-dl="windows-portable" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">
               Portable
               <span class="dl-sub">no install</span>
             </a>
           </div>
-          <span class="dl-note">OpenSave.Setup.exe · OpenSave.exe</span>
+          <span class="dl-note">SaveVault.Setup.exe · SaveVault.exe</span>
         </div>
         <div class="dl-card" data-platform="mac">
           <div class="dl-os">macos</div>
           <h3>macOS</h3>
           <p>One app for Apple Silicon and Intel Macs. The first time, macOS asks before opening it: go to <strong>System Settings → Privacy &amp; Security</strong> and choose <strong>Open Anyway</strong>.</p>
-          <a class="btn-primary" data-dl="mac" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">Download for Mac</a>
-          <span class="dl-note">OpenSave-macos.dmg · command line: <a data-dl="mac-cli-arm64" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">Apple Silicon</a> · <a data-dl="mac-cli-amd64" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">Intel</a></span>
+          <a class="btn-primary" data-dl="mac" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">Download for Mac</a>
+          <span class="dl-note">SaveVault-macos.dmg · command line: <a data-dl="mac-cli-arm64" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">Apple Silicon</a> · <a data-dl="mac-cli-amd64" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">Intel</a></span>
         </div>
         <div class="dl-card" data-platform="linux">
           <div class="dl-os">linux</div>
           <h3>Linux</h3>
           <p>Single tarball or an official Flatpak. Extract and run — no dependencies, no sandbox headaches.</p>
-          <a class="btn-primary" data-dl="linux" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">Download for Linux</a>
-          <span class="dl-note">opensave-linux-amd64.tar.gz · Flatpak</span>
+          <a class="btn-primary" data-dl="linux" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">Download for Linux</a>
+          <span class="dl-note">savevault-linux-amd64.tar.gz · Flatpak</span>
         </div>
         <div class="dl-card" data-platform="linux">
           <div class="dl-os">steamos</div>
           <h3>Steam Deck</h3>
           <p>Install the Flatpak in Desktop Mode — it runs on stock SteamOS and finds your Proton saves automatically. <strong>Not the Linux tarball</strong>: SteamOS ships no WebKitGTK, so that build won't start on a stock Deck.</p>
-          <a class="btn-primary" data-dl="flatpak" href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener">Get the Flatpak</a>
+          <a class="btn-primary" data-dl="flatpak" href="https://github.com/jun9100/SaveVault/releases/latest" target="_blank" rel="noopener">Get the Flatpak</a>
           <span class="dl-note">runs on stock SteamOS</span>
         </div>
       </div>
@@ -617,7 +582,7 @@
         once; it asks for permission itself and updates in place. You only need to do this the once.
       </p>
       <p class="dl-upgrade">
-        <strong>Upgrading from OpenSave 1.x?</strong> Your tracked games, snapshots, pairings, and settings
+        <strong>Upgrading from SaveVault 1.x?</strong> Your tracked games, snapshots, pairings, and settings
         migrate automatically on first launch — and 1.x and 2.x devices can pair and sync with each other
         during the transition.
       </p>
@@ -630,8 +595,8 @@
       <h2>Stop babysitting save folders.</h2>
       <p class="section-sub">Set it up once. Your progress follows you for good.</p>
       <div class="hero-ctas center">
-        <a href="#download" class="btn-primary">Download OpenSave</a>
-        <a href="https://github.com/Liquid-co/OpenSave" class="btn-secondary" target="_blank" rel="noopener">View source on GitHub</a>
+        <a href="#download" class="btn-primary">Download SaveVault</a>
+        <a href="https://github.com/jun9100/SaveVault" class="btn-secondary" target="_blank" rel="noopener">View source on GitHub</a>
       </div>
     </div>
   </section>
@@ -640,20 +605,18 @@
     <div class="footer-container">
       <div class="footer-brand">
         <img src="icon.png?v=2" alt="" class="logo-img">
-        <span class="logo-text">Open<span>Save</span></span>
+        <span class="logo-text">Save<span>Vault</span></span>
       </div>
       <nav class="footer-links">
         <a href="getting-started.html">Guide</a>
         <a href="compare.html">Compare</a>
-        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="footer-discord">Discord</a>
-        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
-        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/jun9100/SaveVault" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/jun9100/SaveVault/releases" target="_blank" rel="noopener">Releases</a>
         <a href="cli.html">CLI</a>
-        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="https://github.com/jun9100/SaveVault/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
         <a href="privacy.html">Privacy</a>
-        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
-        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+        <a href="https://github.com/jun9100/SaveVault/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/jun9100/SaveVault/issues" target="_blank" rel="noopener">Report a bug</a>
       </nav>
       <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
     </div>

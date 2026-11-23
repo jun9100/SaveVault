@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // The contract the desktop UI depends on for the manual-snapshot budget.

@@ -14,13 +14,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/p2p/discovery"
-	"github.com/opensave/opensave/internal/p2p/pairing"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/syncpause"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/p2p/discovery"
+	"github.com/jun9100/savevault/internal/p2p/pairing"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/syncpause"
 )
 
 // resyncRetryInterval is how often the failsafe re-attempts games whose
@@ -246,7 +246,7 @@ func (e *Engine) Stop() {
 	// Bounded, because correctness here must not come at the cost of a hung
 	// quit: a transfer stuck in a call that ignores cancellation would
 	// otherwise keep the app alive for as long as its own timeout. Giving up
-	// leaves a .opensave.tmp behind, which is already handled — manifests
+	// leaves a .savevault.tmp behind, which is already handled — manifests
 	// exclude those and the walk garbage-collects stale ones.
 	e.stopMu.Lock()
 	e.stopping = true

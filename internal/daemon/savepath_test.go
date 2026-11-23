@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // internal/daemon had no test files at all, and ValidateSavePath is the guard
-// standing between a mistyped folder and OpenSave snapshotting, watching, and
+// standing between a mistyped folder and SaveVault snapshotting, watching, and
 // syncing an entire user profile. Everything downstream — the watcher's
 // recursive walk, the snapshot zipper, a restore that empties the target
 // first — assumes the path it was handed came past this check.
@@ -47,7 +47,7 @@ func TestNewMigratesLegacyGameSaveServiceURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Provider = cloud.GameSaveProvider
-	cfg.URL = "https://nas.example/opensave/"
+	cfg.URL = "https://nas.example/savevault/"
 	if err := first.Store.UpdateCloudConfig(cfg); err != nil {
 		first.Stop()
 		t.Fatal(err)
@@ -142,7 +142,7 @@ func TestValidateSavePathRefusesProfileFolders(t *testing.T) {
 
 // Only the folders themselves are refused, not everything under them. Real
 // saves live inside exactly these trees, so a prefix rule would refuse most
-// of the games OpenSave exists to track.
+// of the games SaveVault exists to track.
 func TestValidateSavePathAllowsAGameFolderInsideAProfileFolder(t *testing.T) {
 	d := newTestDaemon(t)
 
@@ -155,7 +155,7 @@ func TestValidateSavePathAllowsAGameFolderInsideAProfileFolder(t *testing.T) {
 		t.Skip("no AppData\\LocalLow here")
 	}
 	// A real folder under it, created and cleaned up.
-	game := filepath.Join(parent, "opensave-savepath-test")
+	game := filepath.Join(parent, "savevault-savepath-test")
 	if err := os.MkdirAll(game, 0o777); err != nil {
 		t.Skipf("cannot create a folder under %s: %v", parent, err)
 	}
@@ -167,7 +167,7 @@ func TestValidateSavePathAllowsAGameFolderInsideAProfileFolder(t *testing.T) {
 	}
 }
 
-// Snapshotting OpenSave's own data folder would put every snapshot inside the
+// Snapshotting SaveVault's own data folder would put every snapshot inside the
 // thing being snapshotted.
 func TestValidateSavePathRefusesItsOwnDataFolder(t *testing.T) {
 	d := newTestDaemon(t)
@@ -282,7 +282,7 @@ func TestValidateSavePathRefusesALinkToAProfileFolder(t *testing.T) {
 	}
 }
 
-// The same hole around OpenSave's own data folder: snapshots living inside the
+// The same hole around SaveVault's own data folder: snapshots living inside the
 // folder being snapshotted recurse.
 func TestValidateSavePathRefusesALinkToItsOwnDataFolder(t *testing.T) {
 	d := newTestDaemon(t)
@@ -292,7 +292,7 @@ func TestValidateSavePathRefusesALinkToItsOwnDataFolder(t *testing.T) {
 		t.Skipf("cannot create a directory link here: %v", err)
 	}
 	if _, err := d.ValidateSavePath(link); err == nil {
-		t.Errorf("a link to OpenSave's data folder (%s -> %s) was accepted",
+		t.Errorf("a link to SaveVault's data folder (%s -> %s) was accepted",
 			link, d.Paths.HomeDir)
 	}
 }

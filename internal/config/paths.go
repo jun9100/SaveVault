@@ -1,6 +1,6 @@
-// Package config resolves OpenSave's on-disk locations and performs the
-// one-time ".savesync" -> ".opensave" home directory migration that the
-// original JS app performed on every startup.
+// Package config resolves SaveVault's on-disk locations and performs the
+// one-time ".opensave" / ".savesync" -> ".savevault" home directory migration
+// on startup so existing installations upgrade smoothly.
 package config
 
 import (
@@ -11,20 +11,20 @@ import (
 )
 
 const (
-	oldHomeDirName = ".savesync"
-	homeDirName    = ".opensave"
+	legacySavesyncDirName = ".savesync"
+	legacyOpenSaveDirName = ".opensave"
+	homeDirName           = ".savevault"
 
-	// LegacyDBFileName is the JSON database file written by the original
-	// Node.js daemon (src/daemon/db.js).
-	LegacyDBFileName = "opensave-db.json"
+	// LegacyDBFileName is the JSON database file imported on first SQLite run.
+	LegacyDBFileName = "savevault-db.json"
 
-	// SQLiteFileName is the new embedded database file.
-	SQLiteFileName = "opensave.db"
+	// SQLiteFileName is the embedded SQLite database file.
+	SQLiteFileName = "savevault.db"
 
 	backupsDirName = "backups"
 )
 
-// Paths holds every filesystem location OpenSave needs, resolved once at
+// Paths holds every filesystem location SaveVault needs, resolved once at
 // startup relative to the user's home directory.
 type Paths struct {
 	HomeDir      string
@@ -35,9 +35,9 @@ type Paths struct {
 	AppCacheFile string // Steam AppID->name cache
 }
 
-// Resolve migrates the legacy ~/.savesync directory to ~/.opensave if needed
-// (mirrors db.js's startup check: rename if old exists and new does not),
-// ensures the home directory exists, and returns the resolved Paths.
+// Resolve migrates a legacy ~/.opensave (or ~/.savesync) directory to
+// ~/.savevault if needed, renames legacy database files inside it, ensures the
+// home directory exists, and returns the resolved Paths.
 func Resolve() (Paths, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -46,30 +46,60 @@ func Resolve() (Paths, error) {
 	return resolveWithin(home)
 }
 
-// ResolveAt uses dataDir directly as the OpenSave home directory (tests
-// and portable installs) — no legacy .savesync migration is attempted.
+// ResolveAt uses dataDir directly as the SaveVault home directory (tests
+// and portable installs) — no legacy home-directory migration is attempted.
 func ResolveAt(dataDir string) (Paths, error) {
 	return buildPaths(dataDir)
 }
 
 func resolveWithin(home string) (Paths, error) {
-	oldHome := filepath.Join(home, oldHomeDirName)
 	newHome := filepath.Join(home, homeDirName)
 
-	if dirExists(oldHome) && !dirExists(newHome) {
-		if err := os.Rename(oldHome, newHome); err != nil {
-			return Paths{}, fmt.Errorf("migrate %s to %s: %w", oldHome, newHome, err)
-		}
-		// The old JS app also renamed a stray savesync-db.json inside the
-		// folder if the outer rename above hadn't already moved it.
-		oldDBFile := filepath.Join(newHome, "savesync-db.json")
-		newDBFile := filepath.Join(newHome, LegacyDBFileName)
-		if fileExists(oldDBFile) && !fileExists(newDBFile) {
-			_ = os.Rename(oldDBFile, newDBFile)
+	if !dirExists(newHome) {
+		for _, legacyName := range []string{legacyOpenSaveDirName, legacySavesyncDirName} {
+			oldHome := filepath.Join(home, legacyName)
+			if !dirExists(oldHome) {
+				continue
+			}
+			if err := os.Rename(oldHome, newHome); err != nil {
+				return Paths{}, fmt.Errorf("migrate %s to %s: %w", oldHome, newHome, err)
+			}
+			break
 		}
 	}
 
+	if dirExists(newHome) {
+		migrateLegacyDatabaseFiles(newHome)
+	}
+
 	return buildPaths(newHome)
+}
+
+func migrateLegacyDatabaseFiles(homeDir string) {
+	// Migrate SQLite database (and active WAL/SHM sidecars if present).
+	newSQLite := filepath.Join(homeDir, SQLiteFileName)
+	oldSQLite := filepath.Join(homeDir, "opensave.db")
+	if fileExists(oldSQLite) && !fileExists(newSQLite) {
+		if err := os.Rename(oldSQLite, newSQLite); err == nil {
+			for _, suffix := range []string{"-wal", "-shm"} {
+				if fileExists(oldSQLite+suffix) && !fileExists(newSQLite+suffix) {
+					_ = os.Rename(oldSQLite+suffix, newSQLite+suffix)
+				}
+			}
+		}
+	}
+
+	// Migrate legacy JSON database file if present.
+	newLegacyDB := filepath.Join(homeDir, LegacyDBFileName)
+	if !fileExists(newLegacyDB) {
+		for _, oldName := range []string{"opensave-db.json", "savesync-db.json"} {
+			oldPath := filepath.Join(homeDir, oldName)
+			if fileExists(oldPath) {
+				_ = os.Rename(oldPath, newLegacyDB)
+				break
+			}
+		}
+	}
 }
 
 func buildPaths(homeDir string) (Paths, error) {

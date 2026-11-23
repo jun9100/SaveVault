@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 const crossRestoreTestToken = "cross-restore-test-token"
@@ -82,7 +82,7 @@ func (s *crossRestoreTestServer) serveHTTP(w http.ResponseWriter, r *http.Reques
 	s.mu.Unlock()
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "opensave" {
+	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "savevault" {
 		switch parts[2] {
 		case "files":
 			s.handleFiles(w, r, parts)
@@ -227,9 +227,9 @@ func (s *crossRestoreTestServer) handleScopes(w http.ResponseWriter, r *http.Req
 		}
 		stored := cloud.GameSaveScopeSnapshot{
 			GameSaveScopeCandidate: candidate,
-			Device:                 r.Header.Get("X-OpenSave-Device-ID"),
-			DeviceName:             r.Header.Get("X-OpenSave-Device-Name"),
-			Platform:               r.Header.Get("X-OpenSave-Platform"),
+			Device:                 r.Header.Get("X-SaveVault-Device-ID"),
+			DeviceName:             r.Header.Get("X-SaveVault-Device-Name"),
+			Platform:               r.Header.Get("X-SaveVault-Platform"),
 			ReceivedAt:             time.Now().UTC(),
 		}
 		state.snapshots[candidate.ID] = stored
@@ -249,9 +249,9 @@ func (s *crossRestoreTestServer) handleScopes(w http.ResponseWriter, r *http.Req
 	}
 	stored := cloud.GameSaveScopeSnapshot{
 		GameSaveScopeCandidate: candidate,
-		Device:                 r.Header.Get("X-OpenSave-Device-ID"),
-		DeviceName:             r.Header.Get("X-OpenSave-Device-Name"),
-		Platform:               r.Header.Get("X-OpenSave-Platform"),
+		Device:                 r.Header.Get("X-SaveVault-Device-ID"),
+		DeviceName:             r.Header.Get("X-SaveVault-Device-Name"),
+		Platform:               r.Header.Get("X-SaveVault-Platform"),
 		ReceivedAt:             time.Now().UTC(),
 		Conflict:               true,
 		ConflictOf:             state.head,
@@ -538,7 +538,7 @@ func crossRestoreAndroidData(t *testing.T) []byte {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "android.zip")
 	writeCrossRestoreZip(t, path, map[string]string{
-		"opensave-game.json":      crossRestoreAndroidManifest,
+		"savevault-game.json":      crossRestoreAndroidManifest,
 		"location-0000/slot.sav":  "android save",
 		"location-0001/other.dat": "other location",
 	})
@@ -803,7 +803,7 @@ func TestCrossRestoreApplyPCPublishesChildOfLocalHead(t *testing.T) {
 			t.Fatalf("cross-device restore sent a DELETE to %s", request.Path)
 		}
 		if request.Method == http.MethodPut &&
-			strings.HasPrefix(request.Path, "/v1/opensave/scopes/pc/"+cloudGame+"/snapshots/") {
+			strings.HasPrefix(request.Path, "/v1/savevault/scopes/pc/"+cloudGame+"/snapshots/") {
 			sawLocalSnapshotPut = true
 			if request.IfMatch != `"`+preHeadID+`"` {
 				t.Fatalf("local snapshot If-Match = %q, want %q", request.IfMatch, preHeadID)
@@ -865,8 +865,8 @@ func TestCrossRestoreApplyAndroidWritesOnlyMappedLocation(t *testing.T) {
 	for _, path := range []string{
 		filepath.Join(device.save, "other.dat"),
 		filepath.Join(configDir, "other.dat"),
-		filepath.Join(device.save, "opensave-game.json"),
-		filepath.Join(configDir, "opensave-game.json"),
+		filepath.Join(device.save, "savevault-game.json"),
+		filepath.Join(configDir, "savevault-game.json"),
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("unmapped archive content %q was restored: %v", path, err)
@@ -882,7 +882,7 @@ func TestCrossRestoreApplyAndroidWritesOnlyMappedLocation(t *testing.T) {
 	}
 	safetyFiles := readCrossRestoreZip(t, snaps[1].ZipPath)
 	if safetyFiles["user1.dat"] != "base" ||
-		safetyFiles[".opensave-locations/config/cfg.dat"] != "local config" {
+		safetyFiles[".savevault-locations/config/cfg.dat"] != "local config" {
 		t.Fatalf("safety archive = %+v", safetyFiles)
 	}
 
@@ -918,7 +918,7 @@ func TestCrossRestoreApplyAndroidWritesOnlyMappedLocation(t *testing.T) {
 			}
 		}
 		if request.Method == http.MethodPut &&
-			strings.HasPrefix(request.Path, "/v1/opensave/scopes/switch/"+cloudGame+"/snapshots/") {
+			strings.HasPrefix(request.Path, "/v1/savevault/scopes/switch/"+cloudGame+"/snapshots/") {
 			sawLocalSnapshotPut = true
 			if request.IfMatch != `"`+preHeadID+`"` {
 				t.Fatalf("local snapshot If-Match = %q, want %q", request.IfMatch, preHeadID)
@@ -1013,7 +1013,7 @@ func TestCrossRestoreRefusesAScopeOutsideThisGamesGroup(t *testing.T) {
 		t.Fatalf("plan without a games index = %v, want ErrCrossRestoreInvalid", err)
 	}
 	for _, request := range service.recordedRequests() {
-		if strings.HasPrefix(request.Path, "/v1/opensave/files/") {
+		if strings.HasPrefix(request.Path, "/v1/savevault/files/") {
 			t.Fatalf("an unmatched source was downloaded: %s %s", request.Method, request.Path)
 		}
 	}

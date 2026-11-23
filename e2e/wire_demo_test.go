@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Prints what a third device in your relay room actually receives during a
@@ -18,7 +18,7 @@ import (
 //
 // Not run by default: it exists to be watched, not to pass. Run it with
 //
-//	OPENSAVE_WIRE_DEMO=1 go test ./e2e/ -run TestWireDemo -v
+//	SAVEVAULT_WIRE_DEMO=1 go test ./e2e/ -run TestWireDemo -v
 //
 // It joins a relay room as an eavesdropper, pairs two devices in that room,
 // syncs a save whose contents include a marker string, and prints every
@@ -26,8 +26,8 @@ import (
 // and whether the marker appeared anywhere. The eavesdropper test asserts the
 // same things; this shows them.
 func TestWireDemo(t *testing.T) {
-	if os.Getenv("OPENSAVE_WIRE_DEMO") == "" {
-		t.Skip("set OPENSAVE_WIRE_DEMO=1 to run this demonstration")
+	if os.Getenv("SAVEVAULT_WIRE_DEMO") == "" {
+		t.Skip("set SAVEVAULT_WIRE_DEMO=1 to run this demonstration")
 	}
 	relayURL := startRelay(t)
 	const room = "demo-room"

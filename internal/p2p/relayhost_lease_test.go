@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/sysintegration/upnp"
+	"github.com/jun9100/savevault/internal/sysintegration/upnp"
 )
 
 // The router mapping's lease arithmetic.

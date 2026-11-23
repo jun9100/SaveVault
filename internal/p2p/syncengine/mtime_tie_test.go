@@ -3,7 +3,7 @@ package syncengine
 import (
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 func tieManifest(hash string, mtime delta.Milli) delta.Manifest {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // The terminal shows the same protection state the app does, from a real
@@ -51,7 +51,7 @@ func TestCLIPeers_ShowsProtectionPerDevice(t *testing.T) {
 		"CLIProt-C", "127.0.0.1", "direct",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("`opensave peers` output lacks %q:\n%s", want, out)
+			t.Errorf("`savevault peers` output lacks %q:\n%s", want, out)
 		}
 	}
 	// A relay member is not "on this network", and the relay's presence port
@@ -73,29 +73,29 @@ func TestCLIPeers_ShowsProtectionPerDevice(t *testing.T) {
 		} `json:"peers"`
 	}
 	if err := json.Unmarshal([]byte(runCLIAgainst(t, a, "peers", "--json")), &js); err != nil {
-		t.Fatalf("`opensave peers --json` is not JSON: %v", err)
+		t.Fatalf("`savevault peers --json` is not JSON: %v", err)
 	}
 	relayPeer := js.Peers[b.NodeID()]
 	if !relayPeer.Encrypted || !relayPeer.OverRelay || relayPeer.Fingerprint == "" {
-		t.Errorf("`opensave peers --json` for the relay peer: %+v; want encrypted, overRelay and a fingerprint", relayPeer)
+		t.Errorf("`savevault peers --json` for the relay peer: %+v; want encrypted, overRelay and a fingerprint", relayPeer)
 	}
 	if js.Peers[c.NodeID()].OverRelay {
-		t.Error("`opensave peers --json` reports the LAN peer as reached over a relay")
+		t.Error("`savevault peers --json` reports the LAN peer as reached over a relay")
 	}
 }
 
 // runCLIAgainst runs the built CLI with its home pointed at a test daemon.
 //
-// The CLI finds its daemon through $HOME/.opensave/daemon.addr, and a test
-// daemon's home IS the .opensave directory, so the CLI gets a HOME whose
-// .opensave links to it.
+// The CLI finds its daemon through $HOME/.savevault/daemon.addr, and a test
+// daemon's home IS the .savevault directory, so the CLI gets a HOME whose
+// .savevault links to it.
 func runCLIAgainst(t *testing.T, d *testutil.TestDaemon, args ...string) string {
 	t.Helper()
 	fakeHome := filepath.Join(filepath.Dir(d.Daemon.Paths.HomeDir), "cli-home")
 	if err := os.MkdirAll(fakeHome, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(fakeHome, ".opensave")
+	link := filepath.Join(fakeHome, ".savevault")
 	if _, err := os.Lstat(link); err != nil {
 		if err := os.Symlink(d.Daemon.Paths.HomeDir, link); err != nil {
 			t.Skipf("symlinks unavailable here (%v); this needs Developer Mode on Windows, or Linux", err)
@@ -105,7 +105,7 @@ func runCLIAgainst(t *testing.T, d *testutil.TestDaemon, args ...string) string 
 	cmd.Env = append(os.Environ(), "HOME="+fakeHome, "USERPROFILE="+fakeHome, "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("opensave %s: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("savevault %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return string(out)
 }

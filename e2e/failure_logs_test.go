@@ -3,7 +3,7 @@ package e2e
 import (
 	"testing"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // logOnFailure prints each device's daemon log if the test fails.

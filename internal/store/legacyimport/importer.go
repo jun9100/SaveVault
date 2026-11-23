@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // legacyDB mirrors the exact JSON shape of opensave-db.json.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/p2p"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A game whose save is split across two folders — the pattern behind the
@@ -309,7 +309,7 @@ func TestMultiRoot_BackupCarriesEveryLocation(t *testing.T) {
 	if got := b.ReadSave("settings.ini"); got != "" {
 		t.Errorf("the config file was restored into the save folder as %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(b.SaveDir, ".opensave-locations")); err == nil {
+	if _, err := os.Stat(filepath.Join(b.SaveDir, ".savevault-locations")); err == nil {
 		t.Error("the archive's internal location folder was restored literally into the save folder")
 	}
 }

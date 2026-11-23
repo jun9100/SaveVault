@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/snapshot"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
 )
 
 // ResolveConflict applies the user's chosen resolution to an active
@@ -246,7 +246,7 @@ func (e *Engine) keepPeersVersion(ctx context.Context, gameID string, peer Peer,
 	if err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp("", "opensave-keep-both-*")
+	tmp, err := os.MkdirTemp("", "savevault-keep-both-*")
 	if err != nil {
 		return err
 	}

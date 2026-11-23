@@ -14,7 +14,7 @@ import (
 // and breaks unrelated tools. Every case below is one way that has happened
 // to real installers.
 func TestNextPathValue(t *testing.T) {
-	const dir = `C:\Users\x\AppData\Local\OpenSave\bin`
+	const dir = `C:\Users\x\AppData\Local\SaveVault\bin`
 
 	for _, tc := range []struct {
 		name    string
@@ -35,7 +35,7 @@ func TestNextPathValue(t *testing.T) {
 			// Windows paths are case-insensitive; a re-run under a different
 			// spelling must not append a second copy.
 			name:    "already present in another case is left alone",
-			current: `C:\Windows;c:\users\x\appdata\local\opensave\BIN`,
+			current: `C:\Windows;c:\users\x\appdata\local\savevault\BIN`,
 			want:    "",
 		},
 		{
@@ -79,10 +79,10 @@ func TestWriteAliasesProducesForwardingShims(t *testing.T) {
 
 	written, _ := writeAliases(dir)
 	if len(written) != 2 {
-		t.Fatalf("expected shims for os and opensave-cli, got %v", written)
+		t.Fatalf("expected shims for os and savevault, got %v", written)
 	}
 
-	for _, alias := range []string{"os", "opensave-cli"} {
+	for _, alias := range []string{"os", "savevault"} {
 		body, err := os.ReadFile(filepath.Join(dir, alias+".cmd"))
 		if err != nil {
 			t.Fatalf("reading %s shim: %v", alias, err)
@@ -130,7 +130,7 @@ func TestCopyExecutableReplacesExisting(t *testing.T) {
 // pathWithout is the half of the uninstaller that can damage a PATH, so it
 // is exercised the way nextPathValue is: on strings, never on HKCU.
 func TestPathWithout(t *testing.T) {
-	const dir = `C:\Users\x\AppData\Local\OpenSave\bin`
+	const dir = `C:\Users\x\AppData\Local\SaveVault\bin`
 
 	for _, tc := range []struct {
 		name    string
@@ -151,7 +151,7 @@ func TestPathWithout(t *testing.T) {
 			// The same rule the installer matched on, or an entry added in
 			// one spelling could never be removed in another.
 			name:    "matches a different case",
-			current: `C:\Windows;c:\users\x\appdata\local\opensave\BIN`,
+			current: `C:\Windows;c:\users\x\appdata\local\savevault\BIN`,
 			want:    `C:\Windows`,
 		},
 		{
@@ -191,7 +191,7 @@ func TestPathWithout(t *testing.T) {
 // install/uninstall cycle leaves the user's environment slightly different
 // every time.
 func TestPathRoundTripLeavesNoTrace(t *testing.T) {
-	const dir = `C:\Users\x\AppData\Local\OpenSave\bin`
+	const dir = `C:\Users\x\AppData\Local\SaveVault\bin`
 	for _, start := range []string{
 		`C:\Windows;C:\Windows\System32`,
 		`%JAVA_HOME%\bin`,
@@ -218,7 +218,7 @@ func TestAliasPointsAtUs(t *testing.T) {
 		t.Error("our own shim was not recognised, so an uninstall would leave it behind")
 	}
 
-	theirs := filepath.Join(dir, "opensave-cli.cmd")
+	theirs := filepath.Join(dir, "savevault.cmd")
 	if err := os.WriteFile(theirs, []byte("@echo off\r\necho something else\r\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -232,11 +232,11 @@ func TestAliasPointsAtUs(t *testing.T) {
 }
 
 // Someone else's os.cmd is not replaced, and a re-install still refreshes
-// our own. install.ps1 and the README both promise this; `opensave install`
+// our own. install.ps1 and the README both promise this; `savevault install`
 // used to overwrite whatever was there.
 func TestWriteAliasesLeavesSomeoneElsesShimAlone(t *testing.T) {
 	dir := t.TempDir()
-	theirs := "@echo off\r\necho not opensave\r\n"
+	theirs := "@echo off\r\necho not savevault\r\n"
 	if err := os.WriteFile(filepath.Join(dir, "os.cmd"), []byte(theirs), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -245,8 +245,8 @@ func TestWriteAliasesLeavesSomeoneElsesShimAlone(t *testing.T) {
 	if len(skipped) != 1 || filepath.Base(skipped[0]) != "os.cmd" {
 		t.Errorf("skipped = %v, want just os.cmd", skipped)
 	}
-	if len(written) != 1 || filepath.Base(written[0]) != "opensave-cli.cmd" {
-		t.Errorf("written = %v, want just opensave-cli.cmd", written)
+	if len(written) != 1 || filepath.Base(written[0]) != "savevault.cmd" {
+		t.Errorf("written = %v, want just savevault.cmd", written)
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "os.cmd")); string(got) != theirs {
 		t.Errorf("their os.cmd was changed to %q", got)

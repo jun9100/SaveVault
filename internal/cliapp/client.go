@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/config"
+	"github.com/jun9100/savevault/internal/config"
 )
 
 // Commands that touch peers, pairing or syncing need the *running* daemon:
@@ -85,11 +85,11 @@ func daemonRequestWith(client *http.Client, method, path string, body any) ([]by
 		// telling someone to start it sends them the wrong way.
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, fmt.Errorf("the OpenSave daemon at %s did not answer within %s — it may still be working; check again in a moment",
+			return nil, fmt.Errorf("the SaveVault daemon at %s did not answer within %s — it may still be working; check again in a moment",
 				base, client.Timeout)
 		}
 		return nil, fmt.Errorf(
-			"the OpenSave daemon isn't reachable at %s — start it with `opensave daemon start` (or `systemctl --user start opensave-daemon`)",
+			"the SaveVault daemon isn't reachable at %s — start it with `savevault daemon start` (or `systemctl --user start savevault-daemon`)",
 			base)
 	}
 	defer resp.Body.Close()

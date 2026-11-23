@@ -16,7 +16,7 @@ SaveVault 的云端范围是 `{类型}/{游戏 ID}`：
 - **不动现有存储**：归档、CAS 头和冲突副本都不改。“游戏”只是范围之上的分组和索引，不会让任何一个范围的头前进。
 - **只在同一类型内归组**：`pc`、`switch`、`emulator-*` 之间不会归到一起，符合“每个归档只属于一个类型命名空间”的规则。
 - **不自动跨范围恢复**：从别的设备恢复存档，是客户端里由用户显式发起的操作，而且要先留安全副本（C1 第二步）。
-- **可以回滚**：新增的字段都写在 `opensave-native-state.json` 里各个范围的条目下；`v1.5.0` 读取时会忽略它们，能正常运行；但它写一次状态文件（比如有新的上传）就会丢掉这些字段。回滚后再升级时，客户端会重新上报游戏信息，手动关联需要重新设置。
+- **可以回滚**：新增的字段都写在 `savevault-native-state.json` 里各个范围的条目下；`v1.5.0` 读取时会忽略它们，能正常运行；但它写一次状态文件（比如有新的上传）就会丢掉这些字段。回滚后再升级时，客户端会重新上报游戏信息，手动关联需要重新设置。
 
 ## 规范 ID
 
@@ -36,11 +36,11 @@ SaveVault 的云端范围是 `{类型}/{游戏 ID}`：
 
 | 方法 | 路径 | 权限 | 作用 |
 | --- | --- | --- | --- |
-| `PUT` | `/v1/opensave/scopes/{type}/{game}/identity` | 同步令牌 | 上报这个范围的身份（名称、TitleID、Steam AppID、PSP 编号、包名）。不改头；和其他写入一样记录设备心跳；内容不变时不写盘。 |
-| `GET` | `/v1/opensave/games` | 同步令牌（只读） | 列出所有游戏。每个游戏包含：键、类型、名称，以及各成员范围（头、来源设备、版本数、冲突数、关联方式）。 |
-| `GET` | `/v1/opensave/games/{key}` | 同步令牌（只读） | 单个游戏，路径里的键需要 URL 编码。 |
-| `GET` | `/admin/api/opensave/games` | 管理员 | 同上，供网页使用。 |
-| `PUT` | `/admin/api/opensave/scopes/{type}/{game}/game` | 管理员写 | 手动关联：`{"game": "<键>"}`；传空字符串表示取消。 |
+| `PUT` | `/v1/savevault/scopes/{type}/{game}/identity` | 同步令牌 | 上报这个范围的身份（名称、TitleID、Steam AppID、PSP 编号、包名）。不改头；和其他写入一样记录设备心跳；内容不变时不写盘。 |
+| `GET` | `/v1/savevault/games` | 同步令牌（只读） | 列出所有游戏。每个游戏包含：键、类型、名称，以及各成员范围（头、来源设备、版本数、冲突数、关联方式）。 |
+| `GET` | `/v1/savevault/games/{key}` | 同步令牌（只读） | 单个游戏，路径里的键需要 URL 编码。 |
+| `GET` | `/admin/api/savevault/games` | 管理员 | 同上，供网页使用。 |
+| `PUT` | `/admin/api/savevault/scopes/{type}/{game}/game` | 管理员写 | 手动关联：`{"game": "<键>"}`；传空字符串表示取消。 |
 
 客户端依旧只在路由返回 404 时回退。旧服务端没有 `identity` 路由，客户端碰到 404 时跳过上报即可。
 
@@ -51,7 +51,7 @@ SaveVault 的云端范围是 `{类型}/{游戏 ID}`：
 | 来源 | ZIP 内容 | 现有恢复的要求 |
 | --- | --- | --- |
 | PC（`internal/snapshot.ZipPath`） | 一个存档文件夹的内容，直接放在 ZIP 根目录；没有清单文件 | 整个替换本机这一个存档文件夹 |
-| Android（`GameSnapshotManifest`） | `opensave-game.json` 清单（游戏键，以及每个位置的 `kind`、`relativePath`、`archivePath`），加上各个位置的文件 | 清单里的游戏键和相对路径，都必须与本机这款游戏一致（`matches`） |
+| Android（`GameSnapshotManifest`） | `savevault-game.json` 清单（游戏键，以及每个位置的 `kind`、`relativePath`、`archivePath`），加上各个位置的文件 | 清单里的游戏键和相对路径，都必须与本机这款游戏一致（`matches`） |
 
 `relativePath` 是相对于来源根目录的路径。同一款游戏在不同设备、不同授权方式（Root、SAF、整个内部存储）下，这个路径都不一样。所以即便两台都是 Android，现有的 `matches` 也通常会拒绝另一台设备的归档。
 

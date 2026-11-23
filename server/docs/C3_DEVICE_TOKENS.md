@@ -156,7 +156,7 @@ savevault://pair?v=1&server=<URL 编码的服务地址>&code=<配对码>
   "code": "ABCD-EFGH",
   "device_id": "a1b2c3d4-…",
   "device_name": "Pixel 9",
-  "platform": "opensave-android",
+  "platform": "savevault-android",
   "version": "2.6.0"
 }
 ```
@@ -239,7 +239,7 @@ savevault://pair?v=1&server=<URL 编码的服务地址>&code=<配对码>
    - 否则按共享令牌比对，并受兼容期阶段约束（见下一节）；
    - 管理员令牌不是同步令牌：现有的启动检查已经保证它和共享令牌不同，它也不以 `gsdt_` 开头，所以拿它访问同步接口一律 401。
 2. **管理接口**（`/admin/...`、`/metrics`）：维持现状，只认会话 Cookie 或 Basic Auth 里的管理员令牌。设备令牌和共享令牌都不行。
-3. **WebDAV**（`/opensave/...`）：维持现状，只认独立配置的用户名和密码。
+3. **WebDAV**（`/savevault/...`）：维持现状，只认独立配置的用户名和密码。
 
 `/v1/pair/claim` 不需要认证；即使请求带了 `Authorization` 头也忽略。
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// dropbox keeps snapshots in /OpenSave of the signed-in account's Dropbox.
+// dropbox keeps snapshots in /SaveVault of the signed-in account's Dropbox.
 type dropbox struct {
 	s *Service
 }
@@ -37,7 +37,7 @@ func (p dropbox) upload(f *os.File, size int64, fileName string) error {
 
 // uploadSimple streams one request (≤150 MB per Dropbox's API).
 func (p dropbox) uploadSimple(token, fileName string, f *os.File, size int64) error {
-	args, _ := json.Marshal(map[string]any{"path": "/OpenSave/" + fileName, "mode": "overwrite", "mute": true})
+	args, _ := json.Marshal(map[string]any{"path": "/SaveVault/" + fileName, "mode": "overwrite", "mute": true})
 	req, err := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxContent+"/2/files/upload", f)
 	if err != nil {
 		return err
@@ -112,7 +112,7 @@ func (p dropbox) uploadSession(token, fileName string, f *os.File, size int64) e
 
 	_, err = call("/2/files/upload_session/finish", map[string]any{
 		"cursor": map[string]any{"session_id": sessionID, "offset": offset},
-		"commit": map[string]any{"path": "/OpenSave/" + fileName, "mode": "overwrite", "mute": true},
+		"commit": map[string]any{"path": "/SaveVault/" + fileName, "mode": "overwrite", "mute": true},
 	}, nil, 0)
 	if err != nil {
 		return fmt.Errorf("session finish: %w", err)
@@ -128,7 +128,7 @@ func (p dropbox) list() ([]CloudFile, error) {
 	// Following the cursor while Dropbox says there is more: one call is one
 	// page, and a page is not the folder.
 	endpoint := "/2/files/list_folder"
-	body, _ := json.Marshal(map[string]string{"path": "/OpenSave"})
+	body, _ := json.Marshal(map[string]string{"path": "/SaveVault"})
 	var files []CloudFile
 	for page := 0; page < maxListPages; page++ {
 		req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxAPI+endpoint, bytes.NewReader(body))
@@ -150,7 +150,7 @@ func (p dropbox) list() ([]CloudFile, error) {
 			return nil, err
 		}
 		if missing && page == 0 {
-			return []CloudFile{}, nil // /OpenSave folder doesn't exist yet
+			return []CloudFile{}, nil // /SaveVault folder doesn't exist yet
 		}
 		if missing {
 			// Mid-listing, a conflict is a cursor Dropbox has reset, not an
@@ -175,7 +175,7 @@ func (p dropbox) list() ([]CloudFile, error) {
 }
 
 // listPage runs one list_folder or list_folder/continue call. missing
-// reports the OpenSave folder not existing yet, which Dropbox answers with a
+// reports the SaveVault folder not existing yet, which Dropbox answers with a
 // conflict and which is an empty listing, not an error.
 func (p dropbox) listPage(req *http.Request, out any) (missing bool, err error) {
 	resp, err := p.s.httpClient().Do(req)
@@ -198,7 +198,7 @@ func (p dropbox) download(fileName, localPath string) error {
 	if err != nil {
 		return err
 	}
-	args, _ := json.Marshal(map[string]string{"path": "/OpenSave/" + fileName})
+	args, _ := json.Marshal(map[string]string{"path": "/SaveVault/" + fileName})
 	req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxContent+"/2/files/download", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Dropbox-API-Arg", string(args))
@@ -213,7 +213,7 @@ func (p dropbox) remove(f CloudFile) error {
 	if err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]string{"path": "/OpenSave/" + f.Name})
+	body, _ := json.Marshal(map[string]string{"path": "/SaveVault/" + f.Name})
 	req, _ := http.NewRequest(http.MethodPost, p.s.Endpoints.DropboxAPI+"/2/files/delete_v2", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")

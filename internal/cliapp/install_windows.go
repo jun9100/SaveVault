@@ -13,16 +13,16 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-const installedName = "opensave.exe"
+const installedName = "savevault.exe"
 
-const pathActivationHint = "Open a new PowerShell window and run `opensave`."
+const pathActivationHint = "Open a new PowerShell window and run `savevault`."
 
 func defaultInstallDir() (string, error) {
 	local := os.Getenv("LOCALAPPDATA")
 	if local == "" {
 		return "", fmt.Errorf("LOCALAPPDATA is not set — pass --dir to choose a location")
 	}
-	return filepath.Join(local, "OpenSave", "bin"), nil
+	return filepath.Join(local, "SaveVault", "bin"), nil
 }
 
 // normalizePathEntry makes two spellings of the same directory compare equal:
@@ -33,7 +33,7 @@ func normalizePathEntry(p string) string {
 
 // aliasNames are the short spellings installed beside the binary, and
 // aliasSuffix is what they are called on this platform.
-var aliasNames = []string{"os", "opensave-cli"}
+var aliasNames = []string{"os", "savevault"}
 
 const aliasSuffix = ".cmd"
 
@@ -52,7 +52,7 @@ func aliasPointsAtUs(alias, dir string) bool {
 // removeInstalledBinary deletes the installed copy.
 //
 // On Windows the file being removed may be the very process doing the
-// removing — `opensave install --uninstall` run from the installed copy —
+// removing — `savevault install --uninstall` run from the installed copy —
 // and Windows will not delete a running image. Renaming it is allowed, so
 // the copy is moved aside and marked for deletion at the next reboot; the
 // name it occupied is free immediately, which is what a reinstall needs.
@@ -72,7 +72,7 @@ func removeInstalledBinary(installed string) error {
 	return nil
 }
 
-// writeAliases drops `os` and `opensave-cli` next to the binary as .cmd
+// writeAliases drops `os` and `savevault` next to the binary as .cmd
 // shims. Shims rather than copies of a 15 MB binary, and rather than
 // symlinks, which need admin rights or Developer Mode.
 func writeAliases(dir string) (written, skipped []string) {
@@ -215,7 +215,7 @@ func ensureOnPath(dir string) (bool, error) {
 
 	broadcastEnvironmentChange()
 
-	// Also update this process, so a `opensave` invoked from the very shell
+	// Also update this process, so a `savevault` invoked from the very shell
 	// that ran the install resolves without reopening it.
 	_ = os.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+dir)
 	return true, nil

@@ -134,9 +134,9 @@ func TestExtractFromTarGz(t *testing.T) {
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	for _, f := range []struct{ name, body string }{
-		{"opensave-linux/opensave", "APP"},
-		{"opensave-linux/opensave-cli", "CLI"},
-		{"opensave-linux/opensave-relay", "RELAY"},
+		{"savevault-linux/savevault", "APP"},
+		{"savevault-linux/savevault-cli", "CLI"},
+		{"savevault-linux/savevault-relay", "RELAY"},
 	} {
 		if err := tw.WriteHeader(&tar.Header{
 			Name: f.name, Mode: 0o755, Size: int64(len(f.body)), Typeflag: tar.TypeReg,
@@ -157,9 +157,9 @@ func TestExtractFromTarGz(t *testing.T) {
 	}
 
 	for _, want := range []struct{ member, body string }{
-		{"opensave", "APP"},
-		{"opensave-cli", "CLI"},
-		{"opensave-relay", "RELAY"},
+		{"savevault", "APP"},
+		{"savevault-cli", "CLI"},
+		{"savevault-relay", "RELAY"},
 	} {
 		dest := filepath.Join(dir, want.member+".out")
 		if err := ExtractFromTarGz(archive, want.member, dest); err != nil {
@@ -223,7 +223,7 @@ func TestSwapRejectsBadCandidateAndLeavesOriginalAlone(t *testing.T) {
 // error they could do nothing about.
 func TestCanStageUpdate(t *testing.T) {
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "opensave.exe")
+	exe := filepath.Join(dir, "savevault.exe")
 	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestCanStageUpdate(t *testing.T) {
 	}
 
 	// A binary whose directory does not exist cannot be staged.
-	missing := filepath.Join(dir, "no-such-dir", "opensave.exe")
+	missing := filepath.Join(dir, "no-such-dir", "savevault.exe")
 	if CanStageUpdate(missing) {
 		t.Error("a missing directory reported as stageable — the swap would fail later instead of refusing up front")
 	}
@@ -250,7 +250,7 @@ func TestCanStageUpdate(t *testing.T) {
 // until someone deleted a file they cannot see.
 func TestCanStageUpdateOverwritesLeftoverStagingFile(t *testing.T) {
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "opensave.exe")
+	exe := filepath.Join(dir, "savevault.exe")
 	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func timeoutAfterSeconds(n int) <-chan struct{} {
 // failed.
 func TestCanStageUpdateCatchesWhatAProbeFileWouldMiss(t *testing.T) {
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "opensave.exe")
+	exe := filepath.Join(dir, "savevault.exe")
 	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
 	}

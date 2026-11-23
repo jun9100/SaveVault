@@ -13,8 +13,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // "Is my Deck up to date with this save?" — answered per game, per device,
@@ -260,7 +260,7 @@ func TestCLIStatus_SaysWhenEachDeviceLastSyncedEachGame(t *testing.T) {
 		} `json:"games"`
 	}
 	if err := json.Unmarshal([]byte(runCLIAgainst(t, a, "status", "--json")), &js); err != nil {
-		t.Fatalf("`opensave status --json` is not JSON: %v", err)
+		t.Fatalf("`savevault status --json` is not JSON: %v", err)
 	}
 	byID := map[string]map[string]string{}
 	for _, g := range js.Games {

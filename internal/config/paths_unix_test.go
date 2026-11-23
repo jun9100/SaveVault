@@ -13,7 +13,7 @@ import (
 // that gave every other account the key that decrypts every save sent here.
 func TestHomeDirIsPrivateToTheOwner(t *testing.T) {
 	root := t.TempDir()
-	home := filepath.Join(root, "opensave-home")
+	home := filepath.Join(root, "savevault-home")
 
 	if _, err := buildPaths(home); err != nil {
 		t.Fatal(err)

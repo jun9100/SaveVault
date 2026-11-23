@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/snapshot"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/snapshot"
 )
 
 // cmdSnapshotDiff says what changed from one snapshot of a game to another.
 func cmdSnapshotDiff(d *daemon.Daemon, args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: opensave snapshot-diff <gameId> <fromSnapId> <toSnapId> [--json]")
+		fmt.Fprintln(os.Stderr, "usage: savevault snapshot-diff <gameId> <fromSnapId> <toSnapId> [--json]")
 		return 1
 	}
 	game, err := d.Store.GetGame(args[0])

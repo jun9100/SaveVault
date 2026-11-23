@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Saves emptied on this device, held back from the others until someone says
 // whether that was meant (see p2p/syncengine/hold.go). Asked in the app, with
-// `POST /api/games/{id}/emptied`, and with `opensave emptied`.
+// `POST /api/games/{id}/emptied`, and with `savevault emptied`.
 
 // EmptiedSave is one game held back because its save was emptied here.
 type EmptiedSave struct {

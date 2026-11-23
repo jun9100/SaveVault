@@ -14,11 +14,11 @@ func TestServiceUserFrom(t *testing.T) {
 		unit string
 		want string
 	}{
-		{"the installer's unit", "[Service]\nType=simple\nUser=opensave-relay\nExecStart=/usr/local/bin/opensave-relay\n", "opensave-relay"},
+		{"the installer's unit", "[Service]\nType=simple\nUser=savevault-relay\nExecStart=/usr/local/bin/savevault-relay\n", "savevault-relay"},
 		{"an operator's own account", "[Service]\nUser=relaysvc\n", "relaysvc"},
 		{"spaces around the value", "[Service]\n  User =  someone  \n", "someone"},
 		{"no User line at all", "[Service]\nType=simple\nExecStart=/x\n", ""},
-		{"commented out", "[Service]\n# User=opensave-relay\n; User=other\n", ""},
+		{"commented out", "[Service]\n# User=savevault-relay\n; User=other\n", ""},
 		{"empty unit", "", ""},
 	}
 	for _, c := range cases {

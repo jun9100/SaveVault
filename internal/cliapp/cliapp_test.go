@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/presets"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/presets"
 )
 
 // TestJSONFlag pins that --json can appear anywhere in the arguments and is
@@ -68,8 +68,8 @@ func TestPeersPayloadDecoding(t *testing.T) {
 // the running executable — a hardcoded path would break for anyone who didn't
 // install to the one location we guessed.
 func TestRenderUnitUsesThisBinary(t *testing.T) {
-	unit := renderUnit("/opt/opensave/opensave-cli")
-	if !strings.Contains(unit, "ExecStart=/opt/opensave/opensave-cli daemon start") {
+	unit := renderUnit("/opt/savevault/savevault")
+	if !strings.Contains(unit, "ExecStart=/opt/savevault/savevault daemon start") {
 		t.Errorf("unit does not start the given binary:\n%s", unit)
 	}
 	for _, want := range []string{"[Unit]", "[Service]", "[Install]", "WantedBy=default.target"} {

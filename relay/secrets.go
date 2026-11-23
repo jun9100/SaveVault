@@ -15,7 +15,7 @@ import (
 // operator into one of the two things that leak a secret: typing it on a
 // command line, where it lands in shell history, or pasting it into a unit
 // file that ends up in a repository. A file the relay owns, written once by
-// `opensave-relay setup`, avoids both.
+// `savevault-relay setup`, avoids both.
 //
 // The environment still wins where it is set. A container or a systemd unit
 // that already injects secrets must keep working untouched, and an operator
@@ -35,6 +35,9 @@ type SecretsFile struct {
 // SecretsPath is where the file lives, overridable for tests and for an
 // operator who keeps configuration somewhere specific.
 func SecretsPath() string {
+	if p := strings.TrimSpace(os.Getenv("SAVEVAULT_RELAY_SECRETS")); p != "" {
+		return p
+	}
 	if p := strings.TrimSpace(os.Getenv("OPENSAVE_RELAY_SECRETS")); p != "" {
 		return p
 	}
@@ -42,7 +45,7 @@ func SecretsPath() string {
 		// A relay on Linux usually runs as a service account, and /etc is
 		// where its operator will look. Falls back to the home directory when
 		// /etc is not writable, which is the unprivileged case.
-		if etc := "/etc/opensave/relay-secrets.json"; canWriteDir(filepath.Dir(etc)) {
+		if etc := "/etc/savevault/relay-secrets.json"; canWriteDir(filepath.Dir(etc)) {
 			return etc
 		}
 	}
@@ -50,14 +53,14 @@ func SecretsPath() string {
 	if err != nil {
 		return "relay-secrets.json"
 	}
-	return filepath.Join(home, ".opensave", "relay-secrets.json")
+	return filepath.Join(home, ".savevault", "relay-secrets.json")
 }
 
 func canWriteDir(dir string) bool {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false
 	}
-	probe := filepath.Join(dir, ".opensave-write-probe")
+	probe := filepath.Join(dir, ".savevault-write-probe")
 	if err := os.WriteFile(probe, []byte("x"), 0o600); err != nil {
 		return false
 	}

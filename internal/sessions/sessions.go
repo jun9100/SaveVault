@@ -3,7 +3,7 @@
 //
 // A play session is what the other tools in this space back up around —
 // Game Backup Monitor snapshots when you stop playing, Hoard after each
-// session — and what a person means by "my save from last night". OpenSave's
+// session — and what a person means by "my save from last night". SaveVault's
 // watcher snapshots every change to a save; a session gives those a shape:
 // the snapshot at the end of one is the save as it was left, and the sessions
 // themselves say when a game was last played and for how long in all.
@@ -216,7 +216,7 @@ func (t *Tracker) Playing() map[string]time.Time {
 	return out
 }
 
-// Begin and Finish mark a session from outside — `opensave wrap` launching a
+// Begin and Finish mark a session from outside — `savevault wrap` launching a
 // game knows exactly when it starts and stops. Finish ends it at once, grace
 // or not.
 func (t *Tracker) Begin(gameID string, at time.Time) {

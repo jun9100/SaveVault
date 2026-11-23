@@ -1,4 +1,4 @@
-module github.com/opensave/opensave
+module github.com/jun9100/savevault
 
 go 1.26.4
 

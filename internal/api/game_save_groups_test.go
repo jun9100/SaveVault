@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func TestCloudGameGroupRoutesReadOtherDeviceVersions(t *testing.T) {
@@ -35,7 +35,7 @@ func TestCloudGameGroupRoutesReadOtherDeviceVersions(t *testing.T) {
 		GameSaveScopeCandidate: cloud.GameSaveScopeCandidate{
 			ID: "local-head", Archive: "local-head.zip", CreatedAt: base,
 		},
-		DeviceName: "Desktop", Platform: "opensave-windows", ReceivedAt: base,
+		DeviceName: "Desktop", Platform: "savevault-windows", ReceivedAt: base,
 	}
 
 	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func TestCloudGameGroupRoutesReadOtherDeviceVersions(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/v1/opensave/games":
+		case "/v1/savevault/games":
 			_ = json.NewEncoder(w).Encode(map[string]any{"games": []cloud.GameSaveGame{{
 				Key: "switch/title:0100000000010000", Type: "switch", Name: "Super Mario Odyssey",
 				LastReceivedAt: base,
@@ -58,7 +58,7 @@ func TestCloudGameGroupRoutesReadOtherDeviceVersions(t *testing.T) {
 					{Type: "switch", GameID: member, Link: "auto", Name: "Pixel 8", Head: &head, SnapshotCount: 2, LastReceivedAt: base},
 				},
 			}}})
-		case "/v1/opensave/scopes/switch/" + member:
+		case "/v1/savevault/scopes/switch/" + member:
 			_ = json.NewEncoder(w).Encode(cloud.GameSaveScope{
 				Type: "switch", GameID: member, Head: &head,
 				Snapshots: []cloud.GameSaveScopeSnapshot{head, old},

@@ -32,7 +32,7 @@ const (
 	eventDevicePaired       = "device_paired"
 	eventDeviceTokenCreated = "device_token_created"
 	eventDeviceTokenRevoked = "device_token_revoked"
-	eventOpenSaveMeta       = "opensave_meta"
+	eventSaveVaultMeta       = "savevault_meta"
 	eventVerify             = "verify"
 	eventSettings           = "settings"
 )

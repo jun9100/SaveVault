@@ -4,13 +4,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func rootEngine(t *testing.T) (*Engine, *store.Store) {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "opensave.db"))
+	s, err := store.Open(filepath.Join(t.TempDir(), "savevault.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

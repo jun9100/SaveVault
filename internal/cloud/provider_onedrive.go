@@ -12,7 +12,7 @@ import (
 )
 
 // oneDrive keeps snapshots in the app's own folder of the signed-in
-// account's OneDrive (Apps/OpenSave), through Microsoft Graph.
+// account's OneDrive (Apps/SaveVault), through Microsoft Graph.
 type oneDrive struct {
 	s *Service
 }

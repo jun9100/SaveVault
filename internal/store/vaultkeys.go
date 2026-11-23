@@ -9,7 +9,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
+	"github.com/jun9100/savevault/internal/e2ee"
 )
 
 // ErrNoVault means this device has not joined or created a vault yet.

@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/opensave/opensave/internal/e2ee"
+	"github.com/jun9100/savevault/internal/e2ee"
 )
 
 func testPublicKey(t *testing.T) string {

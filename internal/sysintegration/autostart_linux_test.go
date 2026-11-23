@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The entry that starts OpenSave at login must ask for a hidden start.
+// The entry that starts SaveVault at login must ask for a hidden start.
 //
 // For a long time it launched the bare executable, which is exactly what a
 // double-click does, so every login brought the full window up over the
@@ -23,7 +23,7 @@ func TestAutostartEntryStartsHidden(t *testing.T) {
 	if err := SetAutostart(true); err != nil {
 		t.Fatalf("SetAutostart: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".config", "autostart", "opensave.desktop"))
+	raw, err := os.ReadFile(filepath.Join(home, ".config", "autostart", "savevault.desktop"))
 	if err != nil {
 		t.Fatalf("no .desktop file was written: %v", err)
 	}
@@ -58,17 +58,17 @@ func TestAutostartEntryStartsHidden(t *testing.T) {
 func TestAutostartEntryUnderFlatpakIsNotOverQuoted(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("FLATPAK_ID", "org.example.OpenSave")
+	t.Setenv("FLATPAK_ID", "org.example.SaveVault")
 
 	if err := SetAutostart(true); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".config", "autostart", "opensave.desktop"))
+	raw, err := os.ReadFile(filepath.Join(home, ".config", "autostart", "savevault.desktop"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	exec := execLine(t, string(raw))
-	want := "Exec=flatpak run org.example.OpenSave " + StartHiddenFlag
+	want := "Exec=flatpak run org.example.SaveVault " + StartHiddenFlag
 	if exec != want {
 		t.Errorf("Exec line:\n  got  %s\n  want %s", exec, want)
 	}

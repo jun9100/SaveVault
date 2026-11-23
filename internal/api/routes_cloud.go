@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/opensave/opensave/internal/ignore"
+	"github.com/jun9100/savevault/internal/ignore"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,10 +13,10 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // pendingPKCE holds verifier and CSRF state between /api/auth/start and

@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/ignore"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/ignore"
 )
 
 // Per-game sync exclusions: files inside a tracked folder that should not
@@ -166,11 +166,11 @@ func containsPattern(lines []string, p string) bool {
 }
 
 const ignoreUsage = `usage:
-  opensave ignore <gameId>                     List a game's excluded files
-  opensave ignore <gameId> add <pattern>...    Stop syncing files matching a pattern
-  opensave ignore <gameId> remove <pattern>... Sync them again
-  opensave ignore <gameId> clear               Remove every pattern
-  opensave ignore <gameId> test <path>...      Check whether a path would sync
+  savevault ignore <gameId>                     List a game's excluded files
+  savevault ignore <gameId> add <pattern>...    Stop syncing files matching a pattern
+  savevault ignore <gameId> remove <pattern>... Sync them again
+  savevault ignore <gameId> clear               Remove every pattern
+  savevault ignore <gameId> test <path>...      Check whether a path would sync
 
 Some games keep their save and their device-specific settings in the same
 folder, where syncing the settings can break the game on the other machine.

@@ -29,9 +29,9 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/logging"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/logging"
 )
 
 const (
@@ -41,7 +41,7 @@ const (
 	// per game — addRecursive registers every subfolder of every save
 	// location. Someone tracking 350 games across a few folders each was
 	// therefore holding hundreds of megabytes in buffers alone before a
-	// single save was read, which is most of what "OpenSave is using 760 MB
+	// single save was read, which is most of what "SaveVault is using 760 MB
 	// while idle" turned out to be.
 	//
 	// 8 KB is still around a hundred events in flight for one folder. Save
@@ -98,12 +98,12 @@ var reconcileInterval = 15 * time.Minute
 // change inside the window is not dropped: it is taken when the window ends,
 // so the last state of a session is always kept. Manual snapshots ignore it.
 //
-// OPENSAVE_AUTO_SNAPSHOT_MIN_INTERVAL (a Go duration, e.g. "0s") overrides
+// SAVEVAULT_AUTO_SNAPSHOT_MIN_INTERVAL (a Go duration, e.g. "0s") overrides
 // it; the end-to-end tests set it to zero.
 var minAutoSnapshotInterval = autoSnapshotIntervalFromEnv(3 * time.Minute)
 
 func autoSnapshotIntervalFromEnv(fallback time.Duration) time.Duration {
-	if v := os.Getenv("OPENSAVE_AUTO_SNAPSHOT_MIN_INTERVAL"); v != "" {
+	if v := os.Getenv("SAVEVAULT_AUTO_SNAPSHOT_MIN_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
 			return d
 		}
@@ -306,7 +306,7 @@ func (e *Engine) watchedJobs() []catchUpJob {
 //
 // Starting a watch is not retroactive: it reports what happens next, and says
 // nothing about what happened while it was not running. A game saved while
-// OpenSave was closed, or while its watch was down after a failed start, was
+// SaveVault was closed, or while its watch was down after a failed start, was
 // therefore left with no snapshot of that state — the change sat on disk, and
 // the local history skipped it until the game happened to save again. The
 // peer reconcile would still carry the files to another device, so this was
@@ -817,7 +817,7 @@ func (gw *gameWatch) eventRelevant(event fsnotify.Event) bool {
 	if strings.HasPrefix(name, ".") {
 		return false
 	}
-	if strings.HasSuffix(name, ".opensave.tmp") {
+	if strings.HasSuffix(name, ".savevault.tmp") {
 		return false
 	}
 	if gw.isFile {
@@ -995,7 +995,7 @@ func (gw *gameWatch) queueFolder(dir string) {
 // Watch registers the whole tree before the event loop exists, and the same
 // wait described at registerFolders applies: the walk adds the top folder
 // first, so a folder that is busy while its watch starts — a game running as
-// OpenSave launches — has events queued long before a big tree is done, and
+// SaveVault launches — has events queued long before a big tree is done, and
 // an Add made while nobody takes them never returns. Watch hung there, and the
 // daemon starts its watches one after another, so everything after that game
 // hung with it.

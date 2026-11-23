@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Deleting a cloud snapshot is what retention pruning and the cloud screen's
@@ -96,7 +96,7 @@ func TestDeleteSendsEachProvidersRequest(t *testing.T) {
 		var body map[string]string
 		_ = json.Unmarshal([]byte(seen.Body), &body)
 		if seen.Method != http.MethodPost || seen.Path != "/2/files/delete_v2" || seen.Auth != "Bearer at-dropbox" ||
-			body["path"] != "/OpenSave/"+name {
+			body["path"] != "/SaveVault/"+name {
 			t.Errorf("request = %+v", *seen)
 		}
 	})

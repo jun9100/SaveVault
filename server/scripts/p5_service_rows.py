@@ -87,7 +87,7 @@ def record(row, passed, **details):
 
 def upload(svc, kind, game, snap, content):
     name = f"{game}__main__{snap}.zip"
-    return name, svc.req("PUT", f"/v1/opensave/files/{kind}/{name}", content)[0]
+    return name, svc.req("PUT", f"/v1/savevault/files/{kind}/{name}", content)[0]
 
 
 def candidate(snap, archive, parent, content):
@@ -99,13 +99,13 @@ def candidate(snap, archive, parent, content):
 
 
 def publish(svc, kind, game, snap, archive, parent, content, if_match):
-    return svc.req("PUT", f"/v1/opensave/scopes/{kind}/{game}/snapshots/{snap}",
+    return svc.req("PUT", f"/v1/savevault/scopes/{kind}/{game}/snapshots/{snap}",
                    candidate(snap, archive, parent, content),
                    {"If-Match": f'"{if_match}"', "Content-Type": "application/json"})[0]
 
 
 def scope(svc, kind, game):
-    status, raw = svc.req("GET", f"/v1/opensave/scopes/{kind}/{game}")
+    status, raw = svc.req("GET", f"/v1/savevault/scopes/{kind}/{game}")
     body = jbody(raw)
     head = (body.get("head") or {}) if isinstance(body, dict) else {}
     conflicts = body.get("conflicts") or [] if isinstance(body, dict) else []
@@ -146,7 +146,7 @@ nameB, _ = upload(svc, "pc", "regression-pc", "snap-b", B)
 pubB = publish(svc, "pc", "regression-pc", "snap-b", nameB, "snap-a", B, "snap-a")
 nameC, _ = upload(svc, "pc", "regression-pc", "snap-c", C)
 staleC = publish(svc, "pc", "regression-pc", "snap-c", nameC, "snap-a", C, "snap-a")
-conflictC = svc.req("PUT", "/v1/opensave/scopes/pc/regression-pc/conflicts/snap-c",
+conflictC = svc.req("PUT", "/v1/savevault/scopes/pc/regression-pc/conflicts/snap-c",
                     candidate("snap-c", nameC, "snap-a", C), {"Content-Type": "application/json"})[0]
 prune = svc.req("POST", "/admin/api/maintenance/prune", b"", auth="admin")[0]
 _, _, head, conflicts = scope(svc, "pc", "regression-pc")
@@ -199,7 +199,7 @@ record("GS-05", head5 == "snap-b" and "snap-c" in conflicts5 and overview5 == 20
 # GS-06: corrupt one SaveVault archive in another copy; verify must name it; metrics are visible.
 copy6 = os.path.join(WORK, "data-corrupt")
 shutil.copytree(data, copy6)
-target = os.path.join(copy6, "opensave-native", "pc", "regression-pc__main__snap-a.zip")
+target = os.path.join(copy6, "savevault-native", "pc", "regression-pc__main__snap-a.zip")
 with open(target, "wb") as f:
     f.write(b"tampered")
 svc6 = Service(copy6).start()
@@ -211,6 +211,6 @@ problems = report.get("problems", []) if isinstance(report, dict) else []
 named = [p for p in problems if p.get("archive") == "regression-pc__main__snap-a.zip" and p.get("problem") == "corrupt"]
 record("GS-06", verify[0] == 200 and len(problems) == 1 and len(named) == 1 and metrics_status == 200,
        verify=verify[0], problems=problems, objects=report.get("objects") if isinstance(report, dict) else None,
-       metrics=[l for l in metrics.decode().splitlines() if l.startswith(("game_save_opensave", "game_save_disk"))])
+       metrics=[l for l in metrics.decode().splitlines() if l.startswith(("game_save_savevault", "game_save_disk"))])
 
 json.dump({"rows": evidence}, sys.stdout, ensure_ascii=False, indent=1)

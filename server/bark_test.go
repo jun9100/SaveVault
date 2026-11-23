@@ -60,7 +60,7 @@ func TestBarkConflictNotification(t *testing.T) {
 	}
 }
 
-func TestBarkOpenSaveConflictUsesTypedScopeName(t *testing.T) {
+func TestBarkSaveVaultConflictUsesTypedScopeName(t *testing.T) {
 	requests := make(chan *url.URL, 1)
 	barkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clone := *r.URL
@@ -80,18 +80,18 @@ func TestBarkOpenSaveConflictUsesTypedScopeName(t *testing.T) {
 	s.mu.Lock()
 	s.dashboard.Devices["desktop-1"] = deviceInfo{Name: "Test Desktop"}
 	s.mu.Unlock()
-	s.recordOpenSaveScopeEvent(eventConflict, "switch", "odyssey", openSaveScopeSnapshot{
-		openSaveScopeCandidate: openSaveScopeCandidate{ID: "snapshot-2", Archive: "odyssey__main__snapshot-2.zip"},
+	s.recordSaveVaultScopeEvent(eventConflict, "switch", "odyssey", saveVaultScopeSnapshot{
+		saveVaultScopeCandidate: saveVaultScopeCandidate{ID: "snapshot-2", Archive: "odyssey__main__snapshot-2.zip"},
 		Device:                 "desktop-1",
 	})
 
 	select {
 	case request := <-requests:
-		if request.Path != "/device-key/Game Save conflict/OpenSave switch - odyssey from Test Desktop conflicts with the current cloud head. A conflict copy was retained for review." {
+		if request.Path != "/device-key/Game Save conflict/SaveVault switch - odyssey from Test Desktop conflicts with the current cloud head. A conflict copy was retained for review." {
 			t.Fatalf("Bark path = %q", request.Path)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for OpenSave conflict notification")
+		t.Fatal("timed out waiting for SaveVault conflict notification")
 	}
 }
 
@@ -170,7 +170,7 @@ func TestBarkRetriesAfterAFailedNotification(t *testing.T) {
 	}
 }
 
-func TestBarkFailureDoesNotBlockOpenSaveScopeUpload(t *testing.T) {
+func TestBarkFailureDoesNotBlockSaveVaultScopeUpload(t *testing.T) {
 	requests := make(chan struct{}, 1)
 	barkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- struct{}{}
@@ -190,18 +190,18 @@ func TestBarkFailureDoesNotBlockOpenSaveScopeUpload(t *testing.T) {
 
 	archive := []byte("odyssey-progress-1791")
 	archiveName := "odyssey__main__snapshot-1.zip"
-	if status := putOpenSaveScopeArchive(t, httpServer.URL, "switch", archiveName, archive); status != http.StatusCreated {
+	if status := putSaveVaultScopeArchive(t, httpServer.URL, "switch", archiveName, archive); status != http.StatusCreated {
 		t.Fatalf("archive upload status = %d, want 201", status)
 	}
-	candidate := openSaveScopeCandidateFor("snapshot-1", archiveName, "", archive, time.Now().UTC())
-	response, body := putOpenSaveScopeCandidate(t, httpServer.URL,
-		"/v1/opensave/scopes/switch/odyssey/snapshots/"+candidate.ID, "", candidate)
+	candidate := saveVaultScopeCandidateFor("snapshot-1", archiveName, "", archive, time.Now().UTC())
+	response, body := putSaveVaultScopeCandidate(t, httpServer.URL,
+		"/v1/savevault/scopes/switch/odyssey/snapshots/"+candidate.ID, "", candidate)
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("scope upload status = %d: %s", response.StatusCode, body)
 	}
 
-	headRequest := openSaveScopeRequest(t, http.MethodGet,
-		httpServer.URL+"/v1/opensave/scopes/switch/odyssey/head", nil)
+	headRequest := saveVaultScopeRequest(t, http.MethodGet,
+		httpServer.URL+"/v1/savevault/scopes/switch/odyssey/head", nil)
 	headResponse, err := http.DefaultClient.Do(headRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestBarkFailureDoesNotBlockOpenSaveScopeUpload(t *testing.T) {
 		t.Fatalf("head status = %d, want 200", headResponse.StatusCode)
 	}
 
-	var head openSaveScopeSnapshot
+	var head saveVaultScopeSnapshot
 	if err := json.NewDecoder(headResponse.Body).Decode(&head); err != nil {
 		t.Fatal(err)
 	}

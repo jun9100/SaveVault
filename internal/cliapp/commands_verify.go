@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
 // cmdVerify reads every snapshot back — of one game, or of all of them — and
@@ -63,8 +63,8 @@ func cmdVerify(d *daemon.Daemon, args []string) int {
 	for _, s := range report.Damaged {
 		fmt.Printf("  %s %s  %s\n      %s\n", symBullet(), bold(s.GameName), faint(s.SnapshotID), dangerText(s.Problem))
 	}
-	hint("opensave verify --repair          (put back from the cloud those that have a copy there)",
-		"opensave verify --remove-damaged  (remove from the history those that cannot be restored)")
+	hint("savevault verify --repair          (put back from the cloud those that have a copy there)",
+		"savevault verify --remove-damaged  (remove from the history those that cannot be restored)")
 	return 1
 }
 
@@ -91,7 +91,7 @@ func cmdVerifyRepair(d *daemon.Daemon, asJSON bool) int {
 		for _, r := range report.Remaining {
 			fmt.Printf("  %s %s  %s\n", symBullet(), bold(r.GameName), faint(r.SnapshotID))
 		}
-		hint("opensave verify --remove-damaged  (remove them from the history)")
+		hint("savevault verify --remove-damaged  (remove them from the history)")
 		return 1
 	}
 	return 0

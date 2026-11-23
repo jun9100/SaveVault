@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // GameSaveProvider is the persisted identifier used by the first native
@@ -113,7 +113,7 @@ type Service struct {
 	HTTP      *http.Client
 
 	driveFolderMu sync.Mutex
-	driveFolderID string // cached id of the auto-managed "OpenSave" Drive folder
+	driveFolderID string // cached id of the auto-managed "SaveVault" Drive folder
 
 	// gameSaveAuthMu serialises reading and replacing the persisted game-save
 	// block so concurrent 401s log once rather than once each.
@@ -304,7 +304,7 @@ func writeFileWhole(path string, fill func(io.Writer) error) (err error) {
 	}
 	var tmp *os.File
 	for i := 0; ; i++ {
-		name := filepath.Join(dir, fmt.Sprintf(".opensave-%08x%s", rand.Uint32(), partialSuffix))
+		name := filepath.Join(dir, fmt.Sprintf(".savevault-%08x%s", rand.Uint32(), partialSuffix))
 		tmp, err = os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
 		if err == nil {
 			break

@@ -8,13 +8,13 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/opensave/opensave/internal/config"
-	"github.com/opensave/opensave/internal/selfupdate"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/config"
+	"github.com/jun9100/savevault/internal/selfupdate"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
-// The CLI updates itself. Someone running OpenSave headless — a server, a
+// The CLI updates itself. Someone running SaveVault headless — a server, a
 // Deck in Game Mode — has no desktop app to click an update banner in, and
 // telling them to re-run an install script to pick up a bug fix is a good way
 // to have them not pick it up.
@@ -47,7 +47,7 @@ func cmdUpdate(args []string) int {
 		default:
 			// Anything unrecognised is refused rather than ignored. Running
 			// bare installs, so a silently dropped argument resolves the
-			// wrong way: `opensave update check` — the spelling without
+			// wrong way: `savevault update check` — the spelling without
 			// dashes — dropped "check" and installed, which is the opposite
 			// of what was asked for.
 			fmt.Fprintf(os.Stderr, "error: unknown argument %q\n\n", a)
@@ -101,7 +101,7 @@ func cmdUpdate(args []string) int {
 	fmt.Println()
 
 	if checkOnly {
-		hint("opensave update      install it")
+		hint("savevault update      install it")
 		fmt.Println()
 		return 0
 	}
@@ -154,7 +154,7 @@ func cmdUpdate(args []string) int {
 
 	success("Updated %s → %s", version.Version, bold(latest))
 	note("Already-running daemons keep the old build until restarted.")
-	hint("opensave daemon stop && opensave daemon start")
+	hint("savevault daemon stop && savevault daemon start")
 	fmt.Println()
 	return 0
 }
@@ -165,7 +165,7 @@ func downloadCLIAsset(url, name, dest string) error {
 	progress := progressBar()
 
 	if strings.HasSuffix(strings.ToLower(name), ".tar.gz") || strings.HasSuffix(strings.ToLower(name), ".tgz") {
-		archive, err := os.CreateTemp("", "opensave-update-*.tar.gz")
+		archive, err := os.CreateTemp("", "savevault-update-*.tar.gz")
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ func downloadCLIAsset(url, name, dest string) error {
 		if err := selfupdate.VerifyDownload(url, archivePath); err != nil {
 			return err
 		}
-		if err := selfupdate.ExtractFromTarGz(archivePath, "opensave-cli", dest); err != nil {
+		if err := selfupdate.ExtractFromTarGz(archivePath, "savevault", dest); err != nil {
 			return fmt.Errorf("unpack failed: %w", err)
 		}
 		return nil
@@ -216,15 +216,15 @@ func progressBar() func(done, total int64) {
 }
 
 // pickCLIAsset selects the release asset carrying the CLI for this platform.
-// Windows publishes opensave-cli.exe on its own; Linux ships it inside the
+// Windows publishes savevault.exe on its own; Linux ships it inside the
 // per-architecture tarball alongside the app and relay.
 func pickCLIAsset(rel *releaseInfo) (url, name string) {
-	wantTarball := "opensave-linux-" + runtime.GOARCH + ".tar.gz"
+	wantTarball := "savevault-linux-" + runtime.GOARCH + ".tar.gz"
 	for _, a := range rel.Assets {
 		lower := strings.ToLower(a.Name)
 		switch runtime.GOOS {
 		case "windows":
-			if lower == "opensave-cli.exe" {
+			if lower == "savevault.exe" {
 				return a.URL, a.Name
 			}
 		case "linux":
@@ -241,10 +241,10 @@ func pickCLIAsset(rel *releaseInfo) (url, name string) {
 // A build that is itself a pre-release follows the beta channel without being
 // told to: GitHub's "latest release" skips pre-releases, so a beta would
 // otherwise report itself up to date until the final release overtook it,
-// leaving `opensave update` with nothing to offer for as long as the series
+// leaving `savevault update` with nothing to offer for as long as the series
 // ran.
 func latestRelease() (*releaseInfo, error) {
-	rel, err := selfupdate.LatestRelease(updateRepo, "OpenSave/"+version.Version,
+	rel, err := selfupdate.LatestRelease(updateRepo, "SaveVault/"+version.Version,
 		selfupdate.WantsPreReleases(updateChannel(), version.Version))
 	if err != nil {
 		return nil, err
@@ -292,13 +292,13 @@ func updateChannel() string {
 	return settings.UpdateChannel
 }
 
-const updateUsage = `usage: opensave update [--check]
+const updateUsage = `usage: savevault update [--check]
 
   --check   Report whether a newer version exists, without installing it
 
 Updates this CLI binary in place from the latest GitHub release.
 
 Which releases are offered follows the update channel in settings — see
-"opensave config set update-channel". A build that is itself a pre-release
+"savevault config set update-channel". A build that is itself a pre-release
 follows the beta channel whatever that is set to, so testing a beta is never
 a one-way door.`

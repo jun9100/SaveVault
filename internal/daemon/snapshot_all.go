@@ -13,7 +13,7 @@ type SnapshotAllResult struct {
 }
 
 // SnapshotAll takes a snapshot of every tracked game — the tray's "Snapshot
-// every game now", and `opensave snapshot --all`: the moment before a
+// every game now", and `savevault snapshot --all`: the moment before a
 // reinstall, a drive swap or an experiment, when the question is "is
 // everything safe right now" and not "which game do I mean".
 //

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/opensave/opensave/internal/presets"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/presets"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // A machine the scanner sees and nothing else: a Linux home whose games are

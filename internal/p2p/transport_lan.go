@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // lanTransport speaks the /api/p2p/* HTTP protocol directly to a peer.

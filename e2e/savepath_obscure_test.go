@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Obscure shapes a save folder can take once the folder is user-editable.

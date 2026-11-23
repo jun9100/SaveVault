@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // googleDrive keeps snapshots in a folder of the signed-in account's Drive:
-// one named "OpenSave" that it creates, or a folder the person chose.
+// one named "SaveVault" that it creates, or a folder the person chose.
 type googleDrive struct {
 	s   *Service
 	cfg store.CloudConfig
@@ -216,7 +216,7 @@ func (p googleDrive) remove(f CloudFile) error {
 }
 
 // driveFolder returns the Drive folder snapshots live in: the user's
-// configured folder ID if set, otherwise a folder named "OpenSave" in the
+// configured folder ID if set, otherwise a folder named "SaveVault" in the
 // Drive root — found or created on first use and cached for the process
 // lifetime. Keeps snapshots out of the user's Drive root.
 func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, error) {
@@ -229,7 +229,7 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 		return s.driveFolderID, nil
 	}
 
-	query := "name = 'OpenSave' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
+	query := "name = 'SaveVault' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
 	listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
 	req, _ := http.NewRequest(http.MethodGet, listURL, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -247,7 +247,7 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 	}
 
 	meta, _ := json.Marshal(map[string]any{
-		"name":     "OpenSave",
+		"name":     "SaveVault",
 		"mimeType": "application/vnd.google-apps.folder",
 	})
 	creq, _ := http.NewRequest(http.MethodPost, s.Endpoints.GoogleAPI+"/drive/v3/files?fields=id", bytes.NewReader(meta))
@@ -259,7 +259,7 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 	if err := s.doJSON(creq, &created); err != nil {
 		return "", googleDriveErr(err)
 	}
-	s.Log("info", `cloud: created "OpenSave" folder in Google Drive`)
+	s.Log("info", `cloud: created "SaveVault" folder in Google Drive`)
 	s.driveFolderID = created.ID
 	return created.ID, nil
 }
@@ -270,7 +270,7 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 func googleDriveErr(err error) error {
 	msg := strings.ToLower(err.Error())
 	if strings.Contains(msg, "insufficient") && (strings.Contains(msg, "403") || strings.Contains(msg, "permission")) {
-		return fmt.Errorf("Google Drive access was not granted for this account — open Cloud Backup, Disconnect, then sign in again and TICK THE CHECKBOX that allows OpenSave to access its own Drive files")
+		return fmt.Errorf("Google Drive access was not granted for this account — open Cloud Backup, Disconnect, then sign in again and TICK THE CHECKBOX that allows SaveVault to access its own Drive files")
 	}
 	return fmt.Errorf("Google Drive: %w", err)
 }

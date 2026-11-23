@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // The periodic watch reconcile.
 //
-// A watch is the only thing standing between a save being written and OpenSave
+// A watch is the only thing standing between a save being written and SaveVault
 // noticing. When one fails to start — the folder did not exist yet because the
 // game had not been run, the OS refused a handle, the drive was not mounted —
 // the failure is a single warning in the log and then silence. Everything
@@ -91,7 +91,7 @@ func TestResyncWatchers_RevivesAWatchAndItWorksAfterwards(t *testing.T) {
 }
 
 // Turning auto-sync off has to stop the watch. Otherwise a game the user has
-// explicitly told OpenSave to leave alone keeps producing snapshots.
+// explicitly told SaveVault to leave alone keeps producing snapshots.
 func TestResyncWatchers_StopsWatchingWhenAutoSyncIsOff(t *testing.T) {
 	d := testutil.NewTestDaemon(t, "ReconcileOff")
 	d.WriteSave("slot1.sav", "start")

@@ -16,7 +16,7 @@ import (
 // usable; construct with NewScanner.
 type Scanner struct {
 	// CacheFile is where resolved Steam AppID names persist across runs
-	// (~/.opensave/steam-app-cache.json).
+	// (~/.savevault/steam-app-cache.json).
 	CacheFile string
 	// ResolveAppName resolves a Steam AppID to a display name (network
 	// call in production, injectable for tests). Empty string = not found.

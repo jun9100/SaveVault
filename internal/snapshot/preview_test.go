@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // changeList flattens a preview to "kind location/path" lines, sorted, for

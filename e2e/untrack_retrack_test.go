@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Untracking a game must not leave its sync history behind to act on later.

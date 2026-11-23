@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/opensave/opensave/internal/e2ee"
+	"github.com/jun9100/savevault/internal/e2ee"
 )
 
 // A device coming back online syncs everything once, not once per request.

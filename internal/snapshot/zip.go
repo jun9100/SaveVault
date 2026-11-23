@@ -13,10 +13,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
 
-	"github.com/opensave/opensave/internal/fsx"
+	"github.com/jun9100/savevault/internal/fsx"
 )
 
 // ZipPath archives sourcePath into a ZIP at outPath. A directory is

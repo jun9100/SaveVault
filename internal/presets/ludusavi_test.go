@@ -281,7 +281,7 @@ func TestGenerateEmbeddedIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yamlPath := filepath.Join(home, ".opensave", "ludusavi-manifest.yaml")
+	yamlPath := filepath.Join(home, ".savevault", "ludusavi-manifest.yaml")
 	games := buildManifestIndex(yamlPath)
 	if len(games) < 10000 {
 		t.Fatalf("suspiciously small index (%d games) — refusing to embed", len(games))

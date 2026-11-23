@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // Three devices in one room. Nothing in this suite has ever used more than

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 const nativeGameSaveTestToken = "native-game-save-test-token"
@@ -86,17 +86,17 @@ func (s *nativeGameSaveTestServer) serveHTTP(w http.ResponseWriter, r *http.Requ
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.Path)
 	s.mu.Unlock()
-	if r.Method != http.MethodGet && strings.TrimSpace(r.Header.Get("X-OpenSave-Device-ID")) == "" {
+	if r.Method != http.MethodGet && strings.TrimSpace(r.Header.Get("X-SaveVault-Device-ID")) == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "opensave" && parts[2] == "files" {
+	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "savevault" && parts[2] == "files" {
 		s.handleFiles(w, r, parts)
 		return
 	}
-	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "opensave" && parts[2] == "scopes" {
+	if len(parts) >= 3 && parts[0] == "v1" && parts[1] == "savevault" && parts[2] == "scopes" {
 		if !s.scopeRoutesEnabled {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -218,9 +218,9 @@ func (s *nativeGameSaveTestServer) handleScopes(w http.ResponseWriter, r *http.R
 		}
 		stored := cloud.GameSaveScopeSnapshot{
 			GameSaveScopeCandidate: candidate,
-			Device:                 r.Header.Get("X-OpenSave-Device-ID"),
-			DeviceName:             r.Header.Get("X-OpenSave-Device-Name"),
-			Platform:               r.Header.Get("X-OpenSave-Platform"),
+			Device:                 r.Header.Get("X-SaveVault-Device-ID"),
+			DeviceName:             r.Header.Get("X-SaveVault-Device-Name"),
+			Platform:               r.Header.Get("X-SaveVault-Platform"),
 			ReceivedAt:             time.Now().UTC(),
 		}
 		state.snapshots[candidate.ID] = stored
@@ -240,9 +240,9 @@ func (s *nativeGameSaveTestServer) handleScopes(w http.ResponseWriter, r *http.R
 	}
 	stored := cloud.GameSaveScopeSnapshot{
 		GameSaveScopeCandidate: candidate,
-		Device:                 r.Header.Get("X-OpenSave-Device-ID"),
-		DeviceName:             r.Header.Get("X-OpenSave-Device-Name"),
-		Platform:               r.Header.Get("X-OpenSave-Platform"),
+		Device:                 r.Header.Get("X-SaveVault-Device-ID"),
+		DeviceName:             r.Header.Get("X-SaveVault-Device-Name"),
+		Platform:               r.Header.Get("X-SaveVault-Platform"),
 		ReceivedAt:             time.Now().UTC(),
 		Conflict:               true,
 		ConflictOf:             state.head,

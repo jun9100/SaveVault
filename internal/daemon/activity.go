@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // What has happened to the saves, for the activity page: one timeline of

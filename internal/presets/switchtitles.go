@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // Naming a Switch game from its title id.

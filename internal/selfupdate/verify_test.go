@@ -56,11 +56,11 @@ func sumsServer(t *testing.T, body string, status int) *httptest.Server {
 }
 
 func TestSumsURLFor(t *testing.T) {
-	sums, name, err := SumsURLFor("https://github.com/o/r/releases/download/v2.4.0/OpenSave.exe")
+	sums, name, err := SumsURLFor("https://github.com/o/r/releases/download/v2.4.0/SaveVault.exe")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "OpenSave.exe" {
+	if name != "SaveVault.exe" {
 		t.Errorf("asset name = %q", name)
 	}
 	if sums != "https://github.com/o/r/releases/download/v2.4.0/SHA256SUMS" {
@@ -97,10 +97,10 @@ func TestExpectedSum_ReadsBothCoreutilsForms(t *testing.T) {
 
 func TestVerifyDownload_AcceptsAMatchingFile(t *testing.T) {
 	content := "the real release binary"
-	file := writeTemp(t, "OpenSave.exe", content)
-	srv := sumsServer(t, sumOf(content)+"  OpenSave.exe\n", http.StatusOK)
+	file := writeTemp(t, "SaveVault.exe", content)
+	srv := sumsServer(t, sumOf(content)+"  SaveVault.exe\n", http.StatusOK)
 
-	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/OpenSave.exe", file); err != nil {
+	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/SaveVault.exe", file); err != nil {
 		t.Fatalf("a matching download was rejected: %v", err)
 	}
 }
@@ -108,10 +108,10 @@ func TestVerifyDownload_AcceptsAMatchingFile(t *testing.T) {
 // The case the whole thing exists for: a file that is not what was published.
 func TestVerifyDownload_RejectsATamperedFile(t *testing.T) {
 	published := "the real release binary"
-	file := writeTemp(t, "OpenSave.exe", "MZ...definitely not that")
-	srv := sumsServer(t, sumOf(published)+"  OpenSave.exe\n", http.StatusOK)
+	file := writeTemp(t, "SaveVault.exe", "MZ...definitely not that")
+	srv := sumsServer(t, sumOf(published)+"  SaveVault.exe\n", http.StatusOK)
 
-	err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/OpenSave.exe", file)
+	err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/SaveVault.exe", file)
 	if err == nil {
 		t.Fatal("a tampered download was accepted")
 	}
@@ -122,20 +122,20 @@ func TestVerifyDownload_RejectsATamperedFile(t *testing.T) {
 
 // Fail closed: no checksums file must not mean "install it anyway".
 func TestVerifyDownload_RefusesWhenNoChecksumsArePublished(t *testing.T) {
-	file := writeTemp(t, "OpenSave.exe", "anything")
+	file := writeTemp(t, "SaveVault.exe", "anything")
 	srv := sumsServer(t, "not found", http.StatusNotFound)
 
-	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/OpenSave.exe", file); err == nil {
+	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/SaveVault.exe", file); err == nil {
 		t.Fatal("a release with no SHA256SUMS was accepted")
 	}
 }
 
 // Nor must an asset simply being absent from the list.
 func TestVerifyDownload_RefusesWhenTheAssetIsNotListed(t *testing.T) {
-	file := writeTemp(t, "OpenSave.exe", "anything")
+	file := writeTemp(t, "SaveVault.exe", "anything")
 	srv := sumsServer(t, sumOf("x")+"  SomethingElse.exe\n", http.StatusOK)
 
-	err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/OpenSave.exe", file)
+	err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/SaveVault.exe", file)
 	if err == nil {
 		t.Fatal("an asset missing from SHA256SUMS was accepted")
 	}
@@ -147,10 +147,10 @@ func TestVerifyDownload_RefusesWhenTheAssetIsNotListed(t *testing.T) {
 // Case differences in the published hash must not read as a mismatch.
 func TestVerifyDownload_IsCaseInsensitiveOnTheHash(t *testing.T) {
 	content := "release"
-	file := writeTemp(t, "OpenSave.exe", content)
-	srv := sumsServer(t, strings.ToUpper(sumOf(content))+"  OpenSave.exe\n", http.StatusOK)
+	file := writeTemp(t, "SaveVault.exe", content)
+	srv := sumsServer(t, strings.ToUpper(sumOf(content))+"  SaveVault.exe\n", http.StatusOK)
 
-	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/OpenSave.exe", file); err != nil {
+	if err := VerifyDownload(srv.URL+"/releases/download/v2.4.0/SaveVault.exe", file); err != nil {
 		t.Fatalf("an uppercase hash was treated as a mismatch: %v", err)
 	}
 }

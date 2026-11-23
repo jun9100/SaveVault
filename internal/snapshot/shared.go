@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/fsx"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/fsx"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Snapshots that share what they have in common.
@@ -54,7 +54,7 @@ import (
 // hash it is named for.
 //
 // One process at a time works on a store: the app and a command-line run of
-// `opensave` share the folder, and a lock file in the store (lockStore) keeps
+// `savevault` share the folder, and a lock file in the store (lockStore) keeps
 // one from clearing out a shared file the other has just started to use.
 // Within a process, sharedMu does the same without touching the disk.
 //
@@ -160,7 +160,7 @@ func OpenArchive(zipPath string) (path string, done func(), err error) {
 	if _, statErr := os.Stat(manifestPath(zipPath)); statErr != nil {
 		return "", func() {}, fmt.Errorf("snapshot archive %s: %w", zipPath, fs.ErrNotExist)
 	}
-	tmp, err := os.CreateTemp("", "opensave-snapshot-*.zip")
+	tmp, err := os.CreateTemp("", "savevault-snapshot-*.zip")
 	if err != nil {
 		return "", func() {}, err
 	}
@@ -231,7 +231,7 @@ func readManifest(path string) (sharedManifest, error) {
 		return sharedManifest{}, fmt.Errorf("%w: its list of files cannot be read: %v", ErrDamaged, err)
 	}
 	if man.Version != manifestVersion {
-		return sharedManifest{}, fmt.Errorf("its list of files is version %d, which this version of OpenSave cannot read", man.Version)
+		return sharedManifest{}, fmt.Errorf("its list of files is version %d, which this version of SaveVault cannot read", man.Version)
 	}
 	for _, e := range man.Entries {
 		if e.Blob != "" && !validSum(e.Blob) {
@@ -598,7 +598,7 @@ func (m *Manager) compact(snap store.Snapshot) (saved int64, err error) {
 // sizes, checksums and times — and every file in it read to its end, which
 // checks each against its checksum.
 func sameArchive(zipPath string, orig *zip.ReadCloser) error {
-	tmp, err := os.CreateTemp("", "opensave-check-*.zip")
+	tmp, err := os.CreateTemp("", "savevault-check-*.zip")
 	if err != nil {
 		return err
 	}

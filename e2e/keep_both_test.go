@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // "Keep both" is the recommended answer to a conflict, and answering it on

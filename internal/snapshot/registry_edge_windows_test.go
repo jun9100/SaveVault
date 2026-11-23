@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // trackRegistryGame sets a game up the way the daemon does.

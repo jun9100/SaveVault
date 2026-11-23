@@ -7,7 +7,7 @@
 # desktop app links against the host's WebKitGTK, which is why the runtime
 # dependencies below matter — a package that installs but won't launch is
 # worse than no package.
-name: opensave
+name: savevault
 arch: ${ARCH}
 platform: linux
 version: ${VERSION}
@@ -22,43 +22,43 @@ description: |
   no quota. Devices talk directly over the LAN, or through a relay when they
   are on different networks. Includes a headless daemon and CLI for servers
   and Steam Decks.
-vendor: OpenSave
-homepage: https://github.com/Liquid-co/OpenSave
+vendor: SaveVault
+homepage: https://github.com/jun9100/SaveVault
 license: MIT
 
 contents:
-  - src: dist/opensave
-    dst: /usr/bin/opensave
-  - src: dist/opensave-cli
-    dst: /usr/bin/opensave-cli
-  - src: dist/opensave-relay
-    dst: /usr/bin/opensave-relay
+  - src: dist/savevault
+    dst: /usr/bin/savevault
+  - src: dist/savevault-cli
+    dst: /usr/bin/savevault-cli
+  - src: dist/savevault-relay
+    dst: /usr/bin/savevault-relay
 
-  - src: cmd/opensave-app/build/linux/opensave.desktop
-    dst: /usr/share/applications/opensave.desktop
-  - src: cmd/opensave-app/build/appicon.png
-    dst: /usr/share/icons/hicolor/512x512/apps/opensave.png
+  - src: cmd/savevault-app/build/linux/savevault.desktop
+    dst: /usr/share/applications/savevault.desktop
+  - src: cmd/savevault-app/build/appicon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/savevault.png
 
-  - src: packaging/man/opensave.1
-    dst: /usr/share/man/man1/opensave.1
+  - src: packaging/man/savevault.1
+    dst: /usr/share/man/man1/savevault.1
     file_info:
       mode: 0644
 
   # Shell completions, installed where each shell already looks.
-  - src: dist/completions/opensave.bash
-    dst: /usr/share/bash-completion/completions/opensave
-  - src: dist/completions/_opensave
-    dst: /usr/share/zsh/site-functions/_opensave
-  - src: dist/completions/opensave.fish
-    dst: /usr/share/fish/vendor_completions.d/opensave.fish
+  - src: dist/completions/savevault.bash
+    dst: /usr/share/bash-completion/completions/savevault
+  - src: dist/completions/_savevault
+    dst: /usr/share/zsh/site-functions/_savevault
+  - src: dist/completions/savevault.fish
+    dst: /usr/share/fish/vendor_completions.d/savevault.fish
 
   # A system-wide template for the user service. Users still enable it per
-  # account with `systemctl --user enable --now opensave-daemon`, since the
+  # account with `systemctl --user enable --now savevault-daemon`, since the
   # daemon runs as the logged-in user and reads their save files.
-  # This is the NATIVE variant (ExecStart=/usr/bin/opensave-cli); the Flatpak
+  # This is the NATIVE variant (ExecStart=/usr/bin/savevault-cli); the Flatpak
   # ships the `flatpak run` one, which would fail here.
-  - src: packaging/systemd/opensave-daemon-native.service
-    dst: /usr/lib/systemd/user/opensave-daemon.service
+  - src: packaging/systemd/savevault-daemon-native.service
+    dst: /usr/lib/systemd/user/savevault-daemon.service
     file_info:
       mode: 0644
 

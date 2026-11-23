@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // RecordActivity keeps an event in the history the activity page reads

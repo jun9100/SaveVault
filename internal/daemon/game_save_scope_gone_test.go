@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func setNativeScopeGone(t *testing.T, service *nativeGameSaveTestServer, kind, gameID string, gone cloud.GameSaveScopeGoneError) {

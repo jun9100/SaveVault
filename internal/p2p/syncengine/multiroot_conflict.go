@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // Divergence in an extra save location.

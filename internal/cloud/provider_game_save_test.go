@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 func TestNormalizeGameSaveURL(t *testing.T) {
@@ -25,9 +25,9 @@ func TestNormalizeGameSaveURL(t *testing.T) {
 	}{
 		{"https://nas.example:8788", "https://nas.example:8788", false},
 		{"https://nas.example:8788/", "https://nas.example:8788", false},
-		{"http://nas.example/opensave/", "http://nas.example", false},
-		{"https://nas.example/v1/opensave/", "https://nas.example", false},
-		{"https://nas.example/game-save/v1/opensave", "https://nas.example/game-save", false},
+		{"http://nas.example/savevault/", "http://nas.example", false},
+		{"https://nas.example/v1/savevault/", "https://nas.example", false},
+		{"https://nas.example/game-save/v1/savevault", "https://nas.example/game-save", false},
 		{"https://nas.example/eden", "https://nas.example/eden", false},
 		{"", "", false},
 		{"nas.example", "", true},
@@ -60,7 +60,7 @@ func TestGameSaveProviderUsesNativeTypedAPI(t *testing.T) {
 		mu.Lock()
 		requests = append(requests, requestInfo{method: r.Method, headers: r.Header.Clone()})
 		mu.Unlock()
-		if r.URL.Path == "/v1/opensave/files" && r.Method == http.MethodGet {
+		if r.URL.Path == "/v1/savevault/files" && r.Method == http.MethodGet {
 			mu.Lock()
 			defer mu.Unlock()
 			items := make([]map[string]any, 0, len(files))
@@ -71,8 +71,8 @@ func TestGameSaveProviderUsesNativeTypedAPI(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"files": items})
 			return
 		}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/opensave/files/"), "/")
-		if len(parts) != 2 || r.URL.Path == "/v1/opensave/files/" {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/savevault/files/"), "/")
+		if len(parts) != 2 || r.URL.Path == "/v1/savevault/files/" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -189,7 +189,7 @@ func TestGameSaveProviderUsesNativeTypedAPI(t *testing.T) {
 		t.Fatal("native requests did not reach the test server")
 	}
 	for _, request := range requests {
-		for _, family := range []string{"X-OpenSave", "X-Eden"} {
+		for _, family := range []string{"X-SaveVault", "X-Eden"} {
 			if request.method == http.MethodGet {
 				if got := request.headers.Get(family + "-Device-ID"); got != "" {
 					t.Fatalf("read %s device ID = %q, want empty", family, got)
@@ -202,7 +202,7 @@ func TestGameSaveProviderUsesNativeTypedAPI(t *testing.T) {
 			if got := request.headers.Get(family + "-Device-Name"); got != settings.DeviceName {
 				t.Fatalf("%s device name = %q, want %q", family, got, settings.DeviceName)
 			}
-			if got, want := request.headers.Get(family+"-Platform"), "opensave-"+runtime.GOOS; got != want {
+			if got, want := request.headers.Get(family+"-Platform"), "savevault-"+runtime.GOOS; got != want {
 				t.Fatalf("%s platform = %q, want %q", family, got, want)
 			}
 			if got := request.headers.Get(family + "-Version"); got != version.Version {
@@ -236,13 +236,13 @@ func TestGameSaveScopeUsesCASContract(t *testing.T) {
 		}
 		requests = append(requests, requestInfo{method: r.Method, headers: r.Header.Clone()})
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/switch/hollow-knight":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/switch/hollow-knight":
 			_ = json.NewEncoder(w).Encode(GameSaveScope{
 				Type:   "switch",
 				GameID: "hollow-knight",
 				Head:   &GameSaveScopeSnapshot{GameSaveScopeCandidate: GameSaveScopeCandidate{ID: "snap_1--dev-deck"}},
 			})
-		case r.Method == http.MethodPut && r.URL.Path == "/v1/opensave/scopes/switch/hollow-knight/snapshots/snap_2--dev-desktop":
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/savevault/scopes/switch/hollow-knight/snapshots/snap_2--dev-desktop":
 			if got := r.Header.Get("If-Match"); got != `"snap_1--dev-deck"` {
 				w.WriteHeader(http.StatusPreconditionFailed)
 				_, _ = w.Write([]byte("unexpected If-Match: " + got))
@@ -259,7 +259,7 @@ func TestGameSaveScopeUsesCASContract(t *testing.T) {
 			}
 			w.Header().Set("ETag", `"snap_2--dev-desktop"`)
 			_ = json.NewEncoder(w).Encode(GameSaveScopeSnapshot{GameSaveScopeCandidate: candidate})
-		case r.Method == http.MethodPut && r.URL.Path == "/v1/opensave/scopes/switch/hollow-knight/conflicts/snap_3--dev-desktop":
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/savevault/scopes/switch/hollow-knight/conflicts/snap_3--dev-desktop":
 			if r.Header.Get("If-Match") != "" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -329,7 +329,7 @@ func TestGameSaveScopeUsesCASContract(t *testing.T) {
 		t.Fatalf("scope request count = %d, want 3", len(requests))
 	}
 	for _, request := range requests {
-		for _, family := range []string{"X-OpenSave", "X-Eden"} {
+		for _, family := range []string{"X-SaveVault", "X-Eden"} {
 			if request.method == http.MethodGet {
 				if got := request.headers.Get(family + "-Device-ID"); got != "" {
 					t.Fatalf("scope read %s device ID = %q, want empty", family, got)
@@ -363,7 +363,7 @@ func TestGameSaveScopeOnlyFallsBackForRouteLevelNotFound(t *testing.T) {
 	// this upload back to the timestamped legacy head protocol.
 	writeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/pc/hollow-knight":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/pc/hollow-knight":
 			_ = json.NewEncoder(w).Encode(GameSaveScope{Type: "pc", GameID: "hollow-knight"})
 		case r.Method == http.MethodPut:
 			w.WriteHeader(http.StatusNotFound)
@@ -404,7 +404,7 @@ func TestGameSaveArchiveNamesAreDeviceUnique(t *testing.T) {
 func TestGameSaveScopeIdentityIsReportedAndOlderServicesAreSkipped(t *testing.T) {
 	var got map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/v1/opensave/scopes/pc/half-life/identity" {
+		if r.Method != http.MethodPut || r.URL.Path != "/v1/savevault/scopes/pc/half-life/identity" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

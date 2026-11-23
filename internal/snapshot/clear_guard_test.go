@@ -29,10 +29,10 @@ import (
 // when the guard is absent.
 func TestClearSavePathRefusesAProfileRoot(t *testing.T) {
 	for _, p := range []string{
-		`C:\Users\opensave-guard-test-nobody`,
-		`C:\Users\opensave-guard-test-nobody\Documents`,
-		`/home/opensave-guard-test-nobody`,
-		`/Users/opensave-guard-test-nobody`,
+		`C:\Users\savevault-guard-test-nobody`,
+		`C:\Users\savevault-guard-test-nobody\Documents`,
+		`/home/savevault-guard-test-nobody`,
+		`/Users/savevault-guard-test-nobody`,
 	} {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("%q exists on this machine — pick a name that does not, or this test "+

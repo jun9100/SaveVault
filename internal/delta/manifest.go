@@ -18,15 +18,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/fsx"
-	"github.com/opensave/opensave/internal/logging"
+	"github.com/jun9100/savevault/internal/fsx"
+	"github.com/jun9100/savevault/internal/logging"
 )
 
 // TmpSuffix marks the temp files PatchFile writes before atomically
 // replacing the target. They are never part of the save itself: manifests
 // must exclude them, or an interrupted patch's leftover would sync to the
-// peer as a real file (and cascade into name.opensave.tmp.opensave.tmp).
-const TmpSuffix = ".opensave.tmp"
+// peer as a real file (and cascade into name.savevault.tmp.savevault.tmp).
+const TmpSuffix = ".savevault.tmp"
 
 // staleTmpAge is how old a leftover TmpSuffix file must be before the
 // manifest walk garbage-collects it. Generous enough that a patch actively

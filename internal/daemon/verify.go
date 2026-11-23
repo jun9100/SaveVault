@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Checking every snapshot can still be restored (see snapshot/verify.go):
 // in the background as often as Settings says — once a week unless changed —
-// and on request from Settings or `opensave verify`. One found damaged is put
+// and on request from Settings or `savevault verify`. One found damaged is put
 // back from its cloud copy straight away when there is one (repair.go).
 
 const (

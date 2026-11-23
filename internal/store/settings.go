@@ -34,7 +34,7 @@ type Settings struct {
 	AutoSyncOnTrack   bool   `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
 	MatchByAppID      bool   `db:"match_by_app_id" json:"matchByAppId"`
 	// UnknownGameFromPeer is what happens when a peer asks about a game this
-	// device does not track: "track" (the default, and what OpenSave has
+	// device does not track: "track" (the default, and what SaveVault has
 	// always done) guesses a folder from the peer's save path and starts
 	// syncing; "ask" records an offer and syncs nothing until a person
 	// chooses where the game lives here. Anything unrecognised is read as
@@ -221,7 +221,7 @@ func (s *Store) ImportSettings(settings Settings) error {
 // RelayURLEnv is the environment variable that pins the relay for this
 // device.
 //
-// Provisioning a machine otherwise means running `opensave config set
+// Provisioning a machine otherwise means running `savevault config set
 // relay-url` by hand after the database exists, which is a poor fit for a
 // container or an image that is rebuilt: the setting lives in SQLite, so a
 // fresh volume loses it. Reading the environment on every load means the
@@ -232,7 +232,7 @@ func (s *Store) ImportSettings(settings Settings) error {
 // things could already be using on a shared box, and silently redirecting
 // someone's sync traffic because of a collision is not a failure worth
 // risking to save eight characters.
-const RelayURLEnv = "OPENSAVE_RELAY_URL"
+const RelayURLEnv = "SAVEVAULT_RELAY_URL"
 
 // relayURLOverride returns the pinned relay URL, if one is set.
 func relayURLOverride() string {

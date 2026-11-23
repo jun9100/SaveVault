@@ -1,4 +1,4 @@
-// OpenSave website — small progressive enhancements. No trackers, no analytics.
+// SaveVault website — small progressive enhancements. No trackers, no analytics.
 
 (function () {
   'use strict';
@@ -94,7 +94,7 @@
   // carries one the Mac card says which release it comes with, rather than
   // offering a beta. Best-effort: every link already points at the latest
   // release's page.
-  var API = 'https://api.github.com/repos/Liquid-co/OpenSave/releases?per_page=30';
+  var API = 'https://api.github.com/repos/jun9100/SaveVault/releases?per_page=30';
   fetch(API)
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (list) {
@@ -144,9 +144,9 @@
         find(function (n) { return n.indexOf('linux') !== -1 && n.indexOf('.tar') !== -1; });
       // Steam Deck: the Flatpak, and only the Flatpak. Without this the Deck
       // button was the one download that dropped you on the raw asset list,
-      // where "opensave-linux-amd64.tar.gz" reads like the Steam Deck build
+      // where "savevault-linux-amd64.tar.gz" reads like the Steam Deck build
       // and isn't — stock SteamOS ships no WebKitGTK, so the tarball's app
-      // won't start. People picked it and reported OpenSave as broken.
+      // won't start. People picked it and reported SaveVault as broken.
       var flatpakUrl = find(function (n) { return n.slice(-8) === '.flatpak'; });
 
       var map = {
@@ -205,7 +205,7 @@
     var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = setTimeout(function () { ctrl && ctrl.abort(); }, 6000);
 
-    fetch('https://relay.opensave.org/health', ctrl ? { signal: ctrl.signal } : undefined)
+    Promise.reject(new Error('self-hosted relay'))
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (h) {
         clearTimeout(timer);
@@ -530,7 +530,7 @@
   // already heading for it, so this only marks the matching one.
   (function ownPlatform() {
     var ua = navigator.userAgent || '';
-    // An iPhone or iPad says "like Mac OS X", and OpenSave has nothing for it.
+    // An iPhone or iPad says "like Mac OS X", and SaveVault has nothing for it.
     var os = /iPhone|iPad|iPod/i.test(ua) ? null
            : /Windows/i.test(ua) ? 'windows'
            : /Linux|X11|CrOS/i.test(ua) ? 'linux'

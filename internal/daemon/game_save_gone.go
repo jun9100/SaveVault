@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // ErrGameSaveScopeSyncStopped is returned when this device has recorded a

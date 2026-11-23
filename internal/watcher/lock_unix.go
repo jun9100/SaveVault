@@ -2,7 +2,7 @@
 
 package watcher
 
-import "github.com/opensave/opensave/internal/fsx"
+import "github.com/jun9100/savevault/internal/fsx"
 
 // isFileLocked on POSIX: a plain open() has no universal "busy" errno
 // (files can always be read while another process writes), so a readable

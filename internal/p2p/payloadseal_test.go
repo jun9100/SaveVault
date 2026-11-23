@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func TestSealForPeer_RoundTrips(t *testing.T) {

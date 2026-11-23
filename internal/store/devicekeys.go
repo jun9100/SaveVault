@@ -3,7 +3,7 @@ package store
 import (
 	"fmt"
 
-	"github.com/opensave/opensave/internal/e2ee"
+	"github.com/jun9100/savevault/internal/e2ee"
 )
 
 // DeviceIdentity returns this device's long-lived X25519 key pair, generating

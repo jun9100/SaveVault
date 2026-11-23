@@ -7,7 +7,7 @@ import "os"
 // process, or another TryLock in this one. unlock releases it.
 //
 // For work that two processes on one data folder must not do at once — the
-// app and a command-line run of `opensave`, say. The lock goes with the open
+// app and a command-line run of `savevault`, say. The lock goes with the open
 // file, so a process that dies holding it releases it.
 func TryLock(path string) (unlock func(), ok bool, err error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o666)

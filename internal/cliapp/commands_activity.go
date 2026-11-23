@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
 // cmdActivity is the app's Activity timeline in a terminal: what happened to
@@ -29,7 +29,7 @@ func cmdActivity(d *daemon.Daemon, args []string) int {
 			limit = n
 			i++
 		case strings.HasPrefix(a, "-"):
-			return fail(asJSON, fmt.Errorf("unknown option %q\n\nusage: opensave activity [<gameId>] [--limit N]", a))
+			return fail(asJSON, fmt.Errorf("unknown option %q\n\nusage: savevault activity [<gameId>] [--limit N]", a))
 		default:
 			gameID = a
 		}
@@ -93,7 +93,7 @@ func cmdActivity(d *daemon.Daemon, args []string) int {
 		fmt.Printf("  %s  %s%s\n", faint(at.Format("15:04")), game, line)
 	}
 	if report.More {
-		more := "opensave activity"
+		more := "savevault activity"
 		if gameID != "" {
 			more += " " + gameID
 		}

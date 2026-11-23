@@ -23,7 +23,7 @@ const (
 
 // Ping is the discovery datagram, matching the JS wire format exactly.
 type Ping struct {
-	Type       string `json:"type"` // always "opensave-ping"
+	Type       string `json:"type"` // "savevault-ping" (also accepts legacy "opensave-ping")
 	NodeID     string `json:"nodeId"`
 	DeviceName string `json:"deviceName"`
 	DeviceType string `json:"deviceType"`
@@ -139,7 +139,7 @@ func (m *Manager) readLoop() {
 		}
 
 		var ping Ping
-		if err := json.Unmarshal(buf[:n], &ping); err != nil || ping.Type != "opensave-ping" {
+		if err := json.Unmarshal(buf[:n], &ping); err != nil || (ping.Type != "savevault-ping" && ping.Type != "opensave-ping") {
 			continue
 		}
 
@@ -189,7 +189,7 @@ func (m *Manager) broadcastLoop() {
 
 func (m *Manager) broadcastPresence() {
 	ping := m.identity()
-	ping.Type = "opensave-ping"
+	ping.Type = "savevault-ping"
 	raw, err := json.Marshal(ping)
 	if err != nil {
 		return

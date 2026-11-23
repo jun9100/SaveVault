@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/daemon"
-	"github.com/opensave/opensave/internal/presets"
+	"github.com/jun9100/savevault/internal/daemon"
+	"github.com/jun9100/savevault/internal/presets"
 )
 
 type testServer struct {
@@ -371,7 +371,7 @@ func TestDeckyPluginContract(t *testing.T) {
 	// that; the plugin reads it out of this same payload.
 	const gameID = "deck-game"
 
-	// The three below are the rest of what opensave-decky-plugin/main.py
+	// The three below are the rest of what savevault-decky-plugin/main.py
 	// calls, and they were the half of its contract nothing checked.
 	//
 	// This test is the only place that contract is verifiable at all. The

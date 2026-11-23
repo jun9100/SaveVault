@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // End-to-end encryption of relay payloads.

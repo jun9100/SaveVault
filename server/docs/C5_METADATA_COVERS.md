@@ -38,7 +38,7 @@
 元数据挂在 **C1 的游戏键**上，比如 `switch/title:0100000000010000`、`pc/steam:1245620`、`pc/scope:elden-ring`。
 
 - 客户端不需要知道游戏键怎么算：写接口按范围（`{type}/{game}`）寻址，服务端在写入时算出这个范围当前的游戏键；
-- 读的时候，`/v1/opensave/games` 里每个游戏直接带上元数据；
+- 读的时候，`/v1/savevault/games` 里每个游戏直接带上元数据；
 - 网页上手动关联范围、改变了它的游戏键之后，这个范围就显示新游戏键的元数据。原来那个键的元数据保留，以后关联回去还在。
 
 ## 名称
@@ -78,7 +78,7 @@
 
 ### 封面文件
 
-- 所有封面（自定义的和缓存的）都按内容的 SHA-256 存放：`opensave-meta/covers/<前两位>/<sha256>`。内容相同只存一份；
+- 所有封面（自定义的和缓存的）都按内容的 SHA-256 存放：`savevault-meta/covers/<前两位>/<sha256>`。内容相同只存一份；
 - 只接受 JPEG 和 PNG：先检查文件头，再用 `image.DecodeConfig` 读尺寸；
 - 自定义封面最大 1 MiB、最长边不超过 2048 像素；上游封面最大 2 MiB。客户端上传前应先缩小（Android 现在已经会缩小）；
 - 服务端不改图片内容，也不转码。
@@ -118,12 +118,12 @@
 
 | 方法 | 路径 | 认证 | 作用 |
 | --- | --- | --- | --- |
-| `GET` | `/v1/opensave/games`、`/v1/opensave/games/{key}` | 同步令牌（只读） | 已有接口，每个游戏新增 `meta` 字段 |
-| `GET` | `/v1/opensave/covers/{sha256}` | 同步令牌（只读） | 下载封面 |
-| `PUT` | `/v1/opensave/scopes/{type}/{game}/custom-name` | 同步令牌 | `{"name": "…"}`，设置或清除（空字符串）自定义名称 |
-| `PUT` | `/v1/opensave/scopes/{type}/{game}/custom-cover` | 同步令牌 | 请求体是图片本身，`Content-Type: image/jpeg` 或 `image/png` |
-| `DELETE` | `/v1/opensave/scopes/{type}/{game}/custom-cover` | 同步令牌 | 清除自定义封面 |
-| `GET` | `/v1/opensave/titles/switch` | 同步令牌（只读） | 下载 Switch 名称表 |
+| `GET` | `/v1/savevault/games`、`/v1/savevault/games/{key}` | 同步令牌（只读） | 已有接口，每个游戏新增 `meta` 字段 |
+| `GET` | `/v1/savevault/covers/{sha256}` | 同步令牌（只读） | 下载封面 |
+| `PUT` | `/v1/savevault/scopes/{type}/{game}/custom-name` | 同步令牌 | `{"name": "…"}`，设置或清除（空字符串）自定义名称 |
+| `PUT` | `/v1/savevault/scopes/{type}/{game}/custom-cover` | 同步令牌 | 请求体是图片本身，`Content-Type: image/jpeg` 或 `image/png` |
+| `DELETE` | `/v1/savevault/scopes/{type}/{game}/custom-cover` | 同步令牌 | 清除自定义封面 |
+| `GET` | `/v1/savevault/titles/switch` | 同步令牌（只读） | 下载 Switch 名称表 |
 
 **`meta` 字段**
 
@@ -141,7 +141,7 @@
       "mediaType": "image/jpeg",
       "width": 460,
       "height": 215,
-      "url": "/v1/opensave/covers/9f2c…"
+      "url": "/v1/savevault/covers/9f2c…"
     },
     "updatedAt": "2026-11-08T12:00:00Z",
     "updatedBy": "a1b2c3d4-…"
@@ -151,7 +151,7 @@
 
 - 游戏顶层的 `name` 继续保留现在的含义，`meta.name` 是解析后的显示名。新客户端用 `meta.name`；
 - 没有任何元数据记录的游戏，`meta` 里只有 `rev: 0` 和名称；没有封面时没有 `cover`；
-- `updatedBy` 是设备 ID，网页修改时为 `admin`。设备 ID 的取法与 C3 一致：用设备令牌访问时，取令牌绑定的设备 ID，忽略请求头里的设备 ID（`X-Eden-Device-ID` / `X-OpenSave-Device-ID`）；用共享令牌访问时，沿用请求头。
+- `updatedBy` 是设备 ID，网页修改时为 `admin`。设备 ID 的取法与 C3 一致：用设备令牌访问时，取令牌绑定的设备 ID，忽略请求头里的设备 ID（`X-Eden-Device-ID` / `X-SaveVault-Device-ID`）；用共享令牌访问时，沿用请求头。
 
 **写接口的返回**
 
@@ -160,12 +160,12 @@
 - 不带 `If-Match`：直接覆盖。只建议用于用户刚刚明确操作、而且客户端没有缓存修订号的情况；
 - 范围不存在：404；图片格式、尺寸、大小不对：400 或 413。
 
-**`GET /v1/opensave/covers/{sha256}`**
+**`GET /v1/savevault/covers/{sha256}`**
 
 - 内容按哈希寻址、不会变，响应带 `Cache-Control: private, max-age=31536000, immutable` 和 `ETag`；
 - 客户端按 sha256 缓存在本机，哈希变了才重新下载。
 
-**`GET /v1/opensave/titles/switch`**
+**`GET /v1/savevault/titles/switch`**
 
 - 响应是 gzip 压缩的 TSV（`Content-Type: application/gzip`），格式同 Android 内置表；
 - `ETag` 是名称表版本号。客户端带 `If-None-Match` 时，没变就返回 304。
@@ -174,17 +174,17 @@
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| `PUT` | `/admin/api/opensave/games/{key}/custom-name` | 同客户端接口，按游戏键寻址 |
-| `PUT`、`DELETE` | `/admin/api/opensave/games/{key}/custom-cover` | 同上 |
-| `POST` | `/admin/api/opensave/games/{key}/cover/refetch` | 清掉“没有封面”和退避记录，立即重新抓取 |
-| `GET` | `/admin/api/opensave/covers/{sha256}` | 网页显示封面用 |
+| `PUT` | `/admin/api/savevault/games/{key}/custom-name` | 同客户端接口，按游戏键寻址 |
+| `PUT`、`DELETE` | `/admin/api/savevault/games/{key}/custom-cover` | 同上 |
+| `POST` | `/admin/api/savevault/games/{key}/cover/refetch` | 清掉“没有封面”和退避记录，立即重新抓取 |
+| `GET` | `/admin/api/savevault/covers/{sha256}` | 网页显示封面用 |
 | `GET`、`PUT` | `/admin/api/meta-settings` | `{"coverFetch": true}`，上游抓取开关 |
 
-`/admin/api/opensave/games` 同样带上 `meta`。网页部分（游戏列表显示封面、修改名称和封面、抓取开关）等管理网页改版合入后再做。
+`/admin/api/savevault/games` 同样带上 `meta`。网页部分（游戏列表显示封面、修改名称和封面、抓取开关）等管理网页改版合入后再做。
 
 ## 存储
 
-新文件 `opensave-meta.json` 和新目录 `opensave-meta/`，都只在第一次需要时创建：
+新文件 `savevault-meta.json` 和新目录 `savevault-meta/`，都只在第一次需要时创建：
 
 ```json
 {
@@ -220,14 +220,14 @@
 
 ### 回滚到 v1.7.0
 
-- v1.7.0 不认识 `opensave-meta.json` 和 `opensave-meta/`，会忽略它们；
+- v1.7.0 不认识 `savevault-meta.json` 和 `savevault-meta/`，会忽略它们；
 - 游戏接口不再返回 `meta`，新的写接口返回 404。客户端回到本机的名称和封面，所以**客户端必须一直保留本机的封面缓存和自定义封面**，不能因为服务端有了就删掉本机的；
 - 重新升级后，元数据原样恢复；
 - 再往前回滚到 v1.6.0 时，C5 部分同上；另外 C3 的回滚注意事项仍然适用：用设备令牌的客户端会全部 401，需要改回共享令牌；已经切到 `deny` 的也会重新接受共享令牌，如有泄露风险先更换 `GAME_SAVE_TOKEN`。详见 [`C3_DEVICE_TOKENS.md`](C3_DEVICE_TOKENS.md) 的“回滚到 v1.6.0”。
 
 ### 备份
 
-`opensave-meta/` 里缓存的封面可以重新抓取，但自定义封面只有这一份。备份时把整个数据目录一起备份。
+`savevault-meta/` 里缓存的封面可以重新抓取，但自定义封面只有这一份。备份时把整个数据目录一起备份。
 
 ## 对客户端的要求
 
@@ -243,11 +243,11 @@
 
 - 现在的自定义封面按本机的游戏键保存；上传时按这个游戏的任意一个范围寻址即可，服务端会算出游戏键；
 - 封面缩小到最长边 1024 像素、JPEG 质量 85 左右，一般在 200 KB 以内；
-- 可以选择用 `GET /v1/opensave/titles/switch` 定期更新内置的 Switch 名称表。
+- 可以选择用 `GET /v1/savevault/titles/switch` 定期更新内置的 Switch 名称表。
 
 ### PC
 
-- 用 `GET /v1/opensave/titles/switch` 给 Switch 游戏补上名称；
+- 用 `GET /v1/savevault/titles/switch` 给 Switch 游戏补上名称；
 - 自定义封面现在是 URL：用户设置时由本机下载图片、再上传字节；
 - 服务端已有封面时，优先用服务端的，不再逐个尝试 Steam CDN。
 
@@ -257,9 +257,9 @@
 
 ## 服务端实现要点
 
-- 新文件 `opensave_meta.go`：元数据记录、名称解析、封面文件存取、`clone()`、加载和持久化；
+- 新文件 `savevault_meta.go`：元数据记录、名称解析、封面文件存取、`clone()`、加载和持久化；
 - 新文件 `cover_fetch.go`：上游模板、参数校验、限定主机的 HTTP 客户端、抓取队列、退避；
-- `opensave_games.go` 的游戏视图里加上 `meta`；
+- `savevault_games.go` 的游戏视图里加上 `meta`；
 - 名称表：脚本生成 `switch-titles.tsv.gz`，`go:embed` 进二进制，启动时懒加载；
 - 指标：`game_save_covers{source="custom|cached"}`、`game_save_cover_fetch_total{result="ok|miss|error"}`。
 
@@ -280,7 +280,7 @@
 | 维护任务 | 删除无引用的封面文件，保留有引用的 |
 | 任何元数据写入 | 不改变任何范围的头、归档和冲突副本 |
 | 名称表下载带 `If-None-Match` | 版本没变返回 304 |
-| 没用过 C5 功能 | 数据目录里不出现 `opensave-meta.json` 和 `opensave-meta/` |
+| 没用过 C5 功能 | 数据目录里不出现 `savevault-meta.json` 和 `savevault-meta/` |
 
 测试里的上游一律用 `httptest` 假服务，不访问真实的 Steam 或 Nintendo。
 

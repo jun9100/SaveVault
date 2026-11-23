@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 type testEnv struct {
@@ -23,7 +23,7 @@ type testEnv struct {
 func setup(t *testing.T) *testEnv {
 	t.Helper()
 	root := t.TempDir()
-	dbPath := filepath.Join(root, "opensave.db")
+	dbPath := filepath.Join(root, "savevault.db")
 	saveDir := filepath.Join(root, "saves", "game1")
 	backups := filepath.Join(root, "backups")
 

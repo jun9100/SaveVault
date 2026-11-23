@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // SuggestName is a name for a game whose save folder (or file) was picked by

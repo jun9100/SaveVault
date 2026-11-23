@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // A device part-way through a sync holds a save nobody has: some files taken,

@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/testutil"
 )
 
-// A play session, marked the way `opensave wrap` marks one: when it ends,
+// A play session, marked the way `savevault wrap` marks one: when it ends,
 // the save as it was left is kept — a snapshot named for the session — and
 // sent on to the other device without anyone pressing sync.
 func TestSession_EndingOneKeepsTheSaveAndSyncsIt(t *testing.T) {

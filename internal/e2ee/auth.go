@@ -45,7 +45,7 @@ import (
 // Different purpose, different key, from the same X25519 agreement — the same
 // discipline hkdfInfo already applies. Reusing one key for both would mean a
 // weakness in either use compromised the other.
-const authHKDFInfo = "opensave/e2ee/request-auth/v1"
+const authHKDFInfo = "savevault/e2ee/request-auth/v1"
 
 // AuthKeySize is the length of a derived request-auth key.
 const AuthKeySize = 32

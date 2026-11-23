@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opensave/opensave/internal/fsx"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/fsx"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // What restoring a snapshot would do, worked out without doing it.

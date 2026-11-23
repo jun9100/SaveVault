@@ -148,7 +148,7 @@ func (s *server) requireTokenReadOnly(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func requestHeaderDeviceID(r *http.Request) string {
-	deviceID := requestClientHeader(r, "X-Eden-Device-ID", "X-OpenSave-Device-ID")
+	deviceID := requestClientHeader(r, "X-Eden-Device-ID", "X-SaveVault-Device-ID")
 	if !validIdentifier(deviceID, 128) {
 		return ""
 	}
@@ -166,23 +166,29 @@ func requestDeviceID(r *http.Request) string {
 	return requestHeaderDeviceID(r)
 }
 
-// requestClientHeader accepts the Eden headers used by released clients and
-// the OpenSave-specific equivalents used by the native archive API. Device
-// identity is informational only; the bearer token remains the credential.
-// Device names may arrive as RFC 8187 ext-values because some HTTP clients
-// cannot put non-ASCII bytes in a header; decode only that field.
-func requestClientHeader(r *http.Request, edenHeader, openSaveHeader string) string {
-	if value := strings.TrimSpace(r.Header.Get(openSaveHeader)); value != "" {
-		if isDeviceNameHeader(openSaveHeader) {
-			value = decodeDeviceHeader(value)
+// requestClientHeader accepts the Eden headers used by released clients, the
+// SaveVault headers, and legacy X-OpenSave-* headers used before the rebrand.
+// Device identity is informational only; the bearer token remains the
+// credential. Device names may arrive as RFC 8187 ext-values because some HTTP
+// clients cannot put non-ASCII bytes in a header; decode only that field.
+func requestClientHeader(r *http.Request, edenHeader, saveVaultHeader string) string {
+	candidates := []string{saveVaultHeader}
+	if suffix, ok := strings.CutPrefix(saveVaultHeader, "X-SaveVault-"); ok {
+		candidates = append(candidates, "X-OpenSave-"+suffix)
+	}
+	candidates = append(candidates, edenHeader)
+	for _, header := range candidates {
+		if header == "" {
+			continue
 		}
-		return value
+		if value := strings.TrimSpace(r.Header.Get(header)); value != "" {
+			if isDeviceNameHeader(header) {
+				value = decodeDeviceHeader(value)
+			}
+			return value
+		}
 	}
-	value := strings.TrimSpace(r.Header.Get(edenHeader))
-	if isDeviceNameHeader(edenHeader) {
-		value = decodeDeviceHeader(value)
-	}
-	return value
+	return ""
 }
 
 func isDeviceNameHeader(name string) bool {
@@ -225,9 +231,9 @@ func (s *server) recordDevice(r *http.Request) {
 	now := s.now().UTC()
 	device := deviceInfo{
 		ID:        deviceID,
-		Name:      trimDeviceField(requestClientHeader(r, "X-Eden-Device-Name", "X-OpenSave-Device-Name"), 80),
-		Platform:  trimDeviceField(requestClientHeader(r, "X-Eden-Platform", "X-OpenSave-Platform"), 32),
-		Version:   trimDeviceField(requestClientHeader(r, "X-Eden-Version", "X-OpenSave-Version"), 64),
+		Name:      trimDeviceField(requestClientHeader(r, "X-Eden-Device-Name", "X-SaveVault-Device-Name"), 80),
+		Platform:  trimDeviceField(requestClientHeader(r, "X-Eden-Platform", "X-SaveVault-Platform"), 32),
+		Version:   trimDeviceField(requestClientHeader(r, "X-Eden-Version", "X-SaveVault-Version"), 64),
 		Address:   remoteHost(r),
 		FirstSeen: now,
 		LastSeen:  now,

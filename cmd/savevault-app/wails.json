@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "SaveVault",
+  "outputfilename": "SaveVault",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "SaveVault"
+  },
+  "info": {
+    "companyName": "SaveVault",
+    "productName": "SaveVault",
+    "productVersion": "2.8.1",
+    "copyright": "Copyright © 2026 SaveVault",
+    "comments": "Peer-to-peer game save sync"
+  }
+}

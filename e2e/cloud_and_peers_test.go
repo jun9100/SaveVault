@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/testutil"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/testutil"
 )
 
 // useLocalCloud points the daemon's cloud backend at a directory and returns

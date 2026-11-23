@@ -1,8 +1,8 @@
 /* ============================================================
-   OpenSave — website styles
+   SaveVault — website styles
 
    Built on the app's own design system: every token below is lifted
-   from cmd/opensave-app/frontend/src/app.css, and the primitives
+   from cmd/savevault-app/frontend/src/app.css, and the primitives
    (button, card, badge, status dot) mirror the app's.
 
    Deliberately absent, because the app has none of them:
@@ -558,7 +558,7 @@ code {
 .arch-diagram .wire-label { fill: var(--accent-hover); font-family: var(--font-mono); font-size: 12.5px; }
 .arch-diagram .wan-chip { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1; }
 /* ---------- live relay status ----------
-   Read from relay.opensave.org/health at load. Three states, because
+   Read from relay.example.com/health at load. Three states, because
    "unreachable from this browser" is not the same claim as "the relay
    is down" — a blocked request and an offline visitor look identical
    from here, and asserting an outage on that evidence would be worse

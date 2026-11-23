@@ -9,7 +9,7 @@ import "os"
 //
 // This exists because of what Windows does by default. Go's os.Open asks for
 // FILE_SHARE_READ|FILE_SHARE_WRITE and not FILE_SHARE_DELETE, so for as long
-// as OpenSave holds a save file open — hashing it, reading blocks to send,
+// as SaveVault holds a save file open — hashing it, reading blocks to send,
 // archiving it into a snapshot — the game that owns it cannot delete it. That
 // is a real failure for a tool whose only job is to keep saves safe: a manifest
 // build runs on a timer over every tracked save, and a game deleting a save
@@ -21,7 +21,7 @@ import "os"
 // whatever share mode that handle was opened with — measured, not assumed;
 // adding DELETE access to the handle does not change it either. Since writing
 // a temp file and renaming it over the original is how a great many games save
-// safely, OpenSave can still make a game's save fail simply by reading at the
+// safely, SaveVault can still make a game's save fail simply by reading at the
 // wrong moment.
 //
 // The only real mitigation for that is to not hold the file open, and to not

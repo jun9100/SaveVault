@@ -3,9 +3,9 @@ package daemon
 import (
 	"sort"
 
-	"github.com/opensave/opensave/internal/fsx"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/fsx"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Where the space goes: how much each game's snapshots take, which snapshots

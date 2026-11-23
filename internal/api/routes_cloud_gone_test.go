@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/cloud"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func configureGoneAPITest(t *testing.T, ts *testServer, serviceURL string, gameID, gameName string) {
@@ -125,7 +125,7 @@ func TestCloudScopeGoneResume(t *testing.T) {
 	stillGone := true
 	scopeGets := 0
 	service := goneTestService(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/switch/hollow-knight") {
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/switch/hollow-knight") {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -240,7 +240,7 @@ func TestCloudDeleteGameRefusesGoneScope(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			if r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/scopes/switch/hollow-knight" {
+			if r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/scopes/switch/hollow-knight" {
 				writeGoneResponse(w, "scope_retired")
 				return
 			}
@@ -278,7 +278,7 @@ func TestCloudDeleteGameRefusesGoneScope(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/") {
+			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/") {
 				mu.Lock()
 				scopeGets++
 				mu.Unlock()

@@ -459,8 +459,8 @@ func TestDeviceTokenCannotAuthenticateWebDAV(t *testing.T) {
 	dataDir := t.TempDir()
 	s, err := newServerWithOptions(dataDir, testToken, 1024*1024, serverOptions{
 		adminToken:       testAdminToken,
-		openSaveUsername: testOpenSaveUsername,
-		openSavePassword: testOpenSavePassword,
+		saveVaultUsername: testSaveVaultUsername,
+		saveVaultPassword: testSaveVaultPassword,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -469,11 +469,11 @@ func TestDeviceTokenCannotAuthenticateWebDAV(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	device := createDeviceAdminToken(t, httpServer.URL, "WebDAV rejected")
 
-	request, err := http.NewRequest("PROPFIND", httpServer.URL+"/opensave/", nil)
+	request, err := http.NewRequest("PROPFIND", httpServer.URL+"/savevault/", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.SetBasicAuth(testOpenSaveUsername, device.Token)
+	request.SetBasicAuth(testSaveVaultUsername, device.Token)
 	response, body := deviceTestDo(t, request)
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("device token as WebDAV password = %d %s", response.StatusCode, body)
@@ -512,7 +512,7 @@ func TestReadOnlyEndpointsDoNotTouchDeviceTokenState(t *testing.T) {
 		for _, target := range []string{
 			"/v1/auth/whoami",
 			"/v1/scopes/read-only-scope/status",
-			"/v1/opensave/files",
+			"/v1/savevault/files",
 		} {
 			request := deviceBearerRequest(t, http.MethodGet, httpServer.URL+target, token, nil)
 			request.Header.Set("X-Eden-Device-ID", "attacker-device")

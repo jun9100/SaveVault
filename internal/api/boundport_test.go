@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/opensave/opensave/internal/daemon"
+	"github.com/jun9100/savevault/internal/daemon"
 )
 
 // Pairing tells the other device to call back on settings.Port, and that

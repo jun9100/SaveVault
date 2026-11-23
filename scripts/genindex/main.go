@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/opensave/opensave/internal/presets"
+	"github.com/jun9100/savevault/internal/presets"
 )
 
 func main() {

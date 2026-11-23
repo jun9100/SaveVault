@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/winreg"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // RegistryDirName is the folder under the backups directory holding one

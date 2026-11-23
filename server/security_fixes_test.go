@@ -167,3 +167,110 @@ func TestSecurityLoginLimiterBoundedMemory(t *testing.T) {
 		t.Fatalf("loginLimiter grew beyond bound: %d > %d", len(limiter.failures), maxLoginFailureEntries)
 	}
 }
+
+func TestLegacyOpenSaveCompat(t *testing.T) {
+	dataDir := t.TempDir()
+
+	// Seed pre-rebrand on-disk opensave* files and directories.
+	if err := os.MkdirAll(filepath.Join(dataDir, "opensave-native", "pc"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	archiveName := "game1__main__snap1.zip"
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave-native", "pc", archiveName), []byte("zip-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave-native.json"), []byte(`{"files":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave-native-state.json"), []byte(`{"scopes":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave-manage.json"), []byte(`{"version":1,"retention":{"default":{"keepVersions":20}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave-meta.json"), []byte(`{"version":1,"games":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, "opensave"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "opensave", "legacy.zip"), []byte("webdav-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := newServerWithOptions(dataDir, testToken, 8<<20, serverOptions{
+		adminToken:        testAdminToken,
+		saveVaultUsername: testSaveVaultUsername,
+		saveVaultPassword: testSaveVaultPassword,
+	})
+	if err != nil {
+		t.Fatalf("newServerWithOptions: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	// Verify on-disk migration occurred.
+	for _, migrated := range []string{
+		filepath.Join("savevault-native", "pc", archiveName),
+		"savevault-native.json",
+		"savevault-native-state.json",
+		"savevault-manage.json",
+		"savevault-meta.json",
+		filepath.Join("savevault", "legacy.zip"),
+	} {
+		if _, err := os.Stat(filepath.Join(dataDir, migrated)); err != nil {
+			t.Fatalf("expected migrated path %s: %v", migrated, err)
+		}
+	}
+
+	handler := s.handler()
+
+	// Legacy /v1/opensave/files route works and sees the migrated archive.
+	req := httptest.NewRequest(http.MethodGet, "/v1/opensave/files", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), archiveName) {
+		t.Fatalf("GET /v1/opensave/files = %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Legacy X-OpenSave-* headers populate device tracking on writes.
+	putReq := httptest.NewRequest(http.MethodPut, "/v1/opensave/files/pc/game2__main__snap2.zip", bytes.NewReader([]byte("zip2")))
+	putReq.Header.Set("Authorization", "Bearer "+testToken)
+	putReq.Header.Set("X-OpenSave-Device-ID", "legacy-dev-1")
+	putReq.Header.Set("X-OpenSave-Device-Name", "Legacy Steam Deck")
+	putRec := httptest.NewRecorder()
+	handler.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusCreated && putRec.Code != http.StatusOK {
+		t.Fatalf("PUT /v1/opensave/files/... = %d %s", putRec.Code, putRec.Body.String())
+	}
+	s.mu.Lock()
+	dev, ok := s.dashboard.Devices["legacy-dev-1"]
+	s.mu.Unlock()
+	if !ok || dev.Name != "Legacy Steam Deck" {
+		t.Fatalf("expected legacy X-OpenSave device headers recorded, got ok=%v dev=%+v", ok, dev)
+	}
+
+	// Legacy /admin/api/opensave/files route works.
+	adminReq := httptest.NewRequest(http.MethodGet, "/admin/api/opensave/files", nil)
+	adminReq.SetBasicAuth("admin", testAdminToken)
+	adminRec := httptest.NewRecorder()
+	handler.ServeHTTP(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK || !strings.Contains(adminRec.Body.String(), archiveName) {
+		t.Fatalf("GET /admin/api/opensave/files = %d %s", adminRec.Code, adminRec.Body.String())
+	}
+
+	// Legacy /opensave/ WebDAV endpoint lists the migrated file with /opensave/ hrefs.
+	davReq := httptest.NewRequest("PROPFIND", "/opensave/", nil)
+	davReq.SetBasicAuth(testSaveVaultUsername, testSaveVaultPassword)
+	davReq.Header.Set("Depth", "1")
+	davRec := httptest.NewRecorder()
+	handler.ServeHTTP(davRec, davReq)
+	if davRec.Code != http.StatusMultiStatus || !strings.Contains(davRec.Body.String(), "/opensave/legacy.zip") {
+		t.Fatalf("PROPFIND /opensave/ = %d %s", davRec.Code, davRec.Body.String())
+	}
+
+	// Legacy event scope names remain parsable.
+	if name, ok := saveVaultEventScopeName("opensave:pc/game1"); !ok || !strings.Contains(name, "game1") {
+		t.Fatalf("saveVaultEventScopeName legacy = %q, %v", name, ok)
+	}
+}

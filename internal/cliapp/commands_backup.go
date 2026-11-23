@@ -23,7 +23,7 @@ func cmdBackup(args []string) int {
 	switch args[0] {
 	case "export":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: opensave backup export <file.sscb> [gameId...]")
+			fmt.Fprintln(os.Stderr, "usage: savevault backup export <file.sscb> [gameId...]")
 			return 1
 		}
 		target, err := filepath.Abs(args[1])
@@ -107,7 +107,7 @@ func cmdBackup(args []string) int {
 
 	case "import", "restore":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: opensave backup import <file.sscb> [--overwrite]")
+			fmt.Fprintln(os.Stderr, "usage: savevault backup import <file.sscb> [--overwrite]")
 			return 1
 		}
 		source, err := filepath.Abs(args[1])
@@ -169,7 +169,7 @@ func cmdBackup(args []string) int {
 				note("It is an older archive that stores snapshots only — it can restore " +
 					"them for games this device already tracks, but it carries no save " +
 					"locations, so it cannot recreate them on a fresh install.")
-				hint("opensave add <name> <path>", "opensave backup import "+source)
+				hint("savevault add <name> <path>", "savevault backup import "+source)
 			} else if res.Skipped > 0 {
 				note(fmt.Sprintf("%d entr%s skipped.", res.Skipped, entryPlural(res.Skipped)))
 				if mode == "snapshots" {
@@ -181,7 +181,7 @@ func cmdBackup(args []string) int {
 					note("Importing as snapshots only adds to games this device already " +
 						"tracks. Nothing here is tracked yet, so use --overwrite to put " +
 						"the saves back and track them.")
-					hint("opensave backup import " + source + " --overwrite")
+					hint("savevault backup import " + source + " --overwrite")
 				}
 			}
 			note(source)
@@ -196,7 +196,7 @@ func cmdBackup(args []string) int {
 		default:
 			success("Imported %s as snapshots — nothing on disk was replaced.",
 				bold(plural(done, "game", "games")))
-			hint("opensave snapshots <gameId>", "opensave rollback <gameId> <snapshot>")
+			hint("savevault snapshots <gameId>", "savevault rollback <gameId> <snapshot>")
 		}
 		if res.Skipped > 0 {
 			note(fmt.Sprintf("%d entr%s skipped — see the activity log for why.",
@@ -240,9 +240,9 @@ func entryPlural(n int) string {
 }
 
 const backupUsage = `usage:
-  opensave backup export <file.sscb> [gameId...]   Write a backup archive
+  savevault backup export <file.sscb> [gameId...]   Write a backup archive
                                                    (every game when no ids given)
-  opensave backup import <file.sscb> [--overwrite] Read one back
+  savevault backup import <file.sscb> [--overwrite] Read one back
 
   Import adds the contents as snapshots by default, so nothing on disk is
   replaced. --overwrite restores saves over the current files instead.`

@@ -8,7 +8,7 @@
 # settings that are easy to miss. Every one of those is the same on every
 # machine, which makes it a script's job rather than a person's.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/packaging/relay/install-relay.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/jun9100/SaveVault/main/packaging/relay/install-relay.sh | sudo bash
 #   sudo ./install-relay.sh --domain relay.example.com    # with automatic TLS
 #   sudo ./install-relay.sh --uninstall
 #
@@ -22,11 +22,11 @@
 
 set -euo pipefail
 
-REPO="Liquid-co/OpenSave"
-BIN_PATH="/usr/local/bin/opensave-relay"
-UNIT_PATH="/etc/systemd/system/opensave-relay.service"
-SERVICE_USER="opensave-relay"
-ENV_DIR="/etc/opensave-relay"
+REPO="jun9100/SaveVault"
+BIN_PATH="/usr/local/bin/savevault-relay"
+UNIT_PATH="/etc/systemd/system/savevault-relay.service"
+SERVICE_USER="savevault-relay"
+ENV_DIR="/etc/savevault-relay"
 ENV_PATH="$ENV_DIR/env"
 GOOGLE_SECRET_FILE=""
 STEAMGRIDDB_KEY_FILE=""
@@ -73,7 +73,7 @@ write_file() {
 
 usage() {
 	cat <<'EOF'
-opensave-relay installer
+savevault-relay installer
 
   --domain <host>   Serve over https/wss at this name, with a certificate
                     obtained automatically. The name must already resolve to
@@ -84,7 +84,7 @@ opensave-relay installer
                     File holding your Google OAuth client secret, so this
                     relay can complete Google Drive sign-in for clients using
                     the built-in credentials. Read once and copied to
-                    /etc/opensave-relay/env, root-only. A path rather than the
+                    /etc/savevault-relay/env, root-only. A path rather than the
                     value itself: an argument is visible in `ps` to every user
                     on the machine while the command runs, and stays in shell
                     history afterwards.
@@ -99,7 +99,7 @@ opensave-relay installer
                     only on GOG, itch or Epic, and anything found under a
                     folder name no AppID could be resolved from. Same handling
                     as the Google secret: read once, copied to
-                    /etc/opensave-relay/env, root-only, never printed.
+                    /etc/savevault-relay/env, root-only, never printed.
 
                     Get a key free at
                     https://www.steamgriddb.com/profile/preferences/api
@@ -179,7 +179,7 @@ ask_secret() { # ask_secret <prompt>; answer on stdout, never echoed
 
 guided_setup() {
 	printf '
-  OpenSave relay setup
+  SaveVault relay setup
   --------------------
 
 '
@@ -191,7 +191,7 @@ guided_setup() {
 '
 	printf '     A name pointed at this machine lets the relay use wss://, which is
 '
-	printf '     what OpenSave requires for syncing across the internet. Leave this
+	printf '     what SaveVault requires for syncing across the internet. Leave this
 '
 	printf '     blank and it serves ws://, which is accepted only on a LAN or a VPN.
 '
@@ -231,7 +231,7 @@ guided_setup() {
 '
 	printf '     Only needed if people using this relay sign in to Drive with
 '
-	printf "     OpenSave's built-in credentials. Most self-hosters skip this.
+	printf "     SaveVault's built-in credentials. Most self-hosters skip this.
 "
 	# Same reasoning: whitespace here reaches Google as part of the secret,
 	# and the only thing it says back is "invalid_client".
@@ -296,9 +296,9 @@ if ! command -v systemctl >/dev/null 2>&1; then
 		die "no systemd here, so there is nothing to install into.
 
 Run the relay directly instead:
-  PORT=$PORT opensave-relay
+  PORT=$PORT savevault-relay
 Or as a container:
-  docker run -d --restart unless-stopped -p $PORT:10000 opensave-relay"
+  docker run -d --restart unless-stopped -p $PORT:10000 savevault-relay"
 	fi
 fi
 
@@ -330,22 +330,22 @@ fi
 # ── Uninstall ────────────────────────────────────────────────────────
 if [ "$UNINSTALL" -eq 1 ]; then
 	say "Stopping and removing the relay"
-	run systemctl disable --now opensave-relay 2>/dev/null || true
+	run systemctl disable --now savevault-relay 2>/dev/null || true
 	# The credential goes too. Leaving it behind means "uninstalled" left a
 	# live secret on a machine somebody believes they have cleaned.
 	run rm -f "$UNIT_PATH" "$BIN_PATH" "$ENV_PATH"
 	run rmdir "$ENV_DIR" 2>/dev/null || true
 	run systemctl daemon-reload
 	run userdel "$SERVICE_USER" 2>/dev/null || true
-	say "Gone. Any Caddy config was left alone — remove the OpenSave block by hand if you added one."
+	say "Gone. Any Caddy config was left alone — remove the SaveVault block by hand if you added one."
 	exit 0
 fi
 
 # ── Which build ──────────────────────────────────────────────────────
 case "$(uname -m)" in
-	x86_64|amd64)  ASSET="opensave-linux-amd64.tar.gz"; INNER="opensave-linux/opensave-relay" ;;
-	aarch64|arm64) ASSET="opensave-linux-arm64.tar.gz"; INNER="opensave-linux-arm64/opensave-relay" ;;
-	*) die "no prebuilt relay for $(uname -m). Build it yourself: go build ./cmd/opensave-relay" ;;
+	x86_64|amd64)  ASSET="savevault-linux-amd64.tar.gz"; INNER="savevault-linux/savevault-relay" ;;
+	aarch64|arm64) ASSET="savevault-linux-arm64.tar.gz"; INNER="savevault-linux-arm64/savevault-relay" ;;
+	*) die "no prebuilt relay for $(uname -m). Build it yourself: go build ./cmd/savevault-relay" ;;
 esac
 
 for tool in curl tar; do
@@ -396,7 +396,7 @@ if [ "$DRY" -eq 0 ]; then
 	#
 	# Running it hung the installer outright. Every relay before the fix that
 	# taught it about arguments ignored them and started a server instead —
-	# so `opensave-relay --version` never returned, and the command
+	# so `savevault-relay --version` never returned, and the command
 	# substitution here waited on it forever, with the unit file unwritten and
 	# a stray relay left listening. Found by installing v2.2.1 on a real
 	# machine, which is the version anyone running this today would get.
@@ -415,7 +415,7 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 ||
 # blast radius should be the socket and nothing else.
 write_file "$UNIT_PATH" <<EOF
 [Unit]
-Description=OpenSave WAN relay
+Description=SaveVault WAN relay
 After=network-online.target
 Wants=network-online.target
 
@@ -534,21 +534,21 @@ run systemctl daemon-reload
 # that always claimed "would start" would misreport the upgrade case — which
 # is the one worth previewing.
 was_running=0
-if systemctl is-active --quiet opensave-relay 2>/dev/null; then
+if systemctl is-active --quiet savevault-relay 2>/dev/null; then
 	was_running=1
 fi
-run systemctl enable opensave-relay
+run systemctl enable savevault-relay
 if [ "$was_running" -eq 1 ]; then
 	say "Restarting the running relay to pick up the new binary"
-	run systemctl restart opensave-relay
+	run systemctl restart savevault-relay
 else
-	run systemctl start opensave-relay
+	run systemctl start savevault-relay
 fi
 
 if [ "$DRY" -eq 0 ]; then sleep 1; fi
 if [ "$DRY" -eq 0 ]; then
-	systemctl is-active --quiet opensave-relay ||
-		die "the service did not start. Look at: journalctl -u opensave-relay -n 40"
+	systemctl is-active --quiet savevault-relay ||
+		die "the service did not start. Look at: journalctl -u savevault-relay -n 40"
 	# Report the version actually being served, not the one just written to
 	# disk: those were the same thing right up until they were not, and the
 	# difference is the whole of the bug above.
@@ -686,7 +686,7 @@ if [ "$PUBLIC_ONLY" -eq 1 ] && [ -z "$DOMAIN" ]; then
 $(say "Installed, but not usable yet.")
 
   Service     running on port $PORT
-  Logs        journalctl -u opensave-relay -f
+  Logs        journalctl -u savevault-relay -f
 
 There is deliberately no address to copy here. The relay speaks ws:// until it
 is given a name, this machine has only a public address, and the app refuses an
@@ -701,13 +701,13 @@ $(say "Done.")
 
   Relay URL   $PUBLIC_URL
   Health      $HEALTH
-  Logs        journalctl -u opensave-relay -f
+  Logs        journalctl -u savevault-relay -f
 
 Now set this up on each device whose saves you sync — NOT on this server.
 The relay never joins a room; rooms exist because clients ask for them.
 
-  opensave config set relay-url $PUBLIC_URL
-  opensave relay join $ROOM
+  savevault config set relay-url $PUBLIC_URL
+  savevault relay join $ROOM
 
 Use the same room code on every device. In the app it is the same two fields
 under Internet Sync. Treat the code like a password: anyone who has it can
@@ -721,7 +721,7 @@ if [ -z "$DOMAIN" ] && [ "$PUBLIC_ONLY" -eq 1 ]; then
 	warn "This relay has no address the app will accept.
 
     It is running, but it was installed without --domain, so it speaks ws://
-    rather than wss:// — and OpenSave refuses an unencrypted relay at a public
+    rather than wss:// — and SaveVault refuses an unencrypted relay at a public
     address. Only saves between two 2.4 devices are sealed, so that would put
     older pairings' saves, room codes and pairing requests on the wire in the
     clear.

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // Where a Switch save arriving from another device belongs on this one.

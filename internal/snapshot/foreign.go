@@ -12,9 +12,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Restoring a save that another device made.
@@ -32,7 +32,7 @@ const (
 	ForeignPCRoot = "pc-root"
 	// ForeignManifestName marks an Android-format archive. Its absence means
 	// the archive is PC format.
-	ForeignManifestName = "opensave-game.json"
+	ForeignManifestName = "savevault-game.json"
 )
 
 // ForeignLocation is one location inside an archive, as the plan presents it.
@@ -214,7 +214,7 @@ func readForeignManifest(f *zip.File) (foreignManifest, error) {
 		return foreignManifest{}, fmt.Errorf("read %s: %w", ForeignManifestName, err)
 	}
 	if manifest.Version != 1 {
-		return foreignManifest{}, fmt.Errorf("%s is version %d, which this version of OpenSave cannot read", ForeignManifestName, manifest.Version)
+		return foreignManifest{}, fmt.Errorf("%s is version %d, which this version of SaveVault cannot read", ForeignManifestName, manifest.Version)
 	}
 	if strings.TrimSpace(manifest.GameKey) == "" || strings.TrimSpace(manifest.GameName) == "" {
 		return foreignManifest{}, fmt.Errorf("%s does not name the game it belongs to", ForeignManifestName)

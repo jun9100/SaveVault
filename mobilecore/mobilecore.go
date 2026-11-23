@@ -7,9 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/snapshot"
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // Version reports the bridge contract version exposed to Android.
@@ -75,14 +75,14 @@ func ManifestHash(root string) string {
 	return bridgeResult(value, err)
 }
 
-// CreateSnapshot writes an OpenSave-compatible ZIP and returns a bridge result
+// CreateSnapshot writes an SaveVault-compatible ZIP and returns a bridge result
 // containing a JSON report of skipped paths. The output must be outside root.
 func CreateSnapshot(root, output string) string {
 	value, err := createSnapshot(root, output)
 	return bridgeResult(value, err)
 }
 
-// RestoreSnapshot extracts an OpenSave-compatible ZIP into a private
+// RestoreSnapshot extracts an SaveVault-compatible ZIP into a private
 // workspace and returns a bridge result. The Android layer performs final SAF
 // write-back after this operation succeeds.
 func RestoreSnapshot(archive, target string) string {

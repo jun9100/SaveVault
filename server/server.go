@@ -37,8 +37,8 @@ type server struct {
 	dataDir          string
 	token            string
 	adminToken       string
-	openSaveUsername string
-	openSavePassword string
+	saveVaultUsername string
+	saveVaultPassword string
 	maxObjectBytes   int64
 	startedAt        time.Time
 	now              func() time.Time
@@ -56,23 +56,23 @@ type server struct {
 	claimLogins   loginLimiter
 	claimFailures globalClaimFailures
 
-	openSaveMu      sync.Mutex
-	openSaveCatalog openSaveCatalog
-	openSaveState   openSaveNativeState
+	saveVaultMu      sync.Mutex
+	saveVaultCatalog saveVaultCatalog
+	saveVaultState   saveVaultNativeState
 
 	// manageMu guards C6 SaveVault management state (tombstones, locks, and
-	// retention). It is a leaf lock: openSaveMu -> manageMu and s.mu ->
-	// manageMu are the only allowed orders. See opensave_manage.go.
+	// retention). It is a leaf lock: saveVaultMu -> manageMu and s.mu ->
+	// manageMu are the only allowed orders. See savevault_manage.go.
 	manageMu       sync.Mutex
-	openSaveManage openSaveManageState
+	saveVaultManage saveVaultManageState
 	// manageFileOps lets tests inject filesystem failures for delete rollback
 	// paths. Nil hooks use the os package directly.
-	manageFileOps openSaveManageFileOps
+	manageFileOps saveVaultManageFileOps
 
-	// metaMu guards OpenSave metadata and cover files. See opensave_meta.go for
+	// metaMu guards SaveVault metadata and cover files. See savevault_meta.go for
 	// the fixed lock order.
 	metaMu       sync.Mutex
-	openSaveMeta openSaveMetaState
+	saveVaultMeta saveVaultMetaState
 
 	// Upstream cover fetching is default-off. The queue starts its two workers
 	// lazily on the first enabled enqueue and Close cancels and joins them.
@@ -108,8 +108,8 @@ type server struct {
 
 type serverOptions struct {
 	adminToken       string
-	openSaveUsername string
-	openSavePassword string
+	saveVaultUsername string
+	saveVaultPassword string
 	settings         serverSettings
 	bark             barkConfig
 }
@@ -133,8 +133,8 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		slog.Error("administrator dashboard disabled: GAME_SAVE_ADMIN_TOKEN must differ from GAME_SAVE_TOKEN")
 		options.adminToken = ""
 	}
-	if (options.openSaveUsername == "") != (options.openSavePassword == "") {
-		return nil, errors.New("GAME_SAVE_OPENSAVE_USERNAME and GAME_SAVE_OPENSAVE_PASSWORD must be set together")
+	if (options.saveVaultUsername == "") != (options.saveVaultPassword == "") {
+		return nil, errors.New("GAME_SAVE_SAVEVAULT_USERNAME and GAME_SAVE_SAVEVAULT_PASSWORD must be set together")
 	}
 	if maxObjectBytes <= 0 {
 		return nil, errors.New("max object size must be positive")
@@ -152,12 +152,18 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		}
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
-	if options.openSaveUsername != "" {
-		if err := os.MkdirAll(filepath.Join(dataDir, "opensave"), 0o700); err != nil {
+	if err := migrateLegacySaveVaultData(dataDir); err != nil {
+		if bark != nil {
+			bark.Close()
+		}
+		return nil, fmt.Errorf("migrate legacy OpenSave data: %w", err)
+	}
+	if options.saveVaultUsername != "" {
+		if err := os.MkdirAll(filepath.Join(dataDir, "savevault"), 0o700); err != nil {
 			if bark != nil {
 				bark.Close()
 			}
-			return nil, fmt.Errorf("create OpenSave data directory: %w", err)
+			return nil, fmt.Errorf("create SaveVault data directory: %w", err)
 		}
 	}
 
@@ -167,8 +173,8 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		dataDir:          dataDir,
 		token:            token,
 		adminToken:       options.adminToken,
-		openSaveUsername: options.openSaveUsername,
-		openSavePassword: options.openSavePassword,
+		saveVaultUsername: options.saveVaultUsername,
+		saveVaultPassword: options.saveVaultPassword,
 		maxObjectBytes:   maxObjectBytes,
 		startedAt:        time.Now().UTC(),
 		now:              time.Now,
@@ -181,10 +187,10 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		deviceTokens:    defaultDeviceTokenState(),
 		pairings:        make(map[string]pairing),
 		claimLogins:     loginLimiter{failures: make(map[string]loginFailures)},
-		openSaveCatalog: openSaveCatalog{Files: make(map[string]openSaveFileMetadata)},
-		openSaveState:   openSaveNativeState{Scopes: make(map[string]openSaveScopeState)},
-		openSaveManage:  defaultOpenSaveManageState(),
-		openSaveMeta:    defaultOpenSaveMetaState(),
+		saveVaultCatalog: saveVaultCatalog{Files: make(map[string]saveVaultFileMetadata)},
+		saveVaultState:   saveVaultNativeState{Scopes: make(map[string]saveVaultScopeState)},
+		saveVaultManage:  defaultSaveVaultManageState(),
+		saveVaultMeta:    defaultSaveVaultMetaState(),
 		logins:          loginLimiter{failures: make(map[string]loginFailures)},
 		webdavLogins:    loginLimiter{failures: make(map[string]loginFailures)},
 
@@ -219,26 +225,26 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		s.Close()
 		return nil, err
 	}
-	if err := s.loadOpenSaveCatalog(); err != nil {
+	if err := s.loadSaveVaultCatalog(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := s.loadOpenSaveState(); err != nil {
+	if err := s.loadSaveVaultState(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := s.loadOpenSaveManage(); err != nil {
+	if err := s.loadSaveVaultManage(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := s.loadOpenSaveMeta(); err != nil {
+	if err := s.loadSaveVaultMeta(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if repaired, err := s.repairOpenSaveHeads(); err != nil {
-		slog.Warn("repair OpenSave heads at startup", "error", err)
+	if repaired, err := s.repairSaveVaultHeads(); err != nil {
+		slog.Warn("repair SaveVault heads at startup", "error", err)
 	} else if repaired > 0 {
-		slog.Warn("repaired OpenSave heads with missing archives", "count", repaired)
+		slog.Warn("repaired SaveVault heads with missing archives", "count", repaired)
 	}
 	return s, nil
 }
@@ -282,38 +288,84 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("PUT /v1/scopes/{id}/metadata", s.requireToken(s.handlePutScopeMetadata))
 	mux.HandleFunc("POST /v1/devices/heartbeat", s.requireToken(s.handleDeviceHeartbeat))
 
-	// OpenSave is a separate client family. It uses the same private sync
+	// SaveVault is a separate client family. It uses the same private sync
 	// credential but a wholly separate on-disk namespace from Eden snapshots.
 	// Reads are intentionally independent from device heartbeats. Opening a
 	// status screen, listing archives, or inspecting a head must not make an
 	// inactive device appear to have synchronized successfully.
-	mux.HandleFunc("GET /v1/opensave/files", s.requireTokenReadOnly(s.handleOpenSaveList))
-	mux.HandleFunc("PUT /v1/opensave/files/{type}/{name}", s.requireToken(s.handleOpenSaveNativePut))
-	mux.HandleFunc("GET /v1/opensave/files/{type}/{name}", s.requireTokenReadOnly(s.handleOpenSaveNativeGet))
-	mux.HandleFunc("DELETE /v1/opensave/files/{type}/{name}", s.requireToken(s.handleOpenSaveNativeDelete))
-	mux.HandleFunc("GET /v1/opensave/scopes/{type}/{game}", s.requireTokenReadOnly(s.handleOpenSaveScope))
-	mux.HandleFunc("GET /v1/opensave/scopes/{type}/{game}/head", s.requireTokenReadOnly(s.handleOpenSaveScopeHead))
-	mux.HandleFunc("PUT /v1/opensave/scopes/{type}/{game}/snapshots/{snapshot}", s.requireToken(s.handlePutOpenSaveScopeSnapshot))
-	mux.HandleFunc("PUT /v1/opensave/scopes/{type}/{game}/conflicts/{snapshot}", s.requireToken(s.handlePutOpenSaveScopeConflict))
-	mux.HandleFunc("PUT /v1/opensave/scopes/{type}/{game}/identity", s.requireToken(s.handlePutOpenSaveScopeIdentity))
-	mux.HandleFunc("GET /v1/opensave/games", s.requireTokenReadOnly(s.handleListOpenSaveGames))
-	mux.HandleFunc("GET /v1/opensave/games/{key...}", s.requireTokenReadOnly(s.handleGetOpenSaveGame))
-	mux.HandleFunc("PUT /v1/opensave/scopes/{type}/{game}/custom-name", s.requireToken(s.handlePutOpenSaveCustomName))
-	mux.HandleFunc("PUT /v1/opensave/scopes/{type}/{game}/custom-cover", s.requireToken(s.handlePutOpenSaveCustomCover))
-	mux.HandleFunc("DELETE /v1/opensave/scopes/{type}/{game}/custom-cover", s.requireToken(s.handleDeleteOpenSaveCustomCover))
-	mux.HandleFunc("GET /v1/opensave/covers/{sha256}", s.requireTokenReadOnly(s.handleOpenSaveCover))
-	mux.HandleFunc("GET /v1/opensave/titles/switch", s.requireTokenReadOnly(s.handleSwitchTitleTable))
+	// Register both /v1/savevault and the legacy /v1/opensave alias so older
+	// clients keep working seamlessly across upgrades.
+	for _, prefix := range []string{"/v1/savevault", "/v1/opensave"} {
+		mux.HandleFunc("GET "+prefix+"/files", s.requireTokenReadOnly(s.handleSaveVaultList))
+		mux.HandleFunc("PUT "+prefix+"/files/{type}/{name}", s.requireToken(s.handleSaveVaultNativePut))
+		mux.HandleFunc("GET "+prefix+"/files/{type}/{name}", s.requireTokenReadOnly(s.handleSaveVaultNativeGet))
+		mux.HandleFunc("DELETE "+prefix+"/files/{type}/{name}", s.requireToken(s.handleSaveVaultNativeDelete))
+		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}", s.requireTokenReadOnly(s.handleSaveVaultScope))
+		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}/head", s.requireTokenReadOnly(s.handleSaveVaultScopeHead))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}", s.requireToken(s.handlePutSaveVaultScopeSnapshot))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/conflicts/{snapshot}", s.requireToken(s.handlePutSaveVaultScopeConflict))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/identity", s.requireToken(s.handlePutSaveVaultScopeIdentity))
+		mux.HandleFunc("GET "+prefix+"/games", s.requireTokenReadOnly(s.handleListSaveVaultGames))
+		mux.HandleFunc("GET "+prefix+"/games/{key...}", s.requireTokenReadOnly(s.handleGetSaveVaultGame))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/custom-name", s.requireToken(s.handlePutSaveVaultCustomName))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/custom-cover", s.requireToken(s.handlePutSaveVaultCustomCover))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/custom-cover", s.requireToken(s.handleDeleteSaveVaultCustomCover))
+		mux.HandleFunc("GET "+prefix+"/covers/{sha256}", s.requireTokenReadOnly(s.handleSaveVaultCover))
+		mux.HandleFunc("GET "+prefix+"/titles/switch", s.requireTokenReadOnly(s.handleSwitchTitleTable))
+	}
 
-	// OpenSave uses ordinary WebDAV snapshots, isolated from the encrypted Eden
+	// SaveVault uses ordinary WebDAV snapshots, isolated from the encrypted Eden
 	// object store and guarded by a credential that is independent of both Eden
-	// client and dashboard credentials.
-	if s.openSaveEnabled() {
-		mux.HandleFunc("/opensave", s.requireOpenSaveAuth(s.handleOpenSaveWebDAV))
-		mux.HandleFunc("/opensave/", s.requireOpenSaveAuth(s.handleOpenSaveWebDAV))
+	// client and dashboard credentials. Keep /opensave as a compatibility alias.
+	if s.saveVaultEnabled() {
+		mux.HandleFunc("/savevault", s.requireSaveVaultAuth(s.handleSaveVaultWebDAV))
+		mux.HandleFunc("/savevault/", s.requireSaveVaultAuth(s.handleSaveVaultWebDAV))
+		mux.HandleFunc("/opensave", s.requireSaveVaultAuth(s.handleSaveVaultWebDAV))
+		mux.HandleFunc("/opensave/", s.requireSaveVaultAuth(s.handleSaveVaultWebDAV))
 	}
 
 	s.registerAdmin(mux)
 	return s.withCommonHeaders(mux)
+}
+
+var legacySaveVaultDataRenames = []struct {
+	legacy  string
+	current string
+}{
+	{"opensave-native", "savevault-native"},
+	{"opensave-native.json", "savevault-native.json"},
+	{"opensave-native-state.json", "savevault-native-state.json"},
+	{"opensave-manage.json", "savevault-manage.json"},
+	{"opensave-meta.json", "savevault-meta.json"},
+	{"opensave-meta", "savevault-meta"},
+	{"opensave-trash", "savevault-trash"},
+	{"opensave", "savevault"},
+}
+
+// migrateLegacySaveVaultData renames pre-rebrand on-disk opensave* files and
+// directories inside a vault directory to savevault* on first startup. If a
+// destination already exists, the legacy entry is left untouched.
+func migrateLegacySaveVaultData(dataDir string) error {
+	for _, pair := range legacySaveVaultDataRenames {
+		from := filepath.Join(dataDir, pair.legacy)
+		if _, err := os.Lstat(from); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("inspect %s: %w", pair.legacy, err)
+		}
+		to := filepath.Join(dataDir, pair.current)
+		if _, err := os.Lstat(to); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect %s: %w", pair.current, err)
+		}
+		if err := os.Rename(from, to); err != nil {
+			return fmt.Errorf("rename %s to %s: %w", pair.legacy, pair.current, err)
+		}
+		slog.Info("migrated legacy OpenSave data entry", "from", pair.legacy, "to", pair.current)
+	}
+	return nil
 }
 
 func (s *server) withCommonHeaders(next http.Handler) http.Handler {

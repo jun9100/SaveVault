@@ -3,7 +3,7 @@ package syncengine
 import (
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // The decision rule for a recorded deletion, tested exhaustively because it is

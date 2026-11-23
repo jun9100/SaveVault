@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // RootPrefix is the directory inside a snapshot archive under which a game's
@@ -23,7 +23,7 @@ import (
 // excluded from manifests, so it is never hashed, never synced, and never
 // propagates to a peer. It is inert clutter in one folder rather than a
 // game's configuration files scattered through its saves.
-const RootPrefix = ".opensave-locations/"
+const RootPrefix = ".savevault-locations/"
 
 // ZipRoots archives a game's primary save location plus any extra ones.
 //

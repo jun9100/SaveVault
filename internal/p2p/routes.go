@@ -15,13 +15,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/logging"
-	"github.com/opensave/opensave/internal/p2p/pairing"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/switchtitle"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/logging"
+	"github.com/jun9100/savevault/internal/p2p/pairing"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // RegisterRoutes mounts the peer-to-peer protocol under /api/p2p on the
@@ -66,7 +66,7 @@ func clientIP(r *http.Request) string {
 // unsignedRefusal is what a paired device is told when its request was not
 // signed with the pairing's key, over the network or the relay.
 const unsignedRefusal = "Unauthorized: this request was not signed with the key from pairing. " +
-	"Update both devices to OpenSave 2.4.1 or later; if they were paired over the internet before 2.4.0, unpair and pair them again."
+	"Update both devices to SaveVault 2.4.1 or later; if they were paired over the internet before 2.4.0, unpair and pair them again."
 
 // requirePairedPeer allows localhost (dashboard/CLI) plus IPs matching a
 // paired peer. A valid request from a paired peer also refreshes its

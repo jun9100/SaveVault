@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 func mustReadForeign(t *testing.T, path string) []byte {
@@ -125,8 +125,8 @@ func TestInspectForeignArchivePC(t *testing.T) {
 	writeForeignZip(t, zipPath, map[string]string{
 		"slot1.sav":    "save",
 		"sub/data.bin": strings.Repeat("x", 10),
-		".opensave-locations/config/settings.ini": "cfg",
-		".opensave-locations/config/":             "",
+		".savevault-locations/config/settings.ini": "cfg",
+		".savevault-locations/config/":             "",
 	})
 
 	archive, err := InspectForeignArchive(zipPath)
@@ -261,8 +261,8 @@ func TestRestoreForeignPCRootReplacesMainAndKeepsLocalFiles(t *testing.T) {
 	writeForeignZip(t, zipPath, map[string]string{
 		"slot1.sav": "new save",
 		"new.dat":   "new file",
-		".opensave-locations/config/settings.ini": "from archive",
-		".opensave-locations/other/x":             "ignored",
+		".savevault-locations/config/settings.ini": "from archive",
+		".savevault-locations/other/x":             "ignored",
 	})
 
 	restoredCalled := false
@@ -290,7 +290,7 @@ func TestRestoreForeignPCRootReplacesMainAndKeepsLocalFiles(t *testing.T) {
 	if got := string(mustReadForeign(t, filepath.Join(configDir, "settings.ini"))); got != "local config" {
 		t.Fatalf("extra location changed: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(env.saveDir, ".opensave-locations")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(env.saveDir, ".savevault-locations")); !os.IsNotExist(err) {
 		t.Fatalf("extra locations were extracted into the main save: %v", err)
 	}
 	if restoredCalled {
@@ -310,7 +310,7 @@ func TestRestoreForeignPCRootReplacesMainAndKeepsLocalFiles(t *testing.T) {
 	safetyFiles := readForeignZip(t, safety.ZipPath)
 	if safetyFiles["slot1.sav"] != "old save" || safetyFiles["obsolete.dat"] != "delete me" ||
 		safetyFiles["local.cfg"] != "device specific" ||
-		safetyFiles[".opensave-locations/config/settings.ini"] != "local config" {
+		safetyFiles[".savevault-locations/config/settings.ini"] != "local config" {
 		t.Fatalf("safety archive does not hold the old save: %+v", safetyFiles)
 	}
 	if _, ok := safetyFiles["new.dat"]; ok {
@@ -375,7 +375,7 @@ func TestRestoreForeignAndroidLocationGoesToChosenFolder(t *testing.T) {
 
 	safetyFiles := readForeignZip(t, safety.ZipPath)
 	if safetyFiles["main.dat"] != "main old" ||
-		safetyFiles[".opensave-locations/config/cfg.dat"] != "cfg old" {
+		safetyFiles[".savevault-locations/config/cfg.dat"] != "cfg old" {
 		t.Fatalf("safety archive does not hold the old save: %+v", safetyFiles)
 	}
 }

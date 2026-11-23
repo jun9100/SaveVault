@@ -10,7 +10,7 @@ package changelog
 import (
 	"strings"
 
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // Entry is one bullet: a lead-in (the bolded summary a line often starts

@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/opensave/opensave/internal/e2ee"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
-	"github.com/opensave/opensave/internal/store"
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/e2ee"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 const (
@@ -189,7 +189,7 @@ func (w *WanClient) Connect() {
 		return
 	}
 
-	// Last line, and the only one covering OPENSAVE_RELAY_URL: the environment
+	// Last line, and the only one covering SAVEVAULT_RELAY_URL: the environment
 	// override is applied inside GetSettings, so it never passes through the
 	// settings route or the CLI where this is otherwise checked. Refusing here
 	// means no configuration path can quietly put save files on the wire in

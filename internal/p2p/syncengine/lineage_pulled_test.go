@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // A file taken from the peer and deleted here straight away must count as

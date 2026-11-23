@@ -1,13 +1,13 @@
 # SaveVault 云端（game-save）
 
-> SaveVault（原名 OpenSave）的自建云端。仓库、Docker 镜像（`jun9100/game-save`）、程序名和 `/v1/opensave/...` 接口路径保持不变，已有部署和客户端无需修改。
+> SaveVault 的自建云端（已合并至 SaveVault monorepo 的 `server/` 目录）。主路径为 `/v1/savevault/...` 与 `/savevault/`，同时向后兼容旧版 `/v1/opensave/...`、`/opensave/`、旧环境变量及旧磁盘数据自动迁移。
 
 The cross-component delivery contract and release gates are in
 [`docs/INTEGRATION_ROADMAP.md`](docs/INTEGRATION_ROADMAP.md).
 
 `game-save` is a self-hosted private backend for game-save synchronization. It
 is the standalone successor to `eden-syncd`: the existing Eden protocol remains
-available, while SaveVault (formerly OpenSave) uses a separate, typed archive API. The service never
+available, while SaveVault uses a separate, typed archive API. The service never
 interprets game-save contents.
 
 The current release is `v1.8.0`. It is **not** published to any container
@@ -30,9 +30,9 @@ new scope returns an empty state with HTTP 200. The request neither records a
 device heartbeat nor changes save metadata; client-side state inspection must
 not trigger an upload, download, or restore.
 
-### OpenSave Native API
+### SaveVault Native API
 
-The matching OpenSave client integration uses the same private service URL and
+The matching SaveVault client integration uses the same private service URL and
 sync key, without a WebDAV URL or Basic Auth credentials. Archives use a
 mandatory namespace:
 
@@ -43,50 +43,50 @@ mandatory namespace:
 The native endpoints are:
 
 ```text
-GET    /v1/opensave/files
-PUT    /v1/opensave/files/{type}/{name}
-GET    /v1/opensave/files/{type}/{name}
-DELETE /v1/opensave/files/{type}/{name}
-GET    /v1/opensave/scopes/{type}/{gameId}
-GET    /v1/opensave/scopes/{type}/{gameId}/head
-PUT    /v1/opensave/scopes/{type}/{gameId}/snapshots/{snapshotId}
-PUT    /v1/opensave/scopes/{type}/{gameId}/conflicts/{snapshotId}
-GET    /v1/opensave/games
-GET    /v1/opensave/games/{key}
-GET    /v1/opensave/covers/{sha256}
-GET    /v1/opensave/titles/switch
-PUT    /v1/opensave/scopes/{type}/{gameId}/custom-name
-PUT    /v1/opensave/scopes/{type}/{gameId}/custom-cover
-DELETE /v1/opensave/scopes/{type}/{gameId}/custom-cover
+GET    /v1/savevault/files
+PUT    /v1/savevault/files/{type}/{name}
+GET    /v1/savevault/files/{type}/{name}
+DELETE /v1/savevault/files/{type}/{name}
+GET    /v1/savevault/scopes/{type}/{gameId}
+GET    /v1/savevault/scopes/{type}/{gameId}/head
+PUT    /v1/savevault/scopes/{type}/{gameId}/snapshots/{snapshotId}
+PUT    /v1/savevault/scopes/{type}/{gameId}/conflicts/{snapshotId}
+GET    /v1/savevault/games
+GET    /v1/savevault/games/{key}
+GET    /v1/savevault/covers/{sha256}
+GET    /v1/savevault/titles/switch
+PUT    /v1/savevault/scopes/{type}/{gameId}/custom-name
+PUT    /v1/savevault/scopes/{type}/{gameId}/custom-cover
+DELETE /v1/savevault/scopes/{type}/{gameId}/custom-cover
 ```
 
-Every game in `GET /v1/opensave/games` carries a `meta` object with the
+Every game in `GET /v1/savevault/games` carries a `meta` object with the
 resolved display name (`custom` > embedded Switch title table > the most
 recent client-reported identity name > the key's ID part) and an optional
 custom cover. Custom names and covers are written by scope and stored by game
 key, so all devices of one game see the same values. Cover bytes are uploaded
 as the request body (`image/jpeg` or `image/png`, at most 1 MiB and 2048
 pixels on the longest side) and downloaded from the content-addressed
-`/v1/opensave/covers/{sha256}` route. Writes accept `If-Match: "<rev>"` for
+`/v1/savevault/covers/{sha256}` route. Writes accept `If-Match: "<rev>"` for
 optimistic concurrency; a stale revision returns `412` with the current
 `meta`. The embedded Switch title table is also downloadable as gzip and
 supports `If-None-Match`.
 
-The same metadata can be managed from `/admin/api/opensave/games/{key}/custom-name`
-and `/admin/api/opensave/games/{key}/custom-cover`; administrator cover URLs
-use `/admin/api/opensave/covers/{sha256}`.
+The same metadata can be managed from `/admin/api/savevault/games/{key}/custom-name`
+and `/admin/api/savevault/games/{key}/custom-cover`; administrator cover URLs
+use `/admin/api/savevault/covers/{sha256}`.
 
 They require `Authorization: Bearer <GAME_SAVE_TOKEN>`. Native archives live at
-`opensave-native/<type>/` and cannot collide with Eden encrypted objects or the
+`savevault-native/<type>/` and cannot collide with Eden encrypted objects or the
 legacy WebDAV collection. The first upload creates an immutable archive; a
 retry with the same bytes is idempotent, while different bytes under the same
 name return `409 Conflict`. A client advances a typed `{type}/{gameId}` cloud
 head only through the snapshot endpoint with an `If-Match` header for its
 confirmed parent. A rejected branch is sent to the conflict endpoint and
-remains recoverable without changing the head. A matching OpenSave client build
+remains recoverable without changing the head. A matching SaveVault client build
 is required before selecting this provider.
 
-Native OpenSave `GET` operations are authenticated but read-only: listing
+Native SaveVault `GET` operations are authenticated but read-only: listing
 archives or checking a typed scope/head never writes a device heartbeat.
 
 #### Save management (C6)
@@ -95,27 +95,27 @@ Administrators can delete, restore, merge, export, and lock SaveVault scopes
 from the dashboard API:
 
 ```text
-GET    /admin/api/opensave/tombstones
-DELETE /admin/api/opensave/tombstones/{type}/{gameId}
-DELETE /admin/api/opensave/scopes/{type}/{gameId}          (If-Match required)
-POST   /admin/api/opensave/scopes/{type}/{gameId}/restore
-POST   /admin/api/opensave/scopes/{type}/{gameId}/retire   {"into": "<gameId>"}
-POST   /admin/api/opensave/scopes/{type}/{gameId}/unretire
-GET    /admin/api/opensave/scopes/{type}/{gameId}/export
-PUT    /admin/api/opensave/scopes/{type}/{gameId}/snapshots/{snapshotId}/lock
-DELETE /admin/api/opensave/scopes/{type}/{gameId}/snapshots/{snapshotId}/lock
-GET    /admin/api/opensave/retention
-PUT    /admin/api/opensave/retention
-POST   /admin/api/opensave/retention/preview
+GET    /admin/api/savevault/tombstones
+DELETE /admin/api/savevault/tombstones/{type}/{gameId}
+DELETE /admin/api/savevault/scopes/{type}/{gameId}          (If-Match required)
+POST   /admin/api/savevault/scopes/{type}/{gameId}/restore
+POST   /admin/api/savevault/scopes/{type}/{gameId}/retire   {"into": "<gameId>"}
+POST   /admin/api/savevault/scopes/{type}/{gameId}/unretire
+GET    /admin/api/savevault/scopes/{type}/{gameId}/export
+PUT    /admin/api/savevault/scopes/{type}/{gameId}/snapshots/{snapshotId}/lock
+DELETE /admin/api/savevault/scopes/{type}/{gameId}/snapshots/{snapshotId}/lock
+GET    /admin/api/savevault/retention
+PUT    /admin/api/savevault/retention
+POST   /admin/api/savevault/retention/preview
 ```
 
-A deleted or merged scope is kept as a tombstone in `opensave-manage.json`.
+A deleted or merged scope is kept as a tombstone in `savevault-manage.json`.
 Client scope reads and writes, archive uploads, identity writes, and custom
 name/cover writes for that scope return `410 Gone` with a machine-readable
 `code`:
 
 - `scope_deleted` includes `deletedAt`; the scope is recoverable for seven
-  days from `opensave-trash/` and then maintenance removes the archived files.
+  days from `savevault-trash/` and then maintenance removes the archived files.
 - `scope_retired` includes `successor: {"type": "...", "gameId": "..."}`; the
   merged scope stays read-only and its archives remain downloadable.
 
@@ -150,7 +150,7 @@ license is at [`web/vendor/LICENSE-qrcode-generator.txt`](web/vendor/LICENSE-qrc
 ### Users, Login And Tenants
 
 Every tenant owns a vault: its own directory under `<data-dir>/vaults/<vault id>/`,
-its own tokens, its own Eden scopes, its own OpenSave archives. `user_name` and
+its own tokens, its own Eden scopes, its own SaveVault archives. `user_name` and
 `descriptor` inside a scope are client-side display labels, never authorization.
 
 A pre-vault data directory is migrated into `vaults/default/` on the first start,
@@ -180,12 +180,12 @@ Administrators manage tenants with the admin credential plus the
 | `POST /admin/api/users/{username}/password` | reset a password |
 | `DELETE /admin/api/users/{username}` | revoke the tenant |
 
-### OpenSave WebDAV Compatibility
+### SaveVault WebDAV Compatibility
 
-Older OpenSave builds can continue to use `https://host:port/opensave/` with
-Basic Auth. Set both `GAME_SAVE_OPENSAVE_USERNAME` and
-`GAME_SAVE_OPENSAVE_PASSWORD` to enable it. WebDAV files remain in the separate
-`opensave/` directory and do not share native OpenSave storage.
+Older SaveVault builds can continue to use `https://host:port/savevault/` with
+Basic Auth. Set both `GAME_SAVE_SAVEVAULT_USERNAME` and
+`GAME_SAVE_SAVEVAULT_PASSWORD` to enable it. WebDAV files remain in the separate
+`savevault/` directory and do not share native SaveVault storage.
 
 ## Compatibility With `eden-syncd`
 
@@ -200,13 +200,13 @@ Basic Auth. Set both `GAME_SAVE_OPENSAVE_USERNAME` and
   are read without a data migration.
 
 The persistent data directory contains `objects/`, `state.json`,
-`dashboard.json`, `settings.json`, `events.json`, `opensave/`, and (after a
-native OpenSave upload) `opensave-native/`, `opensave-native.json`, plus
-`opensave-native-state.json`. After the first custom name or cover write it
-also contains `opensave-meta.json` and `opensave-meta/`; custom cover files
+`dashboard.json`, `settings.json`, `events.json`, `savevault/`, and (after a
+native SaveVault upload) `savevault-native/`, `savevault-native.json`, plus
+`savevault-native-state.json`. After the first custom name or cover write it
+also contains `savevault-meta.json` and `savevault-meta/`; custom cover files
 have no other copy, so back up the entire directory together. After the first
-C6 operation it can also contain `opensave-manage.json` (tombstones, locks,
-retention settings) and `opensave-trash/` (recoverable deleted scopes); back
+C6 operation it can also contain `savevault-manage.json` (tombstones, locks,
+retention settings) and `savevault-trash/` (recoverable deleted scopes); back
 up both together with the rest of the directory. The JSON catalog and state
 contain audit metadata, content digests, source devices, parent lineage,
 current heads, and retained conflicts; they never contain save contents.
@@ -219,8 +219,8 @@ current heads, and retained conflicts; they never contain save contents.
 | `--admin-token` | `GAME_SAVE_ADMIN_TOKEN` | dashboard disabled |
 | `--data-dir` | `GAME_SAVE_DATA` | `./data` (`/var/lib/game-save` in Docker) |
 | `--listen` | `GAME_SAVE_LISTEN` | `:8787` |
-| `--opensave-username` | `GAME_SAVE_OPENSAVE_USERNAME` | WebDAV disabled unless paired with password |
-| `--opensave-password` | `GAME_SAVE_OPENSAVE_PASSWORD` | WebDAV disabled unless paired with username |
+| `--savevault-username` | `GAME_SAVE_SAVEVAULT_USERNAME` | WebDAV disabled unless paired with password |
+| `--savevault-password` | `GAME_SAVE_SAVEVAULT_PASSWORD` | WebDAV disabled unless paired with username |
 | `--max-object-mib` | `GAME_SAVE_MAX_OBJECT_MIB` | `512` |
 | `--keep-snapshots` | `GAME_SAVE_KEEP_SNAPSHOTS` | `0` (unlimited) |
 | `--keep-days` | `GAME_SAVE_KEEP_DAYS` | `0` (unlimited) |
@@ -250,7 +250,7 @@ private dashboard at `/admin/`.
 Eden save writes require Save Sync protocol v2. Upgrade every Eden client
 before deploying the `game-save` release that enables this requirement: older
 clients can still read, but cannot upload a stale local save as a new cloud
-head. OpenSave's separate native and WebDAV endpoints are unaffected.
+head. SaveVault's separate native and WebDAV endpoints are unaffected.
 
 When current clients detect divergent local files, they preserve the candidate
 as a fixed **conflict copy** instead of advancing the cloud head. It appears in
@@ -326,7 +326,7 @@ field for the NAS before deployment.
 4. Create a new `game-save` container with the same host port and mount the new
    copy at `/var/lib/game-save`.
 5. Verify `GET /healthz`, an existing authenticated Eden `/v1` request, and the
-   OpenSave route before treating the migration as complete.
+   SaveVault route before treating the migration as complete.
 
 The old container can remain stopped as a rollback target. Do not run old and
 new containers against the same data directory at the same time.

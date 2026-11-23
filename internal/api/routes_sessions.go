@@ -8,7 +8,7 @@ import (
 )
 
 // Play sessions (see daemon/sessions.go): a game's recent ones, and marking
-// one from outside — `opensave wrap` launching a game knows exactly when it
+// one from outside — `savevault wrap` launching a game knows exactly when it
 // starts and stops, without waiting to spot its process.
 
 func (s *Server) handleGameSessions(w http.ResponseWriter, r *http.Request) {

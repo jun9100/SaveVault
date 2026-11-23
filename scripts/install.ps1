@@ -1,14 +1,14 @@
-# OpenSave installer for Windows.
+# SaveVault installer for Windows.
 #
 #   irm https://raw.githubusercontent.com/jun9100/SaveVault/main/scripts/install.ps1 | iex
 #
-# Installs the CLI to %LOCALAPPDATA%\OpenSave\bin and puts it on your PATH, so
-# `opensave` works from any terminal. Installs as `opensave.exe` — the name the
+# Installs the CLI to %LOCALAPPDATA%\SaveVault\bin and puts it on your PATH, so
+# `savevault` works from any terminal. Installs as `savevault.exe` — the name the
 # documentation and the tool's own help use.
 #
 # Override with:
-#   $env:OPENSAVE_INSTALL_DIR = 'C:\tools'   where to put it
-#   $env:OPENSAVE_VERSION     = 'v2.2.0'     pin a version instead of latest
+#   $env:SAVEVAULT_INSTALL_DIR = 'C:\tools'   where to put it
+#   $env:SAVEVAULT_VERSION     = 'v2.2.0'     pin a version instead of latest
 #
 # Downloads are checksum-verified against the SHA256SUMS published with the
 # release: piping a script to a shell is trust enough on its own.
@@ -16,16 +16,16 @@
 $ErrorActionPreference = 'Stop'
 
 $Repo      = 'jun9100/SaveVault'
-$InstallDir = if ($env:OPENSAVE_INSTALL_DIR) { $env:OPENSAVE_INSTALL_DIR }
-              else { Join-Path $env:LOCALAPPDATA 'OpenSave\bin' }
-$Version   = if ($env:OPENSAVE_VERSION) { $env:OPENSAVE_VERSION } else { 'latest' }
+$InstallDir = if ($env:SAVEVAULT_INSTALL_DIR) { $env:SAVEVAULT_INSTALL_DIR }
+              else { Join-Path $env:LOCALAPPDATA 'SaveVault\bin' }
+$Version   = if ($env:SAVEVAULT_VERSION) { $env:SAVEVAULT_VERSION } else { 'latest' }
 
 function Fail($msg) { Write-Host "error: $msg" -ForegroundColor Red; exit 1 }
 
 # ── Platform ─────────────────────────────────────────────────────────────
 
 if ([Environment]::Is64BitOperatingSystem -ne $true) {
-    Fail 'OpenSave requires 64-bit Windows.'
+    Fail 'SaveVault requires 64-bit Windows.'
 }
 
 $base = if ($Version -eq 'latest') {
@@ -36,13 +36,13 @@ $base = if ($Version -eq 'latest') {
 
 # ── Download ─────────────────────────────────────────────────────────────
 
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("opensave-" + [guid]::NewGuid())
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("savevault-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
-    $asset   = 'opensave-cli.exe'
+    $asset   = 'savevault-cli.exe'
     $target  = Join-Path $tmp $asset
 
-    Write-Host "==> Downloading OpenSave CLI ($Version)..."
+    Write-Host "==> Downloading SaveVault CLI ($Version)..."
     try {
         Invoke-WebRequest -Uri "$base/$asset" -OutFile $target -UseBasicParsing
     } catch {
@@ -78,7 +78,7 @@ try {
     # ── Install ──────────────────────────────────────────────────────────
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    $dest = Join-Path $InstallDir 'opensave.exe'
+    $dest = Join-Path $InstallDir 'savevault.exe'
 
     # A running copy can't be overwritten; move it aside and let the next run
     # clean it up, which is how self-updating binaries handle this on Windows.
@@ -86,7 +86,7 @@ try {
         $old = "$dest.old"
         Remove-Item $old -Force -ErrorAction SilentlyContinue
         try { Move-Item $dest $old -Force } catch {
-            Fail "opensave.exe is running - close it and try again"
+            Fail "savevault.exe is running - close it and try again"
         }
     }
     Copy-Item $target $dest -Force
@@ -94,9 +94,9 @@ try {
 
     # Short aliases. Shims rather than copies of a 15 MB binary, and rather
     # than symlinks, which need either admin rights or Developer Mode.
-    # `opensave-cli` is kept because the docs, the Deck plugin and the
+    # `savevault-cli` is kept because the docs, the Deck plugin and the
     # packaging all refer to the tool by that name.
-    foreach ($alias in @('os', 'opensave-cli')) {
+    foreach ($alias in @('os', 'savevault-cli')) {
         $shim = Join-Path $InstallDir "$alias.cmd"
         # Don't shadow an unrelated command that already answers to this name;
         # "os" is short enough to collide with something already installed.
@@ -106,7 +106,7 @@ try {
             continue
         }
         # %* forwards every argument; the exit code propagates on its own.
-        "@echo off`r`n`"%~dp0opensave.exe`" %*" | Set-Content -Path $shim -Encoding ASCII
+        "@echo off`r`n`"%~dp0savevault.exe`" %*" | Set-Content -Path $shim -Encoding ASCII
         Write-Host "    $shim"
     }
 
@@ -125,7 +125,7 @@ try {
     $userPath = [string]$envKey.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
 
     # Compare whole entries, not substrings: "*$InstallDir*" also matches an
-    # unrelated "...\OpenSave\bin-old" and would then skip an update that was
+    # unrelated "...\SaveVault\bin-old" and would then skip an update that was
     # actually needed.
     $already = $false
     foreach ($entry in ($userPath -split ';')) {
@@ -165,11 +165,11 @@ try {
     & $dest
 
     Write-Host 'Next steps:'
-    Write-Host '  opensave scan            find your game saves'
-    Write-Host '  opensave daemon start    run the sync service'
-    Write-Host '  opensave --help          everything it can do'
+    Write-Host '  savevault scan            find your game saves'
+    Write-Host '  savevault daemon start    run the sync service'
+    Write-Host '  savevault --help          everything it can do'
     Write-Host ''
-    Write-Host "'os' works as a short alias for 'opensave'."
+    Write-Host "'os' works as a short alias for 'savevault'."
     Write-Host "The desktop app is a separate download: https://github.com/$Repo/releases/latest"
 }
 finally {

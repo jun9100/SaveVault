@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
 // The second source of cover art, for the games Steam's CDN has nothing for.

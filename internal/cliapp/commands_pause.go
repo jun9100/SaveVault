@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/syncpause"
+	"github.com/jun9100/savevault/internal/syncpause"
 )
 
 // Pausing syncing from the terminal. The pause lives in the running daemon —
@@ -41,17 +41,17 @@ func cmdPause(args []string) int {
 		return emitJSON(st)
 	}
 	success("Syncing paused %s", describePause(st))
-	note("snapshots are still taken; everything catches up on `opensave resume`")
+	note("snapshots are still taken; everything catches up on `savevault resume`")
 	return 0
 }
 
-const pauseUsage = `usage: opensave pause [duration]
+const pauseUsage = `usage: savevault pause [duration]
 
   Stops this device syncing with your other devices and the cloud backup.
   Snapshots are still taken, and everything catches up when syncing resumes.
 
-    opensave pause        until 'opensave resume', or until OpenSave restarts
-    opensave pause 30m    for half an hour (also: 1h, 1h30m, or minutes: 45)`
+    savevault pause        until 'savevault resume', or until SaveVault restarts
+    savevault pause 30m    for half an hour (also: 1h, 1h30m, or minutes: 45)`
 
 // parsePauseDuration reads "30m", "1h", "1h30m" or a bare number of minutes,
 // rounded to whole minutes and kept between one minute and a day.
@@ -105,7 +105,7 @@ func cmdResume(args []string) int {
 // you resume".
 func describePause(st syncpause.Status) string {
 	if st.UntilRestart {
-		return "until you resume (or OpenSave restarts)"
+		return "until you resume (or SaveVault restarts)"
 	}
 	left := time.Duration(st.RemainingSeconds) * time.Second
 	switch {

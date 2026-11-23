@@ -205,7 +205,7 @@ func ReadHeadFile(path string) (Head, error) {
 
 // PublishHead uploads h as the newest head for its game from its device.
 func (s *Service) PublishHead(h Head, at time.Time) (string, error) {
-	dir, err := os.MkdirTemp("", "opensave-head-*")
+	dir, err := os.MkdirTemp("", "savevault-head-*")
 	if err != nil {
 		return "", err
 	}
@@ -229,7 +229,7 @@ func (s *Service) FetchHead(name string) (Head, error) {
 // FetchHeadFile downloads and reads one listed head file. Keeping the
 // CloudFile type reaches the correct native namespace when names coincide.
 func (s *Service) FetchHeadFile(file CloudFile) (Head, error) {
-	dir, err := os.MkdirTemp("", "opensave-head-*")
+	dir, err := os.MkdirTemp("", "savevault-head-*")
 	if err != nil {
 		return Head{}, err
 	}

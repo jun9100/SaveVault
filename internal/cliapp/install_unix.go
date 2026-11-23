@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-const installedName = "opensave"
+const installedName = "savevault"
 
-const pathActivationHint = "Open a new terminal, or run `hash -r`, and `opensave` will resolve."
+const pathActivationHint = "Open a new terminal, or run `hash -r`, and `savevault` will resolve."
 
 // defaultInstallDir follows the XDG user-binary convention. ~/.local/bin is
 // already on PATH on most desktop distributions (and on SteamOS), so the
@@ -28,11 +28,11 @@ func normalizePathEntry(p string) string {
 	return strings.TrimRight(strings.TrimSpace(p), "/")
 }
 
-// writeAliases links `os` and `opensave-cli` to the installed binary.
+// writeAliases links `os` and `savevault` to the installed binary.
 // Symlinks are free here, unlike on Windows.
 // aliasNames are the short spellings installed beside the binary. They are
 // symlinks here, so they carry no suffix.
-var aliasNames = []string{"os", "opensave-cli"}
+var aliasNames = []string{"os", "savevault"}
 
 const aliasSuffix = ""
 
@@ -101,7 +101,7 @@ func pathLineFor(dir string) string {
 	return fmt.Sprintf("export PATH=\"%s:$PATH\"", dir)
 }
 
-const pathMarker = "# added by opensave install"
+const pathMarker = "# added by savevault install"
 
 // removeFromPath strips the line ensureOnPath added from the shell profiles
 // that carry it, reporting whether anything changed.

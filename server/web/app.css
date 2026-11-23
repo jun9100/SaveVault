@@ -738,8 +738,8 @@ a.event-row:hover .event-text { color: var(--text); }
 .game-link-others { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; font-size: var(--text-xs); }
 .game-link-others a { color: var(--accent-text); font-weight: 600; }
 .game-link-others a:hover { text-decoration: underline; }
-.opensave-prune .inline-fields { grid-template-columns: minmax(0, 1fr); max-width: 320px; }
-.opensave-prune .report { margin-top: 0; }
+.savevault-prune .inline-fields { grid-template-columns: minmax(0, 1fr); max-width: 320px; }
+.savevault-prune .report { margin-top: 0; }
 
 /* ---------- archive audit ---------- */
 
@@ -1108,7 +1108,7 @@ pre.snippet {
   }
 }
 
-/* ---------- OpenSave metadata editor ---------- */
+/* ---------- SaveVault metadata editor ---------- */
 
 .game-card .game-card-tools { display: flex; align-items: center; gap: 2px; flex: none; pointer-events: auto; }
 .game-card-edit {

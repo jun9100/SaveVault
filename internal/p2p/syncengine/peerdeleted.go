@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // Deletions another device asked this one to make, remembered for a while.

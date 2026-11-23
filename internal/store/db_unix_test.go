@@ -12,7 +12,7 @@ import (
 // it: it is the file that holds the private key.
 func TestDatabaseFileIsPrivateToTheOwner(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "opensave.db")
+	path := filepath.Join(dir, "savevault.db")
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

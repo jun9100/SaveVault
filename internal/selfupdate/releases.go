@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/version"
+	"github.com/jun9100/savevault/internal/version"
 )
 
 // Asset is one downloadable file attached to a release.

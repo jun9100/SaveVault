@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // untrackCleanupService is a game-save stand-in holding a fixed listing. It
@@ -40,13 +40,13 @@ func startUntrackCleanupService(t *testing.T, scopeGone string) (*httptest.Serve
 		rec.mu.Lock()
 		defer rec.mu.Unlock()
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/opensave/files":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/savevault/files":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"files": files})
-		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/opensave/files/"):
-			rec.deletes = append(rec.deletes, strings.TrimPrefix(r.URL.Path, "/v1/opensave/files/"))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/savevault/files/"):
+			rec.deletes = append(rec.deletes, strings.TrimPrefix(r.URL.Path, "/v1/savevault/files/"))
 			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/opensave/scopes/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/savevault/scopes/"):
 			rec.scopeGets = append(rec.scopeGets, r.URL.Path)
 			if scopeGone != "" {
 				writeGoneResponse(w, scopeGone)
@@ -107,7 +107,7 @@ func TestCloudDeleteGameAfterUntrack(t *testing.T) {
 	if strings.Join(deletes, ",") != strings.Join(want, ",") {
 		t.Fatalf("deleted %v, want only %v", deletes, want)
 	}
-	if len(scopeGets) != 1 || scopeGets[0] != "/v1/opensave/scopes/switch/hollow-knight" {
+	if len(scopeGets) != 1 || scopeGets[0] != "/v1/savevault/scopes/switch/hollow-knight" {
 		t.Fatalf("scope GETs = %v, want the switch scope once", scopeGets)
 	}
 }
@@ -154,7 +154,7 @@ func TestCloudDeleteGameAfterUntrackRefusesServerMergedScope(t *testing.T) {
 			if len(deletes) != 0 {
 				t.Fatalf("deleted %v, want none", deletes)
 			}
-			if len(scopeGets) != 1 || scopeGets[0] != "/v1/opensave/scopes/switch/hollow-knight" {
+			if len(scopeGets) != 1 || scopeGets[0] != "/v1/savevault/scopes/switch/hollow-knight" {
 				t.Fatalf("scope GETs = %v, want the switch scope once", scopeGets)
 			}
 		})

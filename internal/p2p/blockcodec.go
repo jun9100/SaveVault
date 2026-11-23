@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/p2p/syncengine"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/p2p/syncengine"
 )
 
 // Block payloads travel as base64 inside JSON, which inflates them by a

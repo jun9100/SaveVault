@@ -7,18 +7,18 @@ import (
 	"os"
 	"strings"
 
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/store"
 )
 
-const collectionUsage = `usage: opensave collection list
-       opensave collection create <name>
-       opensave collection rename <collection> <new name>
-       opensave collection delete <collection>
-       opensave collection add <collection> <gameId>...
-       opensave collection remove <collection> <gameId>...
+const collectionUsage = `usage: savevault collection list
+       savevault collection create <name>
+       savevault collection rename <collection> <new name>
+       savevault collection delete <collection>
+       savevault collection add <collection> <gameId>...
+       savevault collection remove <collection> <gameId>...
 
   A collection is named by its id or its name (quote a name with spaces).
-  Favourites is always there:  opensave collection add favourites hades`
+  Favourites is always there:  savevault collection add favourites hades`
 
 // cmdCollection manages collections through the running daemon, so the app
 // shows a change the moment it is made.
@@ -147,5 +147,5 @@ func resolveCollection(idOrName string) (store.Collection, error) {
 			return c, nil
 		}
 	}
-	return store.Collection{}, fmt.Errorf("no collection %q — see `opensave collection list`", idOrName)
+	return store.Collection{}, fmt.Errorf("no collection %q — see `savevault collection list`", idOrName)
 }

@@ -3,7 +3,7 @@ package syncengine
 import (
 	"time"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // What this device hands a peer is a state both have held.

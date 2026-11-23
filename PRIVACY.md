@@ -1,12 +1,12 @@
 # Privacy
 
-OpenSave is designed to be private by default. It is a self-contained tool
+SaveVault is designed to be private by default. It is a self-contained tool
 that runs entirely on your own devices.
 
-## What OpenSave does not do
+## What SaveVault does not do
 
 - **No accounts.** There is no sign-up, login, or user profile.
-- **No telemetry.** OpenSave does not collect analytics, usage data, or crash
+- **No telemetry.** SaveVault does not collect analytics, usage data, or crash
   reports, and never phones home with anything about you. It does make a few
   functional network requests (an update check, and looking up game names and
   cover art while scanning) — these are listed in full under *Outbound network
@@ -33,13 +33,13 @@ that runs entirely on your own devices.
 
   Two caveats. Both devices need a recent version, and a pairing made before
   key exchange existed has no key to seal with — re-pair those two devices.
-  Ours is `wss://relay.opensave.org`, running on hardware the project rents;
+  Ours is `wss://relay.example.com`, running on hardware the project rents;
   self-hosting one is a single command, and LAN sync never involves a relay at
   all.
 
 ## Outbound network requests
 
-Beyond peer-to-peer sync and any Cloud Backup you enable, OpenSave makes a
+Beyond peer-to-peer sync and any Cloud Backup you enable, SaveVault makes a
 small number of functional requests. None of them include an account, your
 name, or the contents of your saves. Some do send a game's Steam **App ID**,
 which identifies the *game* (not you) so its name or cover art can be looked
@@ -54,7 +54,7 @@ up:
   Sends nothing about you.
 - **Cover art** — fetched from Steam's image CDN by App ID and then cached on
   your device. If your network blocks Steam directly (some campus or office
-  networks do), OpenSave automatically retries through a public image proxy,
+  networks do), SaveVault automatically retries through a public image proxy,
   [images.weserv.nl](https://images.weserv.nl), which fetches the same public
   cover image on your behalf — so the App ID is visible to that proxy in that
   case. Cover art is not your save data.
@@ -67,7 +67,7 @@ in the background, and results are cached so they aren't repeated.
 If you turn on Cloud Backup, snapshots are uploaded to the provider you choose
 (Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder)
 using credentials you authorize. OAuth tokens are stored locally on your
-device and are never sent to the OpenSave project. Disconnecting a provider
+device and are never sent to the SaveVault project. Disconnecting a provider
 removes its stored tokens.
 
 ## Pairing & trust

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opensave/opensave/internal/presets"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/presets"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Noticing newly installed games.
@@ -158,7 +158,7 @@ func (d *Daemon) DetectNewGames() {
 	for _, g := range fresh {
 		names = append(names, g.Name)
 	}
-	d.Log.Log("info", fmt.Sprintf("found %d game(s) with saves OpenSave isn't keeping yet: %s — track them from a scan on the Games page, or `opensave scan`",
+	d.Log.Log("info", fmt.Sprintf("found %d game(s) with saves SaveVault isn't keeping yet: %s — track them from a scan on the Games page, or `savevault scan`",
 		len(names), strings.Join(names, ", ")))
 	if d.OnNewGames != nil {
 		d.OnNewGames(d.NewGames())

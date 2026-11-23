@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-// A game must be able to delete its own save while OpenSave is reading it.
+// A game must be able to delete its own save while SaveVault is reading it.
 //
 // On Windows that is not the default: os.Open omits FILE_SHARE_DELETE, so for
-// as long as OpenSave holds a save open — and a manifest build walks every
+// as long as SaveVault holds a save open — and a manifest build walks every
 // tracked save on a timer — the game cannot delete it. The test is written
-// from the game's side: hold the file the way OpenSave does, then do what a
+// from the game's side: hold the file the way SaveVault does, then do what a
 // game does, and require it to work.
 func TestOpenShared_DoesNotBlockTheGameFromDeleting(t *testing.T) {
 	dir := t.TempDir()
@@ -29,7 +29,7 @@ func TestOpenShared_DoesNotBlockTheGameFromDeleting(t *testing.T) {
 	defer f.Close()
 
 	if err := os.Remove(path); err != nil {
-		t.Errorf("a game could not delete its own save while OpenSave had it open: %v", err)
+		t.Errorf("a game could not delete its own save while SaveVault had it open: %v", err)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestOpenShared_DoesNotBlockTheGameFromDeleting(t *testing.T) {
 // Windows refuses to replace a file that has any open handle, whatever share
 // mode it was opened with, and granting the handle DELETE access does not
 // change that. Since writing a temp file and renaming it over the original is
-// how many games save safely, OpenSave reading at the wrong moment can still
+// how many games save safely, SaveVault reading at the wrong moment can still
 // make a game's save fail. The mitigation is holding files open as briefly as
 // possible and not opening unchanged ones at all — the hash cache — not the
 // share mode.

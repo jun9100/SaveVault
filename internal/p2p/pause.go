@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/opensave/opensave/internal/syncpause"
+	"github.com/jun9100/savevault/internal/syncpause"
 )
 
 // Pausing, on the wire.

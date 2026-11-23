@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/opensave/opensave/internal/delta"
-	"github.com/opensave/opensave/internal/ignore"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/ignore"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // RestoreKeeping is Restore for a snapshot that may have come from another

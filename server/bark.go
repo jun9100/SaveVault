@@ -46,7 +46,7 @@ var barkEventKinds = map[string]struct{}{
 	eventDevicePaired:       {},
 	eventDeviceTokenCreated: {},
 	eventDeviceTokenRevoked: {},
-	eventOpenSaveMeta:       {},
+	eventSaveVaultMeta:       {},
 	eventVerify:             {},
 	eventSettings:           {},
 }
@@ -323,8 +323,8 @@ func (s *server) notifyBarkLocked(item event) {
 	}
 
 	scopeName := "A game save"
-	if openSaveName, ok := openSaveEventScopeName(item.Scope); ok {
-		scopeName = openSaveName
+	if saveVaultName, ok := saveVaultEventScopeName(item.Scope); ok {
+		scopeName = saveVaultName
 	} else if item.Scope != "" {
 		if title := strings.TrimSpace(s.dashboard.Scopes[item.Scope].Title); title != "" {
 			scopeName = title
@@ -393,7 +393,7 @@ func barkText(item event, scopeName, deviceName string) (string, string) {
 		return "Game Save retention", item.Detail
 	case eventPrune, eventPruneScope:
 		return "Game Save retention", item.Detail
-	case eventOpenSaveMeta:
+	case eventSaveVaultMeta:
 		return "Game Save metadata", item.Detail
 	case eventSettings:
 		return "Game Save settings", item.Detail

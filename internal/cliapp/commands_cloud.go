@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opensave/opensave/internal/cloud"
+	"github.com/jun9100/savevault/internal/cloud"
 )
 
 // Cloud backup from the terminal, including sign-in.
@@ -22,7 +22,7 @@ import (
 // bar to copy back.
 //
 // It also claimed WebDAV and friends were configurable "entirely from here"
-// with `opensave cloud setup`, a command that did not exist. Both are now
+// with `savevault cloud setup`, a command that did not exist. Both are now
 // real, so a headless server or a Deck in Game Mode can set up cloud backup
 // without a desktop anywhere in the process.
 
@@ -65,20 +65,20 @@ func cmdCloud(args []string) int {
 }
 
 const cloudUsage = `usage:
-  opensave cloud connect <provider>       Sign in to Google Drive, Dropbox or OneDrive
-  opensave cloud setup <provider> [opts]  Configure WebDAV, game-save, a webhook, or a local folder
-  opensave cloud disconnect               Forget the current provider
-  opensave cloud status                   Provider, and whether it's connected
-  opensave cloud browse                   Everything stored in the cloud
-  opensave cloud list <gameId>            Cloud snapshots for one game
-  opensave cloud push <gameId>            Upload this game's local snapshots
-  opensave cloud push --all               Upload every tracked game (idempotent)
-  opensave cloud restore <gameId> <file>  Pull a cloud snapshot back
-  opensave cloud delete <id> <file>       Remove one cloud snapshot
-  opensave cloud delete <gameId> --yes    Remove every cloud copy of a game
-  opensave cloud check                    Newer saves from your other devices
-  opensave cloud take <gameId>            Bring the newer save for a game here
-  opensave cloud skip <gameId>            Keep this device's save instead
+  savevault cloud connect <provider>       Sign in to Google Drive, Dropbox or OneDrive
+  savevault cloud setup <provider> [opts]  Configure WebDAV, game-save, a webhook, or a local folder
+  savevault cloud disconnect               Forget the current provider
+  savevault cloud status                   Provider, and whether it's connected
+  savevault cloud browse                   Everything stored in the cloud
+  savevault cloud list <gameId>            Cloud snapshots for one game
+  savevault cloud push <gameId>            Upload this game's local snapshots
+  savevault cloud push --all               Upload every tracked game (idempotent)
+  savevault cloud restore <gameId> <file>  Pull a cloud snapshot back
+  savevault cloud delete <id> <file>       Remove one cloud snapshot
+  savevault cloud delete <gameId> --yes    Remove every cloud copy of a game
+  savevault cloud check                    Newer saves from your other devices
+  savevault cloud take <gameId>            Bring the newer save for a game here
+  savevault cloud skip <gameId>            Keep this device's save instead
 
   providers: google-drive, dropbox, onedrive, webdav, game-save, webhook, local
 
@@ -120,8 +120,8 @@ func providerID(name string) string {
 func cloudConnect(asJSON bool, args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr,
-			"usage: opensave cloud connect <google-drive|dropbox|onedrive>\n"+
-				"  For WebDAV, game-save, a webhook or a local folder use `opensave cloud setup`.")
+			"usage: savevault cloud connect <google-drive|dropbox|onedrive>\n"+
+				"  For WebDAV, game-save, a webhook or a local folder use `savevault cloud setup`.")
 		return 1
 	}
 	provider := providerID(args[0])
@@ -130,7 +130,7 @@ func cloudConnect(asJSON bool, args []string) int {
 	case "":
 		return fail(asJSON, fmt.Errorf("unknown provider %q", args[0]))
 	default:
-		return fail(asJSON, fmt.Errorf("%s does not sign in — configure it with `opensave cloud setup %s`", args[0], args[0]))
+		return fail(asJSON, fmt.Errorf("%s does not sign in — configure it with `savevault cloud setup %s`", args[0], args[0]))
 	}
 
 	raw, err := daemonRequest("POST", "/api/auth/start", map[string]any{"provider": provider})
@@ -151,7 +151,7 @@ func cloudConnect(asJSON bool, args []string) int {
 		return emitJSON(map[string]any{
 			"provider": provider, "authUrl": start.AuthURL,
 			"autoCallback": start.AutoCallback,
-			"next":         "open authUrl, approve, then: opensave cloud connect " + args[0] + " --code <code>",
+			"next":         "open authUrl, approve, then: savevault cloud connect " + args[0] + " --code <code>",
 		})
 	}
 
@@ -169,7 +169,7 @@ func cloudConnect(asJSON bool, args []string) int {
 	fmt.Println()
 	if start.AutoCallback {
 		note("This machine is listening for the redirect, so if you open the link here it may finish on its own.")
-		hint("opensave cloud status     check whether it completed")
+		hint("savevault cloud status     check whether it completed")
 		fmt.Println()
 	}
 	fmt.Println("  2. The browser lands on a localhost page that won't load. That's expected —")
@@ -177,7 +177,7 @@ func cloudConnect(asJSON bool, args []string) int {
 	fmt.Println()
 	fmt.Println("  3. Paste it back:")
 	fmt.Println()
-	fmt.Printf("     %s\n", faint("opensave cloud connect "+args[0]+" --code <code>"))
+	fmt.Printf("     %s\n", faint("savevault cloud connect "+args[0]+" --code <code>"))
 	fmt.Println()
 	return 0
 }
@@ -199,13 +199,13 @@ func cloudFinishAuth(asJSON bool, code string) int {
 	} else {
 		success("Connected.")
 	}
-	hint("opensave cloud push <gameId>")
+	hint("savevault cloud push <gameId>")
 	return 0
 }
 
 // cloudSetup configures the providers that need settings rather than a
 // sign-in. The comment at the top of this file has claimed since it was
-// written that these "work entirely from here" via `opensave cloud setup` —
+// written that these "work entirely from here" via `savevault cloud setup` —
 // the command did not exist.
 func cloudSetup(asJSON bool, args []string) int {
 	if len(args) == 0 {
@@ -252,7 +252,7 @@ func cloudSetup(asJSON bool, args []string) int {
 		}
 
 	case "google_drive", "dropbox", "onedrive":
-		return fail(asJSON, fmt.Errorf("%s signs in rather than being configured — use `opensave cloud connect %s`", args[0], args[0]))
+		return fail(asJSON, fmt.Errorf("%s signs in rather than being configured — use `savevault cloud connect %s`", args[0], args[0]))
 	default:
 		return fail(asJSON, fmt.Errorf("unknown provider %q\n\n%s", args[0], cloudSetupUsage))
 	}
@@ -264,18 +264,18 @@ func cloudSetup(asJSON bool, args []string) int {
 		return emitJSON(map[string]any{"provider": provider, "configured": true})
 	}
 	success("Cloud backup set to %s", bold(cloud.ProviderLabel(provider)))
-	hint("opensave cloud status", "opensave cloud push <gameId>")
+	hint("savevault cloud status", "savevault cloud push <gameId>")
 	return 0
 }
 
 const cloudSetupUsage = `usage:
-  opensave cloud setup local   --path <folder>
-  opensave cloud setup webdav  --url <url> [--user <u>] [--password <p>]
-  opensave cloud setup game-save  --url <service-url> [--password <sync-key>]
-  opensave cloud setup webhook --url <url> [--headers '<json>']
+  savevault cloud setup local   --path <folder>
+  savevault cloud setup webdav  --url <url> [--user <u>] [--password <p>]
+  savevault cloud setup game-save  --url <service-url> [--password <sync-key>]
+  savevault cloud setup webhook --url <url> [--headers '<json>']
 
   Google Drive, Dropbox and OneDrive sign in instead:
-  opensave cloud connect <provider>`
+  savevault cloud connect <provider>`
 
 func cloudDisconnect(asJSON bool) int {
 	if _, err := daemonRequest("POST", "/api/auth/disconnect", map[string]any{}); err != nil {
@@ -330,7 +330,7 @@ func cloudStatus(asJSON bool) int {
 	section("Cloud backup")
 	if provider == "" || provider == "local" && !enabled {
 		field("provider", faint("none configured"))
-		hint("opensave cloud status --json     see the raw settings",
+		hint("savevault cloud status --json     see the raw settings",
 			"set a provider up in the desktop app, or use a local/NAS folder")
 		fmt.Println()
 		return 0
@@ -378,7 +378,7 @@ func cloudBrowse(asJSON bool) int {
 	if total == 0 {
 		section("Cloud backup")
 		note("Nothing stored in the cloud yet.")
-		hint("opensave cloud push <gameId>")
+		hint("savevault cloud push <gameId>")
 		fmt.Println()
 		return 0
 	}
@@ -395,7 +395,7 @@ func cloudBrowse(asJSON bool) int {
 		}
 	}
 	t.render()
-	hint("opensave cloud restore <gameId> <file>")
+	hint("savevault cloud restore <gameId> <file>")
 	fmt.Println()
 	return 0
 }
@@ -443,7 +443,7 @@ func cloudSnapshotFor(gameID, fileName string) (cloudSnapshotRef, error) {
 		}
 	}
 	return cloudSnapshotRef{}, fmt.Errorf(
-		"%s is not a cloud snapshot of %s — run `opensave cloud list %s`", fileName, gameID, gameID)
+		"%s is not a cloud snapshot of %s — run `savevault cloud list %s`", fileName, gameID, gameID)
 }
 
 func decodeCloudBrowse(raw []byte) ([]cloudBrowseGame, error) {
@@ -456,7 +456,7 @@ func decodeCloudBrowse(raw []byte) ([]cloudBrowseGame, error) {
 
 func cloudList(asJSON bool, args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: opensave cloud list <gameId>")
+		fmt.Fprintln(os.Stderr, "usage: savevault cloud list <gameId>")
 		return 1
 	}
 	raw, err := daemonRequest("GET", "/api/cloud/snapshots/"+args[0], nil)
@@ -483,7 +483,7 @@ func cloudList(asJSON bool, args []string) int {
 	if len(snaps) == 0 {
 		section(args[0])
 		note("No cloud snapshots for this game.")
-		hint("opensave cloud push " + args[0])
+		hint("savevault cloud push " + args[0])
 		fmt.Println()
 		return 0
 	}
@@ -494,7 +494,7 @@ func cloudList(asJSON bool, args []string) int {
 		t.add(accent(s.SnapshotID), faint(s.Branch), humanBytes(s.SizeBytes), faint(s.FileName))
 	}
 	t.render()
-	hint("opensave cloud restore " + args[0] + " <file>")
+	hint("savevault cloud restore " + args[0] + " <file>")
 	fmt.Println()
 	return 0
 }
@@ -522,7 +522,7 @@ func cloudPush(asJSON bool, args []string) int {
 		ids = append(ids, tracked...)
 	}
 	if len(ids) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: opensave cloud push <gameId>\n       opensave cloud push --all")
+		fmt.Fprintln(os.Stderr, "usage: savevault cloud push <gameId>\n       savevault cloud push --all")
 		return 1
 	}
 
@@ -613,8 +613,8 @@ func countIf[T any](items []T, keep func(T) bool) int {
 func cloudRestore(asJSON bool, args []string) int {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr,
-			"usage: opensave cloud restore <gameId> <fileName>\n"+
-				"  list the file names with `opensave cloud list <gameId>`")
+			"usage: savevault cloud restore <gameId> <fileName>\n"+
+				"  list the file names with `savevault cloud list <gameId>`")
 		return 1
 	}
 	snap, err := cloudSnapshotFor(args[0], args[1])
@@ -634,7 +634,7 @@ func cloudRestore(asJSON bool, args []string) int {
 	// the save it replaces.
 	success("Restored %s from the cloud", accent(args[1]))
 	note("The save it replaced was kept as a snapshot.")
-	hint("opensave snapshots " + args[0])
+	hint("savevault snapshots " + args[0])
 	return 0
 }
 
@@ -680,7 +680,7 @@ func cloudCheck(asJSON bool) int {
 		t.add(accent(o.GameID), o.DeviceName, faint(timeAgo(o.SavedAt, now)), faint(warn))
 	}
 	t.render()
-	hint("opensave cloud take <gameId>", "opensave cloud skip <gameId>")
+	hint("savevault cloud take <gameId>", "savevault cloud skip <gameId>")
 	fmt.Println()
 	return 0
 }
@@ -711,7 +711,7 @@ func cloudAnswer(asJSON bool, args []string, take bool) int {
 		verb = "skip"
 	}
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "usage: opensave cloud %s <gameId>\n  see what is waiting with `opensave cloud check`\n", verb)
+		fmt.Fprintf(os.Stderr, "usage: savevault cloud %s <gameId>\n  see what is waiting with `savevault cloud check`\n", verb)
 		return 1
 	}
 	raw, err := daemonRequest("GET", "/api/cloud/offers", nil)
@@ -730,7 +730,7 @@ func cloudAnswer(asJSON bool, args []string, take bool) int {
 		}
 	}
 	if offer == nil {
-		return fail(asJSON, fmt.Errorf("no newer save is waiting for %q — run `opensave cloud check` to look again", args[0]))
+		return fail(asJSON, fmt.Errorf("no newer save is waiting for %q — run `savevault cloud check` to look again", args[0]))
 	}
 	path := "/api/cloud/offers/accept"
 	if !take {
@@ -754,10 +754,10 @@ func cloudAnswer(asJSON bool, args []string, take bool) int {
 }
 
 const cloudDeleteUsage = `usage:
-  opensave cloud delete <gameId> <fileName>   Remove one cloud snapshot
-  opensave cloud delete <gameId> --yes        Remove every cloud copy of a game
+  savevault cloud delete <gameId> <fileName>   Remove one cloud snapshot
+  savevault cloud delete <gameId> --yes        Remove every cloud copy of a game
 
-  File names come from ` + "`opensave cloud list <gameId>`" + `.`
+  File names come from ` + "`savevault cloud list <gameId>`" + `.`
 
 // cloudDeleteOne removes a single cloud snapshot.
 //
@@ -812,7 +812,7 @@ func cloudDelete(asJSON bool, args []string) int {
 		}
 		warning("This deletes every cloud copy of %s.", bold(gameID))
 		note("Local snapshots on this device are not touched.")
-		hint("opensave cloud delete " + gameID + " --yes")
+		hint("savevault cloud delete " + gameID + " --yes")
 		return 1
 	}
 
@@ -914,14 +914,14 @@ func cmdFiles(args []string) int {
 		t.add(faint(size), f.Path)
 	}
 	t.render()
-	hint(fmt.Sprintf("opensave files %s %s <path>     restore just one file", gameID, snapID))
+	hint(fmt.Sprintf("savevault files %s %s <path>     restore just one file", gameID, snapID))
 	fmt.Println()
 	return 0
 }
 
 const filesUsage = `usage:
-  opensave files <gameId> <snapshotId>          List what's in a snapshot
-  opensave files <gameId> <snapshotId> <path>   Restore a single file from it`
+  savevault files <gameId> <snapshotId>          List what's in a snapshot
+  savevault files <gameId> <snapshotId> <path>   Restore a single file from it`
 
 // ── Peers ────────────────────────────────────────────────────────────────
 
@@ -931,7 +931,7 @@ const filesUsage = `usage:
 func cmdProbe(args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: opensave probe <host[:port]>")
+		fmt.Fprintln(os.Stderr, "usage: savevault probe <host[:port]>")
 		return 1
 	}
 
@@ -958,14 +958,14 @@ func cmdProbe(args []string) int {
 	target := fmt.Sprintf("%s:%d", host, port)
 	if res.Reachable {
 		success("%s is reachable.", bold(target))
-		hint("opensave pair " + target)
+		hint("savevault pair " + target)
 		return 0
 	}
 	warning("%s did not answer.", bold(target))
 	if res.Error != "" {
 		note(res.Error)
 	}
-	note("Check OpenSave is running there, and that a firewall isn't blocking the port.")
+	note("Check SaveVault is running there, and that a firewall isn't blocking the port.")
 	return 1
 }
 
@@ -975,7 +975,7 @@ func cmdForget(args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr,
-			"usage: opensave forget <peerId>\n"+
+			"usage: savevault forget <peerId>\n"+
 				"  Removes a stale device record. Use `unpair` for a device that\n"+
 				"  still exists, so it's told about it too.")
 		return 1

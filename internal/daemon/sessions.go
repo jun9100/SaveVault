@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/opensave/opensave/internal/sessions"
-	"github.com/opensave/opensave/internal/store"
+	"github.com/jun9100/savevault/internal/sessions"
+	"github.com/jun9100/savevault/internal/store"
 )
 
 // Play sessions: which tracked game is being played, and what happens when it

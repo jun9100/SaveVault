@@ -5,10 +5,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/opensave/opensave/internal/switchtitle"
+	"github.com/jun9100/savevault/internal/switchtitle"
 )
 
-// Switch games tracked before OpenSave could name them are shown as the name
+// Switch games tracked before SaveVault could name them are shown as the name
 // the scan made up — "Citron Switch Emulator - Title ID: 0100F2C0115B6000".
 // Each is given the name its emulator knows it by, once one does
 // (presets/switchtitles.go). Only a made-up name is replaced: one the person

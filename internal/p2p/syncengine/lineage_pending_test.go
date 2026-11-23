@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/opensave/opensave/internal/delta"
+	"github.com/jun9100/savevault/internal/delta"
 )
 
 // A lineage rebuild must not erase a deletion that is still in flight.
