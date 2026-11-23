@@ -17,6 +17,12 @@
 # Local test builds. Hundreds of megabytes of binaries produced by hand for
 # testing a specific commit; useful to keep on disk, never to commit.
 /localbuild/
+/build-out/
+
+# SaveVault Server local binaries, secrets, and runtime data.
+server/game-save
+server/.env
+server/data/
 
 # Test artifacts
 *.test

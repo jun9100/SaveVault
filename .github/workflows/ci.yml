@@ -75,6 +75,25 @@ jobs:
           cache: gradle
       - run: ./gradlew :app:testDebugUnitTest --no-daemon
 
+  # Self-hosted SaveVault Server (multi-tenant Go service + embedded Web UI + Docker image).
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: node --check web/app.js
+      - run: docker build --build-arg VERSION=ci -t game-save:ci .
+
   tests:
     runs-on: ${{ matrix.os }}
     strategy:

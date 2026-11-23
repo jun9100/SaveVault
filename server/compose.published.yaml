@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# 直接使用 Docker Hub 上已发布的镜像，不需要在 NAS 上编译。
+# 首次使用：cp .env.example .env && 改 GAME_SAVE_ADMIN_TOKEN，然后 docker compose -f compose.published.yaml up -d
+services:
+  savevault:
+    image: jun9100/savevault-server:1.9.1
+    container_name: savevault
+    # 数据目录里的文件属于这个 uid；用 PUID/PGID 调整成 NAS 上的实际用户。
+    user: "${PUID:-10001}:${PGID:-10001}"
+    environment:
+      GAME_SAVE_TOKEN: ${GAME_SAVE_TOKEN:?set GAME_SAVE_TOKEN in .env}
+      GAME_SAVE_ADMIN_TOKEN: ${GAME_SAVE_ADMIN_TOKEN:-}
+      GAME_SAVE_OPENSAVE_USERNAME: ${GAME_SAVE_OPENSAVE_USERNAME:-}
+      GAME_SAVE_OPENSAVE_PASSWORD: ${GAME_SAVE_OPENSAVE_PASSWORD:-}
+      GAME_SAVE_BARK_URL: ${GAME_SAVE_BARK_URL:-}
+      GAME_SAVE_BARK_GROUP: ${GAME_SAVE_BARK_GROUP:-savevault}
+      GAME_SAVE_KEEP_SNAPSHOTS: ${GAME_SAVE_KEEP_SNAPSHOTS:-0}
+      GAME_SAVE_KEEP_DAYS: ${GAME_SAVE_KEEP_DAYS:-0}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${GAME_SAVE_BIND_ADDRESS:-0.0.0.0}:${GAME_SAVE_PORT:-8788}:8787"
+    volumes:
+      - ${GAME_SAVE_DATA_DIR:-./data}:/var/lib/game-save
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/game-save", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
