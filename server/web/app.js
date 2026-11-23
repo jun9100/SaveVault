@@ -577,7 +577,10 @@ async function loadOverview() {
 function toast(message, error = false) {
   const element = document.createElement("div");
   element.className = `toast${error ? " error" : ""}`;
-  element.textContent = message;
+  element.innerHTML = `<span class="toast-icon">${icon(error ? "alert" : "check")}</span>`;
+  const text = document.createElement("span");
+  text.textContent = message;
+  element.append(text);
   $("#toasts").append(element);
   setTimeout(() => element.remove(), error ? 5000 : 2800);
 }
@@ -931,25 +934,25 @@ function renderOverview() {
   main.innerHTML = `
     ${pageHead("概览", `存档同步服务已运行 ${esc(duration((Date.now() - new Date(server.started_at)) / 1000))}`,
       `<a class="btn" href="#/maintenance">${icon("tools")}维护</a>`)}
-    <p class="overview-today">${icon("activity")}今天上传 <b>${today.uploads}</b> 次，涉及 <b>${today.games}</b> 个游戏、<b>${today.devices}</b> 台设备</p>
+    <p class="overview-today"><span class="today-item"><span class="dot ${today.uploads ? "on" : ""}"></span>${icon("activity")}今天上传 <b>${today.uploads}</b> 次</span><span class="today-sep">·</span><span class="today-item">涉及 <b>${today.games}</b> 款游戏</span><span class="today-sep">·</span><span class="today-item"><b>${today.devices}</b> 台活跃设备</span></p>
     <section class="kpi-grid">
-      <div class="card kpi" title="${esc(gameHint)}">
+      <div class="card kpi kpi-games" title="${esc(gameHint)}">
         <div class="kpi-top"><span class="label">受保护的游戏</span><span class="kpi-icon">${icon("shield")}</span></div>
         <span class="value">${totalGames}</span>
         <span class="sub">${esc(gameSub)}</span>
       </div>
-      <div class="card kpi" title="${esc(versionHint)}">
+      <div class="card kpi kpi-versions" title="${esc(versionHint)}">
         <div class="kpi-top"><span class="label">版本总数</span><span class="kpi-icon">${icon("archive")}</span></div>
         <span class="value">${totalVersions}</span>
         <span class="sub">${esc(versionSub)}</span>
       </div>
-      <div class="card kpi" title="${esc(storageHint)}">
+      <div class="card kpi kpi-storage" title="${esc(storageHint)}">
         <div class="kpi-top"><span class="label">存储占用</span><span class="kpi-icon">${icon("database")}</span></div>
         <span class="value">${formatBytes(totalStored)}</span>
         <span class="sub">${esc(storageSub)}</span>
-        ${server.disk_total ? `<div class="meter ${meterClass}" title="数据卷已用 ${(diskUsed * 100).toFixed(1)}%"><i style="width:${(diskUsed * 100).toFixed(1)}%"></i></div>` : ""}
+        ${server.disk_total ? `<div class="meter-wrap" title="数据卷已用 ${(diskUsed * 100).toFixed(1)}%"><div class="meter-meta"><span>数据卷已用</span><b>${(diskUsed * 100).toFixed(1)}%</b></div><div class="meter ${meterClass}"><i style="width:${(diskUsed * 100).toFixed(1)}%"></i></div></div>` : ""}
       </div>
-      <div class="card kpi">
+      <div class="card kpi kpi-devices">
         <div class="kpi-top"><span class="label"><span class="dot ${stats.online_devices ? "on" : ""}"></span>在线设备</span><span class="kpi-icon">${icon("devices")}</span></div>
         <span class="value">${stats.online_devices}<small>/ ${stats.devices} 台</small></span>
         <span class="sub">${onlineDevices.length
@@ -1024,7 +1027,17 @@ function activityChart(days) {
   const barW = Math.max(4, step * 0.62);
   const y = (value) => top + plotH - (value / max) * plotH;
   const ticks = [0, Math.round(max / 2), max];
-  let svg = `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="近 30 天上传与冲突次数">`;
+  let svg = `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="近 30 天上传与冲突次数">
+    <defs>
+      <linearGradient id="chart-upload-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--chart-top)"/>
+        <stop offset="100%" stop-color="var(--chart-bottom)"/>
+      </linearGradient>
+      <linearGradient id="chart-conflict-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--chart-conflict-top)"/>
+        <stop offset="100%" stop-color="var(--chart-conflict-bottom)"/>
+      </linearGradient>
+    </defs>`;
   for (const tick of ticks) {
     svg += `<line class="grid-line" x1="${left}" x2="${width}" y1="${y(tick)}" y2="${y(tick)}"/>`;
     svg += `<text x="${left - 6}" y="${y(tick) + 3}" text-anchor="end">${tick}</text>`;
@@ -1033,12 +1046,12 @@ function activityChart(days) {
     const x = left + index * step + (step - barW) / 2;
     const label = `${day.date}：上传 ${day.uploads} 次${day.conflicts ? `，冲突 ${day.conflicts} 次` : ""}`;
     if (day.uploads) {
-      svg += `<rect class="bar" x="${x}" y="${y(day.uploads)}" width="${barW}" height="${top + plotH - y(day.uploads)}" rx="2"><title>${esc(label)}</title></rect>`;
+      svg += `<rect class="bar" x="${x}" y="${y(day.uploads)}" width="${barW}" height="${top + plotH - y(day.uploads)}" rx="3.5"><title>${esc(label)}</title></rect>`;
     }
     if (day.conflicts) {
       const base = y(day.uploads);
       const h = top + plotH - y(day.conflicts);
-      svg += `<rect class="conflict" x="${x}" y="${base - h}" width="${barW}" height="${h}" rx="2"><title>${esc(label)}</title></rect>`;
+      svg += `<rect class="conflict" x="${x}" y="${base - h}" width="${barW}" height="${h}" rx="3.5"><title>${esc(label)}</title></rect>`;
     }
     if (!day.uploads && !day.conflicts) {
       svg += `<rect fill="transparent" x="${x}" y="${top}" width="${barW}" height="${plotH}"><title>${esc(label)}</title></rect>`;
@@ -2818,20 +2831,6 @@ async function renderMaintenance() {
     <div class="grid two">
       <div class="stack">
         <section class="card">
-          <div class="card-head"><h2>从上游缓存封面</h2>${metaSettings.coverFetch
-            ? statusChip("accent", "已开启") : statusChip("neutral", "已关闭")}</div>
-          <div class="card-body form">
-            <label class="switch-row">
-              <input type="checkbox" id="cover-fetch-toggle" role="switch" ${metaSettings.coverFetch ? "checked" : ""} ${metaSettings.lockedByEnv ? "disabled" : ""}>
-              <span class="switch-track" aria-hidden="true"></span>
-              <span class="switch-copy"><strong>允许从上游缓存封面</strong>
-                <small>打开后 NAS 会访问 Steam、Nintendo、tinfoil，并带上 AppID/TitleID；国内网络建议配 HTTPS_PROXY。</small></span>
-            </label>
-            <p class="hint">只在身份上报、首次上传存档或后台维护时抓取，读取操作不会触发请求。单次超时 8 秒、最多 2 个并发；404 记为没有封面并在 24 小时内不再尝试。${metaSettings.lockedByEnv
-              ? `当前由环境变量 <code>GAME_SAVE_COVER_FETCH</code> 控制，网页上的开关不可修改。` : ""}</p>
-          </div>
-        </section>
-        <section class="card">
           <div class="card-head"><h2>快照保留策略</h2>${edenRetention.keep_snapshots || edenRetention.keep_days
             ? statusChip("accent", "已启用") : statusChip("neutral", "保留全部")}</div>
           <form class="card-body form" id="retention-form">
@@ -2907,6 +2906,20 @@ async function renderMaintenance() {
             <dt>请求数</dt><dd>${server.requests.toLocaleString("zh-CN")}</dd>
             ${server.disk_total ? `<dt>数据卷</dt><dd>${formatBytes(server.disk_free)} 可用 / ${formatBytes(server.disk_total)}</dd>` : ""}
           </dl></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>从上游缓存封面</h2>${metaSettings.coverFetch
+            ? statusChip("accent", "已开启") : statusChip("neutral", "已关闭")}</div>
+          <div class="card-body form">
+            <label class="switch-row">
+              <input type="checkbox" id="cover-fetch-toggle" role="switch" ${metaSettings.coverFetch ? "checked" : ""} ${metaSettings.lockedByEnv ? "disabled" : ""}>
+              <span class="switch-track" aria-hidden="true"></span>
+              <span class="switch-copy"><strong>允许从上游缓存封面</strong>
+                <small>打开后 NAS 会访问 Steam、Nintendo、tinfoil，并带上 AppID/TitleID；国内网络建议配 HTTPS_PROXY。</small></span>
+            </label>
+            <p class="hint">只在身份上报、首次上传存档或后台维护时抓取，读取操作不会触发请求。单次超时 8 秒、最多 2 个并发；404 记为没有封面并在 24 小时内不再尝试。${metaSettings.lockedByEnv
+              ? `当前由环境变量 <code>GAME_SAVE_COVER_FETCH</code> 控制，网页上的开关不可修改。` : ""}</p>
+          </div>
         </section>
         <section class="card">
           <div class="card-head"><h2>监控与脚本</h2></div>
@@ -3032,7 +3045,16 @@ async function onAction(event) {
   switch (action) {
     case "theme": return toggleTheme();
     case "edit-game-meta": return showGameMetaDialog(target.dataset.key);
-    case "refresh": return refresh().then(() => toast("已刷新"));
+    case "refresh": {
+      target.classList.add("spinning");
+      try {
+        await refresh();
+        toast("已刷新");
+      } finally {
+        target.classList.remove("spinning");
+      }
+      return;
+    }
     case "logout":
       try {
         await fetch("api/logout", { method: "POST", headers: { "X-Game-Save-Admin": "1" } });
@@ -3368,8 +3390,11 @@ function applyTheme(theme) {
   if (theme) document.documentElement.dataset.theme = theme;
   else delete document.documentElement.dataset.theme;
   const dark = theme ? theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  const button = $('[data-action="theme"]');
-  if (button) button.innerHTML = icon(dark ? "sun" : "moon");
+  document.querySelectorAll('[data-action="theme"]').forEach((button) => {
+    button.innerHTML = icon(dark ? "sun" : "moon");
+    button.title = dark ? "切换浅色主题" : "切换深色主题";
+    button.setAttribute("aria-label", button.title);
+  });
 }
 
 function toggleTheme() {
@@ -3408,15 +3433,39 @@ function showLogin() {
   }
   $("#app").hidden = true;
   $("#login").hidden = false;
-  $("#login-token").value = "";
-  $("#login-token").focus();
+  const tokenInput = $("#login-token");
+  tokenInput.type = "password";
+  tokenInput.value = "";
+  const toggleButton = $("#login-token-toggle");
+  if (toggleButton) {
+    toggleButton.innerHTML = icon("eye");
+    toggleButton.title = "显示令牌";
+    toggleButton.setAttribute("aria-label", "显示令牌");
+  }
+  tokenInput.focus();
 }
 
 async function showApp() {
   $("#login").hidden = true;
   $("#app").hidden = false;
-  main.innerHTML = `<div class="skeleton"></div>`;
+  main.innerHTML = `<div class="skeleton-stack">
+    <div class="skeleton-kpis"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+    <div class="skeleton skeleton-panel"></div>
+  </div>`;
   await refresh();
+}
+
+const loginTokenToggle = $("#login-token-toggle");
+if (loginTokenToggle) {
+  loginTokenToggle.addEventListener("click", () => {
+    const input = $("#login-token");
+    const visible = input.type === "text";
+    input.type = visible ? "password" : "text";
+    loginTokenToggle.innerHTML = icon(visible ? "eye" : "eye-off");
+    loginTokenToggle.title = visible ? "显示令牌" : "隐藏令牌";
+    loginTokenToggle.setAttribute("aria-label", loginTokenToggle.title);
+    input.focus();
+  });
 }
 
 $("#login-form").addEventListener("submit", async (event) => {

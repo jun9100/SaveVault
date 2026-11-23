@@ -43,38 +43,52 @@ SPDX-License-Identifier: GPL-3.0-or-later
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
   <symbol id="i-gamepad" viewBox="0 0 24 24"><path d="M7.2 7h9.6a4 4 0 0 1 3.9 3.1l1.1 5.3a2.7 2.7 0 0 1-4.8 2.3L15.5 16h-7L7 17.7a2.7 2.7 0 0 1-4.8-2.3l1.1-5.3A4 4 0 0 1 7.2 7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 10v4m-2-2h4m5.5-.5h.01m2 2h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 10.6a2.8 2.8 0 0 0 3.8 3.8M9.9 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16.8 16.8 0 0 1-3.3 4.2M6.4 7.7A16.5 16.5 0 0 0 2.5 12s3.5 6.5 9.5 6.5a9.4 9.4 0 0 0 3.7-.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 9.5 17 19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4.5m0 3.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
 </svg>
 
 <div id="login" class="login" hidden>
+  <button class="icon-btn login-theme" type="button" data-action="theme" title="切换主题" aria-label="切换主题"><svg><use href="#i-moon"/></svg></button>
   <form class="login-card" id="login-form" autocomplete="on">
     <div class="login-mark"><svg><use href="#i-logo"/></svg></div>
-    <h1>SaveVault 云端</h1>
-    <p>输入管理员令牌（GAME_SAVE_ADMIN_TOKEN）以管理存档、设备与存储。</p>
+    <div class="login-heading">
+      <span class="login-pill">CLOUD VAULT CONSOLE</span>
+      <h1>SaveVault 云端</h1>
+      <p>输入管理员令牌（<code>GAME_SAVE_ADMIN_TOKEN</code>）以管理存档、设备、用户与存储策略。</p>
+    </div>
     <label class="field">
       <span>管理员令牌</span>
-      <input id="login-token" name="password" type="password" autocomplete="current-password" required autofocus>
+      <div class="input-wrap">
+        <input id="login-token" name="password" type="password" autocomplete="current-password" placeholder="输入管理员令牌…" required autofocus>
+        <button class="icon-btn input-toggle" type="button" id="login-token-toggle" title="显示令牌" aria-label="显示令牌"><svg><use href="#i-eye"/></svg></button>
+      </div>
     </label>
     <p class="form-error" id="login-error" role="alert"></p>
-    <button class="btn primary block" type="submit">登录</button>
-    <small class="login-foot">会话保存 7 天 · 仅限家庭局域网使用</small>
+    <button class="btn primary block" type="submit">进入控制台</button>
+    <small class="login-foot">会话安全保存 7 天 · 端到端加密存档保护</small>
   </form>
 </div>
 
 <div id="app" class="shell" hidden>
   <aside class="sidebar">
-    <a class="brand" href="#/">
+    <a class="brand" href="#/" aria-label="SaveVault 云端概览">
       <span class="brand-mark"><svg><use href="#i-logo"/></svg></span>
-      <span><strong>SaveVault 云端</strong><small id="brand-version"></small></span>
+      <span class="brand-text"><strong>SaveVault</strong><small id="brand-version">CLOUD</small></span>
     </a>
     <nav class="nav" id="nav" aria-label="主导航">
-      <a href="#/" data-route="overview"><svg><use href="#i-home"/></svg><span>概览</span></a>
-      <a href="#/saves" data-route="saves"><svg><use href="#i-saves"/></svg><span>存档</span><em id="nav-saves"></em></a>
-      <a href="#/savevault" data-route="savevault"><svg><use href="#i-archive"/></svg><span>SaveVault</span><em id="nav-savevault"></em></a>
-      <a href="#/devices" data-route="devices"><svg><use href="#i-devices"/></svg><span>设备</span><em id="nav-devices"></em></a>
-      <a href="#/users" data-route="users"><svg><use href="#i-user"/></svg><span>用户</span></a>
-      <a href="#/tokens" data-route="tokens"><svg><use href="#i-shield"/></svg><span>令牌</span></a>
-      <a href="#/activity" data-route="activity"><svg><use href="#i-activity"/></svg><span>活动</span></a>
-      <a href="#/maintenance" data-route="maintenance"><svg><use href="#i-tools"/></svg><span>维护</span></a>
+      <span class="nav-label">工作台</span>
+      <a href="#/" data-route="overview" title="概览" aria-label="概览"><svg><use href="#i-home"/></svg><span>概览</span></a>
+      <a href="#/saves" data-route="saves" title="存档" aria-label="存档"><svg><use href="#i-saves"/></svg><span>存档</span><em id="nav-saves"></em></a>
+      <a href="#/savevault" data-route="savevault" title="SaveVault" aria-label="SaveVault"><svg><use href="#i-archive"/></svg><span>SaveVault</span><em id="nav-savevault"></em></a>
+      <span class="nav-label">接入与租户</span>
+      <a href="#/devices" data-route="devices" title="设备" aria-label="设备"><svg><use href="#i-devices"/></svg><span>设备</span><em id="nav-devices"></em></a>
+      <a href="#/users" data-route="users" title="用户" aria-label="用户"><svg><use href="#i-user"/></svg><span>用户</span></a>
+      <a href="#/tokens" data-route="tokens" title="令牌" aria-label="令牌"><svg><use href="#i-shield"/></svg><span>令牌</span></a>
+      <span class="nav-label">审计与维护</span>
+      <a href="#/activity" data-route="activity" title="活动" aria-label="活动"><svg><use href="#i-activity"/></svg><span>活动</span></a>
+      <a href="#/maintenance" data-route="maintenance" title="维护" aria-label="维护"><svg><use href="#i-tools"/></svg><span>维护</span></a>
     </nav>
     <div class="sidebar-foot">
       <button class="icon-btn" type="button" data-action="theme" title="切换主题" aria-label="切换主题"><svg><use href="#i-moon"/></svg></button>
