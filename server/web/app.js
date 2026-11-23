@@ -1020,48 +1020,43 @@ function activityChart(days) {
   if (!days.some((day) => day.uploads || day.conflicts)) {
     return `<div class="chart-empty">${icon("activity")}<span><strong>近 30 天还没有同步记录</strong> · 上传和冲突会按天显示在这里</span></div>`;
   }
-  const width = 600, height = 190, top = 12, bottom = 24, left = 26;
-  const plotH = height - top - bottom;
   const max = Math.max(4, ...days.map((day) => day.uploads + day.conflicts));
-  const step = (width - left) / days.length;
-  const barW = Math.max(4, step * 0.62);
-  const y = (value) => top + plotH - (value / max) * plotH;
-  const ticks = [0, Math.round(max / 2), max];
-  let svg = `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="近 30 天上传与冲突次数">
-    <defs>
-      <linearGradient id="chart-upload-grad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--chart-top)"/>
-        <stop offset="100%" stop-color="var(--chart-bottom)"/>
-      </linearGradient>
-      <linearGradient id="chart-conflict-grad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--chart-conflict-top)"/>
-        <stop offset="100%" stop-color="var(--chart-conflict-bottom)"/>
-      </linearGradient>
-    </defs>`;
-  for (const tick of ticks) {
-    svg += `<line class="grid-line" x1="${left}" x2="${width}" y1="${y(tick)}" y2="${y(tick)}"/>`;
-    svg += `<text x="${left - 6}" y="${y(tick) + 3}" text-anchor="end">${tick}</text>`;
-  }
-  days.forEach((day, index) => {
-    const x = left + index * step + (step - barW) / 2;
-    const label = `${day.date}：上传 ${day.uploads} 次${day.conflicts ? `，冲突 ${day.conflicts} 次` : ""}`;
-    if (day.uploads) {
-      svg += `<rect class="bar" x="${x}" y="${y(day.uploads)}" width="${barW}" height="${top + plotH - y(day.uploads)}" rx="3.5"><title>${esc(label)}</title></rect>`;
-    }
-    if (day.conflicts) {
-      const base = y(day.uploads);
-      const h = top + plotH - y(day.conflicts);
-      svg += `<rect class="conflict" x="${x}" y="${base - h}" width="${barW}" height="${h}" rx="3.5"><title>${esc(label)}</title></rect>`;
-    }
-    if (!day.uploads && !day.conflicts) {
-      svg += `<rect fill="transparent" x="${x}" y="${top}" width="${barW}" height="${plotH}"><title>${esc(label)}</title></rect>`;
-    }
-    if (index % 7 === 0 || index === days.length - 1) {
-      const [yy, mm, dd] = day.date.split("-").map(Number);
-      svg += `<text x="${x + barW / 2}" y="${height - 6}" text-anchor="middle">${esc(shortDate.format(new Date(yy, mm - 1, dd)))}</text>`;
-    }
-  });
-  return `${svg}</svg>`;
+  const mid = Math.round(max / 2);
+  const formatDay = (raw) => {
+    const [yy, mm, dd] = String(raw || "").split("-").map(Number);
+    return yy && mm && dd ? shortDate.format(new Date(yy, mm - 1, dd)) : raw;
+  };
+  const cols = days.map((day, index) => {
+    const uploads = Number(day.uploads) || 0;
+    const conflicts = Number(day.conflicts) || 0;
+    const total = uploads + conflicts;
+    const uploadPct = uploads ? Math.max(4, (uploads / max) * 100) : 0;
+    const conflictPct = conflicts ? Math.max(4, (conflicts / max) * 100) : 0;
+    const side = index < Math.ceil(days.length / 2) ? " tip-right" : " tip-left";
+    const detail = total
+      ? `上传 ${uploads} 次${conflicts ? ` · 冲突 ${conflicts} 次` : ""}`
+      : "无同步记录";
+    return `<div class="bar-col${total ? " has-data" : ""}${side}" tabindex="0" aria-label="${esc(`${day.date}：${detail}`)}">
+      <div class="bar-tip" role="tooltip"><b>${esc(day.date)}</b><span>${esc(detail)}</span></div>
+      <div class="bar-stack">
+        ${conflicts ? `<span class="bar-seg conflict" style="height:${conflictPct.toFixed(2)}%"></span>` : ""}
+        ${uploads ? `<span class="bar-seg upload" style="height:${uploadPct.toFixed(2)}%"></span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  const labelIndices = [0, 7, 14, 21, days.length - 1].filter((v, i, arr) => v >= 0 && v < days.length && arr.indexOf(v) === i);
+  const axis = labelIndices.map((idx) => `<span>${esc(formatDay(days[idx].date))}</span>`).join("");
+  return `<div class="bar-chart" role="img" aria-label="近 30 天上传与冲突次数">
+    <div class="bar-chart-plot">
+      <div class="bar-chart-grid" aria-hidden="true">
+        <div class="bar-chart-row"><span>${max}</span><i></i></div>
+        <div class="bar-chart-row"><span>${mid}</span><i></i></div>
+        <div class="bar-chart-row"><span>0</span><i></i></div>
+      </div>
+      <div class="bar-chart-cols">${cols}</div>
+    </div>
+    <div class="bar-chart-axis" aria-hidden="true">${axis}</div>
+  </div>`;
 }
 
 function renderSaves() {
@@ -1088,7 +1083,7 @@ function renderSaves() {
   main.innerHTML = `
     ${pageHead("存档", `${scopes.length} 个存档范围 · 每个范围对应一个游戏账号存档或设备存档`)}
     <div class="toolbar">
-      <label class="search">${icon("search")}<input type="search" id="saves-search" aria-label="搜索存档" placeholder="搜索游戏名称或范围 ID" value="${esc(store.savesQuery)}"></label>
+      <label class="search">${icon("search")}<input type="search" id="saves-search" aria-label="搜索存档" placeholder="搜索游戏名称或范围 ID" value="${esc(store.savesQuery)}"><kbd class="search-kbd">/</kbd></label>
       <div class="chips">
         <button class="chip ${store.savesFilter === "all" ? "active" : ""}" data-filter="all">全部</button>
         <button class="chip ${store.savesFilter === "unnamed" ? "active" : ""}" data-filter="unnamed">待命名${unnamed ? ` ${unnamed}` : ""}</button>
@@ -1129,9 +1124,10 @@ function renderSaves() {
 }
 
 function saveCard(scope) {
-  return `<a class="card save" href="#/saves/${encodeURIComponent(scope.id)}">
+  const title = scope.title || "未命名存档";
+  return `<a class="card save" style="--card-hue:${hue(title)}" href="#/saves/${encodeURIComponent(scope.id)}">
     <div class="save-top">${cover(scope)}
-      <div class="save-title"><strong title="${esc(scope.title || "未命名存档")}">${esc(scope.title || "未命名存档")}</strong>
+      <div class="save-title"><strong title="${esc(title)}">${esc(title)}</strong>
         ${scope.named ? "" : statusChip("warn", "待命名")}
         ${scope.user ? `<span class="save-user">${icon("user")}${esc(scope.user)}</span>` : ""}
         <code title="${esc(scope.id)}">${esc(scope.id)}</code></div></div>
@@ -1216,7 +1212,7 @@ function saveVaultGameCard(game) {
     const memberLink = saveVaultGameLinkLabel[member.link] || member.link;
     return `${source} · ${relTime(received)} · ${member.snapshotCount || 0} 个版本 · ${memberBytes} · ${memberLink}`;
   };
-  return `<article class="card game-card">
+  return `<article class="card game-card" style="--card-hue:${hue(name)}">
     <a class="game-card-hit" href="${first ? saveVaultScopeLink(first) : "#/savevault"}" aria-label="打开 ${esc(name)}"></a>
     <div class="game-card-head">
       ${coverBlock(name, gameCoverURL(game), "game-cover")}
@@ -1350,10 +1346,15 @@ async function renderSaveVault() {
   main.innerHTML = `
     ${pageHead("SaveVault 存档", `${games.length} 款游戏 · ${scopes.length} 个同步范围 · ${files.length} 个不可变归档`,
       `<div class="head-tools">
-        <label class="search">${icon("search")}<input type="search" id="savevault-search" aria-label="搜索游戏、范围或归档" placeholder="搜索游戏、范围或设备" value="${esc(store.saveVaultQuery)}"></label>
-        <select id="savevault-type" aria-label="游戏类型"><option value="all">全部类型</option>
-          ${types.map((type) => `<option value="${esc(type)}">${esc(saveVaultTypeLabel(type))}</option>`).join("")}</select>
+        <label class="search">${icon("search")}<input type="search" id="savevault-search" aria-label="搜索游戏、范围或归档" placeholder="搜索游戏、范围或设备" value="${esc(store.saveVaultQuery)}"><kbd class="search-kbd">/</kbd></label>
       </div>`)}
+    ${types.length > 1 ? `<div class="toolbar"><div class="chips">
+      <button class="chip ${store.saveVaultType === "all" ? "active" : ""}" type="button" data-sv-type="all">全部 ${games.length}</button>
+      ${types.map((type) => {
+        const count = games.filter((game) => game.type === type).length;
+        return `<button class="chip ${store.saveVaultType === type ? "active" : ""}" type="button" data-sv-type="${esc(type)}">${esc(saveVaultTypeLabel(type))}${count ? ` ${count}` : ""}</button>`;
+      }).join("")}
+    </div></div>` : ""}
     <section class="game-grid">
       ${visibleGames.length ? visibleGames.map(saveVaultGameCard).join("")
         : `<div class="card grid-empty">${emptyState(games.length ? "没有匹配的游戏" : "还没有同步范围",
@@ -1361,9 +1362,9 @@ async function renderSaveVault() {
     </section>
     ${saveVaultArchivePanel(visible, query)}`;
 
-  const typeSelect = $("#savevault-type");
-  typeSelect.value = store.saveVaultType;
-  typeSelect.onchange = (event) => { store.saveVaultType = event.target.value; renderSaveVault(); };
+  main.querySelectorAll("[data-sv-type]").forEach((chip) => {
+    chip.onclick = () => { store.saveVaultType = chip.dataset.svType; renderSaveVault(); };
+  });
   const search = $("#savevault-search");
   search.oninput = () => {
     store.saveVaultQuery = search.value;
@@ -1717,7 +1718,7 @@ async function renderSaveVaultScope(type, gameId) {
   const received = head?.receivedAt || scope.lastReceivedAt;
   main.innerHTML = `
     <a class="back" href="#/savevault">${icon("back")}返回 SaveVault 存档</a>
-    <section class="card scope-hero">
+    <section class="card scope-hero" style="--hero-hue:${hue(gameName)}">
       ${coverBlock(gameName, gameCoverURL(game), "lg")}
       <div class="scope-hero-copy">
         <div class="scope-hero-tags">
@@ -1819,7 +1820,7 @@ async function renderScope(id) {
   main.innerHTML = `
     <a class="back" href="#/saves">${icon("back")}存档</a>
     <section class="card">
-      <div class="hero">${cover(scope, "lg")}
+      <div class="hero" style="--hero-hue:${hue(title)}">${cover(scope, "lg")}
         <div class="hero-text">
           <div class="hero-badges">${scope.named ? statusChip("ok", "已识别") : statusChip("warn", "待命名")}
             ${scope.user ? `<span class="save-user">${icon("user")}${esc(scope.user)}</span>` : ""}</div>
@@ -1906,8 +1907,13 @@ function snapshotRow(item) {
 
 function renderDevices() {
   const { devices, server } = store.overview;
+  const onlineCount = devices.filter((device) => device.online).length;
+  const totalUploads = devices.reduce((sum, device) => sum + (Number(device.uploads) || 0), 0);
+  const subtitle = devices.length
+    ? `${onlineCount} 台在线 · 共 ${devices.length} 台设备 · 累计上传 ${totalUploads} 次 · ${server.online_window_seconds} 秒内通信视为在线`
+    : `${devices.length} 台设备 · ${server.online_window_seconds} 秒内有通信视为在线`;
   main.innerHTML = `
-    ${pageHead("设备", `${devices.length} 台设备 · ${server.online_window_seconds} 秒内有通信视为在线`)}
+    ${pageHead("设备", subtitle)}
     ${devices.length ? `<section class="devices">${devices.map(deviceCard).join("")}</section>`
       : `<div class="card">${emptyState("尚未发现设备", "Eden 客户端连接同步服务后会自动出现在这里。", "devices")}</div>`}`;
 }
@@ -1915,7 +1921,7 @@ function renderDevices() {
 function deviceCard(device) {
   const [platformCls, platformLabel] = platformClass(device.platform);
   const display = device.alias || device.name || "未命名设备";
-  return `<article class="card device">
+  return `<article class="card device${device.online ? " online" : ""}">
     <div class="device-top">
       <span class="platform ${platformCls}">${esc(platformLabel)}</span>
       <div class="device-name"><strong><span title="${esc(display)}">${esc(display)}</span>
@@ -1984,7 +1990,9 @@ function userRow(user) {
   const disabled = user.status && user.status !== "active";
   const expires = user.expires_at ? absTime(user.expires_at) : "";
   const expired = user.expires_at ? new Date(user.expires_at) <= new Date() : false;
-  return `<div class="token-row ${disabled || expired ? "revoked" : ""}">
+  const avatarHue = hue(user.username || "user");
+  return `<div class="token-row user-row ${disabled || expired ? "revoked" : ""}">
+    <span class="user-avatar" style="--hue:${avatarHue};--hue-2:${(avatarHue + 38) % 360}" aria-hidden="true">${esc(coverInitials(user.username))}</span>
     <div class="token-main">
       <div class="token-title"><strong>${esc(user.username)}</strong>
         ${expired ? statusChip("danger", "已到期") : disabled ? statusChip("danger", "已禁用") : statusChip("ok", "有效")}
@@ -2015,7 +2023,7 @@ function renderUsersView() {
     </div>
     <section class="card token-section">
       <div class="card-head"><div><h2>全部用户</h2><p>共 ${users.length} 个 · 密码以 PBKDF2-SHA256（210,000 轮）保存，服务端无法还原</p></div></div>
-      <div class="card-body token-list">${users.length ? users.map(userRow).join("") : `<p class="shared-empty">还没有用户。点右上角「新建用户」创建第一个客户账号。</p>`}</div>
+      <div class="card-body token-list">${users.length ? users.map(userRow).join("") : emptyState("还没有用户", "点右上角「新建用户」创建第一个独立租户账号。", "user")}</div>
     </section>`;
 }
 
@@ -3495,6 +3503,17 @@ $("#login-form").addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", onAction);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+  if ($("#app").hidden || !$("#modal-root").hidden) return;
+  const active = document.activeElement;
+  if (active && active.matches("input, textarea, select, [contenteditable]")) return;
+  const search = $(".search input", main);
+  if (!search) return;
+  event.preventDefault();
+  search.focus();
+  search.select();
+});
 window.addEventListener("hashchange", () => {
   if (!$("#app").hidden) render().catch((error) => {
     if (error instanceof UnauthorizedError) showLogin();
