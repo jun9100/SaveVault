@@ -7,7 +7,7 @@
 
 services:
   game-save:
-    image: ${GAME_SAVE_IMAGE:-ghcr.io/jun9100/savevault-server:v1.10.0}
+    image: ${GAME_SAVE_IMAGE:-ghcr.io/jun9100/savevault-server:v1.10.1}
     container_name: game-save
     user: "1026:100"
     env_file:

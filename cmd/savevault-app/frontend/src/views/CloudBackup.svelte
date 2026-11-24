@@ -25,6 +25,8 @@
   // Kept in the general settings rather than the cloud config, but it is a
   // cloud behaviour and is set here with the rest.
   let autoPull = false;
+  let uploadOnExitOnly = true;
+  let uploadMinInterval = 0;
   // Shared by everything on the page that talks to the provider, so one
   // change is in flight at a time.
   const busy = writable(false);
@@ -56,6 +58,8 @@
       if (keepProvider) next.provider = keepProvider;
       config = next;
       autoPull = !!s.cloudAutoPull;
+      uploadOnExitOnly = s.cloudUploadOnExitOnly !== false;
+      uploadMinInterval = Number(s.cloudUploadMinInterval) || 0;
     } catch (e) {
       toast(trError(e.message), 'error');
     }
@@ -118,6 +122,16 @@
   function setAutoPull(on) {
     autoPull = on;
     saveSwitch({ cloudAutoPull: on }, () => (autoPull = !on));
+  }
+  function setUploadOnExitOnly(on) {
+    uploadOnExitOnly = on;
+    saveSwitch({ cloudUploadOnExitOnly: on }, () => (uploadOnExitOnly = !on));
+  }
+  function setUploadMinInterval(minutes) {
+    const prev = uploadMinInterval;
+    const next = Number(minutes) || 0;
+    uploadMinInterval = next;
+    saveSwitch({ cloudUploadMinInterval: next }, () => (uploadMinInterval = prev));
   }
 
   // The daemon has already written the address and token into the settings;
@@ -227,6 +241,27 @@
         {$t('cloud.backup.autoPull')}
       </label>
       <p class="hint">{$t('cloud.backup.autoPullHint')}</p>
+      <label class="check">
+        <input type="checkbox" disabled={$busy} checked={uploadOnExitOnly} on:change={(e) => setUploadOnExitOnly(e.currentTarget.checked)} />
+        {$t('cloud.backup.uploadOnExitOnly')}
+      </label>
+      <p class="hint">{$t('cloud.backup.uploadOnExitOnlyHint')}</p>
+      <div class="field upload-interval">
+        <label for="cb-upload-interval">{$t('cloud.backup.uploadMinInterval')}</label>
+        <select
+          id="cb-upload-interval"
+          disabled={$busy}
+          value={uploadMinInterval}
+          on:change={(e) => setUploadMinInterval(e.currentTarget.value)}
+        >
+          <option value={0}>{$t('cloud.backup.uploadIntervalImmediate')}</option>
+          <option value={10}>{$t('cloud.backup.uploadIntervalMinutes', { minutes: 10 })}</option>
+          <option value={15}>{$t('cloud.backup.uploadIntervalMinutes', { minutes: 15 })}</option>
+          <option value={30}>{$t('cloud.backup.uploadIntervalMinutes', { minutes: 30 })}</option>
+          <option value={60}>{$t('cloud.backup.uploadIntervalMinutes', { minutes: 60 })}</option>
+        </select>
+        <span class="hint">{$t('cloud.backup.uploadMinIntervalHint')}</span>
+      </div>
     </div>
 
   </div>

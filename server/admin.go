@@ -81,6 +81,7 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 		mux.HandleFunc("DELETE "+prefix+"/games/{key...}", s.requireAdminWrite(s.handleAdminSaveVaultGameMetaDelete))
 		mux.HandleFunc("POST "+prefix+"/games/{key...}", s.requireAdminWrite(s.handleAdminSaveVaultGameCoverRefetch))
 		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/promote", s.requireAdminWrite(s.handlePromoteSaveVaultScopeSnapshot))
+		mux.HandleFunc("POST "+prefix+"/scopes/{type}/{game}/conflicts/clear", s.requireAdminWrite(s.handleClearSaveVaultScopeConflicts))
 		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/game", s.requireAdminWrite(s.handlePutSaveVaultScopeGame))
 	}
 	mux.HandleFunc("GET /admin/api/scopes/{id}", s.requireAdmin(s.handleScopeDetail))

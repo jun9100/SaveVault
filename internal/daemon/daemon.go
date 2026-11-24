@@ -83,7 +83,8 @@ type Daemon struct {
 
 	// uploads counts cloud mirrors still running, so Stop can wait for them
 	// rather than letting process exit truncate one.
-	uploads drain.Group
+	uploads       drain.Group
+	cloudThrottle cloudUploadThrottle
 
 	// held are the cloud copies of snapshots taken while syncing was paused,
 	// sent when it resumes. See pause.go.
@@ -191,27 +192,10 @@ func New(opts Options) (*Daemon, error) {
 	}
 
 	// Every new snapshot mirrors to the configured cloud provider in the
-	// background; failures are logged, never fatal.
+	// background; failures are logged, never fatal. Automatic snapshots may be
+	// coalesced while a game is running or within a configured throttle window.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
-		// Tracked so Stop can wait for it. In a short-lived process —
-		// `savevault snapshot`, or the automatic backup taken by rollback and
-		// checkout — the process would otherwise exit before the copy
-		// finishes. The destination file has already been created and
-		// truncated by then, so what is left in the cloud is a zero-byte
-		// archive that looks like a backup. `cloud push` then skips it,
-		// because a file of that name exists, so it is never repaired.
-		// Reproduced with a local folder provider: of five snapshots taken in
-		// sequence, the last two uploaded as 0 bytes.
-		//
-		// Counted here, on the caller's goroutine, and only then moved to the
-		// background, so that Stop, once it has seen the snapshot finish,
-		// also sees its upload.
-		if d.P2P.Pause.Paused() {
-			d.holdUpload(zipPath, remoteFileName)
-			return
-		}
-		d.uploads.Add()
-		go d.runCloudUpload(zipPath, remoteFileName, "", log)
+		d.enqueueCloudUpload(zipPath, remoteFileName)
 	}
 	d.P2P.Pause.OnResume(d.catchUpAfterPause)
 	// Which snapshot is each game's save, for reading the mirror back.
@@ -515,6 +499,10 @@ func (d *Daemon) Stop() {
 	if !d.initialSnapshots.Wait(uploadDrainTimeout) {
 		d.Log.Log("warn", "an initial snapshot was still running at shutdown; it may be missing")
 	}
+
+	// Flush any uploads coalesced while a game was running or throttled so the
+	// latest state still reaches the cloud before shutdown drains.
+	d.FlushAllPendingCloudUploads(true)
 
 	// Uploads last: a snapshot that finished above may have queued one, and
 	// an upload cut off part-way leaves a truncated archive in the cloud.

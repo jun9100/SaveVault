@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -144,29 +142,7 @@ func (s *server) handleDeleteSaveVaultScopeSnapshot(w http.ResponseWriter, r *ht
 		return
 	}
 	s.saveVaultState = nextState
-
-	var freedBytes int64
-	if !s.saveVaultArchiveReferencedLocked(kind, snap.Archive) && snap.Archive != "" {
-		if archivePath, valid := s.saveVaultPath(kind, snap.Archive); valid {
-			var size int64
-			if info, err := os.Stat(archivePath); err == nil {
-				size = info.Size()
-			}
-			if err := s.manageRemove(archivePath); err == nil {
-				freedBytes = size
-			} else if !errors.Is(err, os.ErrNotExist) {
-				slog.Warn("delete SaveVault snapshot archive", "type", kind, "archive", snap.Archive, "error", err)
-			}
-		}
-		catalogKey := saveVaultCatalogKey(kind, snap.Archive)
-		if _, exists := s.saveVaultCatalog.Files[catalogKey]; exists {
-			nextCatalog := s.saveVaultCatalog.clone()
-			delete(nextCatalog.Files, catalogKey)
-			if err := s.persistSaveVaultCatalog(nextCatalog); err == nil {
-				s.saveVaultCatalog = nextCatalog
-			}
-		}
-	}
+	freedBytes := s.cleanupRemovedSaveVaultArchivesLocked(kind, []string{snap.Archive})
 	s.saveVaultMu.Unlock()
 
 	s.recordSaveVaultManageEvent(eventDeleteSnapshot, "deleted snapshot "+snapshotID, kind, gameID, snapshotID)
@@ -334,6 +310,7 @@ func (r *vaultRegistry) serveSelfRoutes(w http.ResponseWriter, request *http.Req
 		mux.HandleFunc("DELETE /v1/self/savevault/scopes/{type}/{game}/snapshots/{snapshot}/lock", vault.handleDeleteSaveVaultSnapshotLock)
 		mux.HandleFunc("DELETE /v1/self/savevault/scopes/{type}/{game}/snapshots/{snapshot}", vault.handleDeleteSaveVaultScopeSnapshot)
 		mux.HandleFunc("POST /v1/self/savevault/scopes/{type}/{game}/promote", vault.handlePromoteSaveVaultScopeSnapshot)
+		mux.HandleFunc("POST /v1/self/savevault/scopes/{type}/{game}/conflicts/clear", vault.handleClearSaveVaultScopeConflicts)
 		mux.HandleFunc("GET /v1/self/profile/metadata", vault.handleGetProfileMetadata)
 		mux.HandleFunc("PUT /v1/self/profile/metadata", vault.handlePutProfileMetadata)
 		mux.ServeHTTP(w, req)

@@ -209,6 +209,12 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if current.CloudUploadMinInterval < 0 {
+		current.CloudUploadMinInterval = 0
+	} else if current.CloudUploadMinInterval > 1440 {
+		current.CloudUploadMinInterval = 1440
+	}
+
 	if err := s.Daemon.Store.UpdateSettings(current); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -217,6 +223,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if (prev.CloudUploadOnExitOnly && !updated.CloudUploadOnExitOnly) ||
+		updated.CloudUploadMinInterval < prev.CloudUploadMinInterval {
+		s.Daemon.FlushAllPendingCloudUploads(false)
 	}
 
 	// Relay/room changes take effect immediately.

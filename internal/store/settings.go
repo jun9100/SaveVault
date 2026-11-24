@@ -77,6 +77,13 @@ type Settings struct {
 	// place without asking — only when it continues from the save this device
 	// has, and this device has not changed since. Anything else is asked.
 	CloudAutoPull bool `db:"cloud_auto_pull" json:"cloudAutoPull"`
+	// CloudUploadOnExitOnly defers automatic cloud uploads while a tracked game
+	// is actively running, coalescing mid-session saves so only the final state
+	// uploads when the play session ends. Local snapshots are still kept.
+	CloudUploadOnExitOnly bool `db:"cloud_upload_on_exit_only" json:"cloudUploadOnExitOnly"`
+	// CloudUploadMinInterval is the minimum gap (in minutes) between automatic
+	// cloud uploads for the same game. 0 disables throttling.
+	CloudUploadMinInterval int `db:"cloud_upload_min_interval" json:"cloudUploadMinInterval"`
 	// DetectNewGames runs the save scan in the background and says when it
 	// finds a newly installed game. Nothing is tracked without being asked.
 	DetectNewGames bool `db:"detect_new_games" json:"detectNewGames"`
@@ -410,6 +417,8 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			default_max_manual_snapshots = :default_max_manual_snapshots,
 			update_channel = :update_channel,
 			cloud_auto_pull = :cloud_auto_pull,
+			cloud_upload_on_exit_only = :cloud_upload_on_exit_only,
+			cloud_upload_min_interval = :cloud_upload_min_interval,
 			detect_new_games = :detect_new_games,
 			verify_every_days = :verify_every_days,
 			updated_at = datetime('now')

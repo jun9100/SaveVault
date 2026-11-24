@@ -1492,6 +1492,33 @@ function saveVaultSnapshotRow(snapshot, headID, type) {
   </div>`;
 }
 
+function saveVaultConflictBanner(scope, retired, isSelf = false) {
+  if (retired) return "";
+  const snapshots = scope.snapshots || [];
+  const conflicts = snapshots.filter((item) => item.conflict)
+    .sort((a, b) => new Date(b.receivedAt || b.createdAt || 0) - new Date(a.receivedAt || a.createdAt || 0));
+  if (!conflicts.length) return "";
+  const newest = conflicts[0];
+  const unlocked = conflicts.filter((item) => !item.locked);
+  const lockedCount = conflicts.length - unlocked.length;
+  const source = newest.deviceName || (newest.device ? deviceName(newest.device) : "客户端");
+  const ts = newest.receivedAt || newest.createdAt;
+  const headID = scope.head?.id || "";
+  const adoptAction = isSelf ? "self-resolve-adopt" : "resolve-savevault-adopt";
+  const clearAction = isSelf ? "self-clear-conflicts" : "clear-savevault-conflicts";
+  return `<section class="card conflict-banner" role="region" aria-label="冲突处理建议">
+    <div class="conflict-banner-copy">
+      <div class="conflict-banner-title">${icon("activity")}<strong>发现 ${conflicts.length} 个冲突副本</strong>
+        ${lockedCount ? `<span class="tag">${lockedCount} 个已锁定</span>` : ""}</div>
+      <p>最新冲突来自 <b>${esc(source)}</b>（${relAbsTime(ts)}）。采纳最新冲突会将其设为当前版本并自动清理其余未锁定冲突副本；或保留现有当前版本并一键清空全部未锁定冲突。</p>
+    </div>
+    <div class="conflict-banner-actions">
+      <button class="btn primary sm" type="button" data-action="${adoptAction}" data-id="${esc(newest.id)}" data-head="${esc(headID)}" data-count="${conflicts.length}">${icon("restore")}采纳最新冲突并清理其余</button>
+      ${unlocked.length ? `<button class="btn danger sm" type="button" data-action="${clearAction}" data-count="${unlocked.length}">${icon("broom")}保留当前，清理全部冲突</button>` : ""}
+    </div>
+  </section>`;
+}
+
 function clearSaveVaultCaches() {
   store.saveVaultScopes = null;
   store.saveVaultGames = null;
@@ -1805,6 +1832,7 @@ async function renderSaveVaultScope(type, gameId) {
         <div class="scope-stat"><span>冲突副本</span><b>${scope.conflictCount || 0}</b></div>
       </div>
     </section>
+    ${saveVaultConflictBanner(scope, retired, false)}
     <section class="card scope-timeline">
       <div class="card-head"><div><h2>版本记录</h2><p>权威版本由父链与 CAS 确认 · 最新在上</p></div>
         <span class="hint">${snapshots.length} 个版本</span></div>
@@ -3547,6 +3575,7 @@ async function renderSelfScope(type, gameId) {
   main.innerHTML = `
     <div class="crumbs"><a href="#/self/saves">${icon("back")}返回我的存档</a></div>
     ${pageHead(title, `${esc(saveVaultTypeLabel(scope.type))} · ${esc(scope.gameId)} · 共 ${snapshots.length} 个版本 · ${esc(formatBytes(scope.archiveBytes || 0))}`)}
+    ${saveVaultConflictBanner(scope, false, true)}
     <section class="card">
       <div class="card-head"><div><h2>版本时间线</h2><p>可以锁定重要节点防止被清理、将历史版本设为当前版本，或删除不需要的旧版本。</p></div></div>
       <div class="card-body os-timeline">${snapshots.length ? snapshots.map((snap) => {
@@ -3858,6 +3887,45 @@ async function onAction(event) {
       }
       return;
     }
+    case "self-resolve-adopt": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      const count = Number(target.dataset.count) || 1;
+      const ok = await confirmDialog({
+        title: "采纳最新冲突并清理其余？",
+        confirm: "采纳并清理",
+        message: `将把最新冲突副本（${shortID(id, 22)}）设为当前权威版本，并清理其余 ${Math.max(0, count - 1)} 个未锁定的冲突副本。旧的当前版本仍保留在历史中。`,
+      });
+      if (!ok) return;
+      const res = await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`,
+        { method: "POST", body: { snapshot: id, expectedHead: target.dataset.head || "", clearConflicts: true } }));
+      if (res) {
+        const freed = res.freedBytes ? `，释放 ${formatBytes(res.freedBytes)}` : "";
+        toast(res.clearedConflicts ? `已设为当前版本并清理 ${res.clearedConflicts} 个冲突副本${freed}` : "已设为当前版本");
+        store.selfOverview = null;
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
+    case "self-clear-conflicts": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      const count = Number(target.dataset.count) || 0;
+      const ok = await confirmDialog({
+        title: "清理全部冲突副本？",
+        danger: true,
+        confirm: "清理冲突",
+        message: `将保留现有当前版本与所有已锁定版本，永久删除 ${count} 个未锁定的冲突副本以释放云端空间。此操作无法撤销。`,
+      });
+      if (!ok) return;
+      const res = await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/conflicts/clear`, { method: "POST" }));
+      if (res) {
+        toast(`已清理 ${res.removed || 0} 个冲突副本${res.freedBytes ? `，释放 ${formatBytes(res.freedBytes)}` : ""}`);
+        store.selfOverview = null;
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
     case "self-delete-snap": {
       const scope = store.selfScopeDetail;
       if (!scope) return;
@@ -3907,10 +3975,50 @@ async function onAction(event) {
       const done = await guarded(() => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`,
         { method: "POST", body: { snapshot: id, expectedHead: target.dataset.head || "" } }), "已设为当前版本");
       if (done) {
-        store.saveVaultScopes = null;
-        store.saveVaultGames = null;
-        store.saveVaultScopeDetail = null;
+        clearSaveVaultCaches();
         await render();
+      }
+      return;
+    }
+    case "resolve-savevault-adopt": {
+      const scope = store.saveVaultScopeDetail;
+      if (!scope) return;
+      const count = Number(target.dataset.count) || 1;
+      const ok = await confirmDialog({
+        title: "采纳最新冲突并清理其余？",
+        confirm: "采纳并清理",
+        message: `将把最新冲突副本（${shortID(id, 22)}）设为当前权威版本，并清理其余 ${Math.max(0, count - 1)} 个未锁定的冲突副本。旧的当前版本仍保留在历史里。`,
+      });
+      if (!ok) return;
+      const res = await guarded(() => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`,
+        { method: "POST", body: { snapshot: id, expectedHead: target.dataset.head || "", clearConflicts: true } }));
+      if (res) {
+        const freed = res.freedBytes ? `，释放 ${formatBytes(res.freedBytes)}` : "";
+        toast(res.clearedConflicts ? `已设为当前版本并清理 ${res.clearedConflicts} 个冲突副本${freed}` : "已设为当前版本");
+        clearSaveVaultCaches();
+        store.saveVaultFiles = null;
+        await refresh();
+      }
+      return;
+    }
+    case "clear-savevault-conflicts": {
+      const scope = store.saveVaultScopeDetail;
+      if (!scope) return;
+      const count = Number(target.dataset.count) || 0;
+      const ok = await confirmDialog({
+        title: "清理全部冲突副本？",
+        danger: true,
+        confirm: "清理冲突",
+        message: `将保留现有当前版本与所有已锁定版本，永久删除 ${count} 个未锁定的冲突副本及其归档。此操作无法撤销。`,
+      });
+      if (!ok) return;
+      const res = await guarded(() => api(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/conflicts/clear`,
+        { method: "POST" }));
+      if (res) {
+        toast(`已清理 ${res.removed || 0} 个冲突副本${res.freedBytes ? `，释放 ${formatBytes(res.freedBytes)}` : ""}`);
+        clearSaveVaultCaches();
+        store.saveVaultFiles = null;
+        await refresh();
       }
       return;
     }

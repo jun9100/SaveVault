@@ -8,7 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -551,14 +553,17 @@ func (s *server) handlePutSaveVaultScopeSnapshot(w http.ResponseWriter, r *http.
 // handlePromoteSaveVaultScopeSnapshot moves a scope head to an existing
 // snapshot under compare-and-swap. The administrator must present the head
 // they saw so a concurrent client upload is never silently overwritten.
+// When clearConflicts is true, all remaining unlocked conflict copies in the
+// scope are removed in the same atomic state update.
 func (s *server) handlePromoteSaveVaultScopeSnapshot(w http.ResponseWriter, r *http.Request) {
 	kind, gameID, key, ok := saveVaultScopeFromRequest(w, r)
 	if !ok {
 		return
 	}
 	var request struct {
-		Snapshot     string `json:"snapshot"`
-		ExpectedHead string `json:"expectedHead"`
+		Snapshot       string `json:"snapshot"`
+		ExpectedHead   string `json:"expectedHead"`
+		ClearConflicts bool   `json:"clearConflicts"`
 	}
 	if !decodeAdminJSON(w, r, &request) {
 		return
@@ -612,7 +617,7 @@ func (s *server) handlePromoteSaveVaultScopeSnapshot(w http.ResponseWriter, r *h
 		writeError(w, http.StatusInternalServerError, "cannot inspect SaveVault archive")
 		return
 	}
-	if stored.Head == snapshot.ID {
+	if stored.Head == snapshot.ID && !request.ClearConflicts {
 		s.saveVaultMu.Unlock()
 		w.Header().Set("ETag", `"`+snapshot.ID+`"`)
 		writeJSON(w, http.StatusOK, snapshot)
@@ -621,10 +626,37 @@ func (s *server) handlePromoteSaveVaultScopeSnapshot(w http.ResponseWriter, r *h
 
 	nextScope := stored.clone()
 	promoted := nextScope.Snapshots[snapshot.ID]
-	promoted.Conflict = false
-	promoted.PromotedAt = time.Now().UTC()
-	nextScope.Head = promoted.ID
-	nextScope.Snapshots[promoted.ID] = promoted
+	changedHead := stored.Head != snapshot.ID
+	if changedHead {
+		promoted.Conflict = false
+		promoted.PromotedAt = time.Now().UTC()
+		nextScope.Head = promoted.ID
+		nextScope.Snapshots[promoted.ID] = promoted
+	}
+	var removedArchives []string
+	clearedConflicts := 0
+	if request.ClearConflicts {
+		locks := s.saveVaultLocks(kind, gameID)
+		for id, item := range nextScope.Snapshots {
+			if id == promoted.ID || !item.Conflict {
+				continue
+			}
+			if _, locked := locks[id]; locked {
+				continue
+			}
+			delete(nextScope.Snapshots, id)
+			clearedConflicts++
+			if item.Archive != "" {
+				removedArchives = append(removedArchives, item.Archive)
+			}
+		}
+	}
+	if !changedHead && clearedConflicts == 0 {
+		s.saveVaultMu.Unlock()
+		w.Header().Set("ETag", `"`+promoted.ID+`"`)
+		writeJSON(w, http.StatusOK, promoted)
+		return
+	}
 	nextState := s.saveVaultState.clone()
 	nextState.Scopes[key] = nextScope
 	if err := s.persistSaveVaultState(nextState); err != nil {
@@ -633,14 +665,99 @@ func (s *server) handlePromoteSaveVaultScopeSnapshot(w http.ResponseWriter, r *h
 		return
 	}
 	s.saveVaultState = nextState
+	freedBytes := s.cleanupRemovedSaveVaultArchivesLocked(kind, removedArchives)
 	s.saveVaultMu.Unlock()
-	s.recordSaveVaultScopeEvent(eventPromote, kind, gameID, promoted)
+
+	if changedHead {
+		s.recordSaveVaultScopeEvent(eventPromote, kind, gameID, promoted)
+	}
+	if clearedConflicts > 0 {
+		s.recordSaveVaultManageEvent(eventDeleteSnapshot, fmt.Sprintf("cleared %d conflict snapshot(s)", clearedConflicts), kind, gameID, "")
+	}
 	w.Header().Set("ETag", `"`+promoted.ID+`"`)
-	writeJSON(w, http.StatusOK, promoted)
+	writeJSON(w, http.StatusOK, struct {
+		saveVaultScopeSnapshot
+		ClearedConflicts int   `json:"clearedConflicts,omitempty"`
+		FreedBytes       int64 `json:"freedBytes,omitempty"`
+	}{
+		saveVaultScopeSnapshot: promoted,
+		ClearedConflicts:       clearedConflicts,
+		FreedBytes:             freedBytes,
+	})
+}
+
+// handleClearSaveVaultScopeConflicts removes all unlocked conflict snapshots in
+// a scope while keeping the current head, normal history, and locked snapshots.
+func (s *server) handleClearSaveVaultScopeConflicts(w http.ResponseWriter, r *http.Request) {
+	kind, gameID, key, ok := saveVaultScopeFromRequest(w, r)
+	if !ok {
+		return
+	}
+
+	s.saveVaultMu.Lock()
+	if tombstone, blocked := s.saveVaultScopeBlockedLocked(kind, gameID); blocked {
+		s.saveVaultMu.Unlock()
+		if tombstone.State == saveVaultTombstoneRetired {
+			writeError(w, http.StatusConflict, "retired SaveVault scope is read-only")
+		} else {
+			writeError(w, http.StatusConflict, "deleted SaveVault scope cannot be modified")
+		}
+		return
+	}
+	stored, exists := s.saveVaultState.Scopes[key]
+	if !exists {
+		s.saveVaultMu.Unlock()
+		writeError(w, http.StatusNotFound, "SaveVault scope not found")
+		return
+	}
+
+	locks := s.saveVaultLocks(kind, gameID)
+	nextScope := stored.clone()
+	var removedArchives []string
+	removed := 0
+	skippedLocked := 0
+	for id, item := range nextScope.Snapshots {
+		if id == stored.Head || !item.Conflict {
+			continue
+		}
+		if _, locked := locks[id]; locked {
+			skippedLocked++
+			continue
+		}
+		delete(nextScope.Snapshots, id)
+		removed++
+		if item.Archive != "" {
+			removedArchives = append(removedArchives, item.Archive)
+		}
+	}
+	var freedBytes int64
+	if removed > 0 {
+		nextState := s.saveVaultState.clone()
+		nextState.Scopes[key] = nextScope
+		if err := s.persistSaveVaultState(nextState); err != nil {
+			s.saveVaultMu.Unlock()
+			writeError(w, http.StatusInternalServerError, "cannot persist SaveVault scope state")
+			return
+		}
+		s.saveVaultState = nextState
+		freedBytes = s.cleanupRemovedSaveVaultArchivesLocked(kind, removedArchives)
+	}
+	s.saveVaultMu.Unlock()
+
+	if removed > 0 {
+		s.recordSaveVaultManageEvent(eventDeleteSnapshot, fmt.Sprintf("cleared %d conflict snapshot(s)", removed), kind, gameID, "")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"removed":       removed,
+		"skippedLocked": skippedLocked,
+		"freedBytes":    freedBytes,
+	})
 }
 
 // handlePutSaveVaultScopeConflict retains a divergent archive after a CAS
 // failure. Conflict snapshots never advance Head and are never auto-pruned.
+// Older unlocked conflicts from the same device against the exact same head are
+// superseded so a frequently saving game does not pile up dozens of copies.
 func (s *server) handlePutSaveVaultScopeConflict(w http.ResponseWriter, r *http.Request) {
 	kind, gameID, key, ok := saveVaultScopeFromRequest(w, r)
 	if !ok {
@@ -704,6 +821,22 @@ func (s *server) handlePutSaveVaultScopeConflict(w http.ResponseWriter, r *http.
 	recorded := saveVaultSnapshotFromRequest(candidate, r, time.Now())
 	recorded.Conflict = true
 	recorded.ConflictOf = stored.Head
+	var supersededArchives []string
+	if recorded.Device != "" {
+		locks := s.saveVaultLocks(kind, gameID)
+		for id, existing := range nextScope.Snapshots {
+			if !existing.Conflict || existing.ConflictOf != recorded.ConflictOf || existing.Device != recorded.Device {
+				continue
+			}
+			if _, locked := locks[id]; locked {
+				continue
+			}
+			delete(nextScope.Snapshots, id)
+			if existing.Archive != "" {
+				supersededArchives = append(supersededArchives, existing.Archive)
+			}
+		}
+	}
 	nextScope.Snapshots[snapshotID] = recorded
 	nextState := s.saveVaultState.clone()
 	nextState.Scopes[key] = nextScope
@@ -713,9 +846,63 @@ func (s *server) handlePutSaveVaultScopeConflict(w http.ResponseWriter, r *http.
 		return
 	}
 	s.saveVaultState = nextState
+	s.cleanupRemovedSaveVaultArchivesLocked(kind, supersededArchives)
 	s.saveVaultMu.Unlock()
 	s.recordSaveVaultScopeEvent(eventConflict, kind, gameID, recorded)
 	writeJSON(w, http.StatusCreated, recorded)
+}
+
+// cleanupRemovedSaveVaultArchivesLocked deletes archives that are no longer
+// referenced by any scope snapshot, updates the catalog, and adjusts the vault
+// quota ledger. Caller holds saveVaultMu.
+func (s *server) cleanupRemovedSaveVaultArchivesLocked(kind string, archives []string) int64 {
+	if len(archives) == 0 {
+		return 0
+	}
+	seen := make(map[string]struct{}, len(archives))
+	var freedBytes int64
+	var nextCatalog saveVaultCatalog
+	catalogDirty := false
+	for _, archive := range archives {
+		if archive == "" {
+			continue
+		}
+		if _, dup := seen[archive]; dup {
+			continue
+		}
+		seen[archive] = struct{}{}
+		if s.saveVaultArchiveReferencedLocked(kind, archive) {
+			continue
+		}
+		if archivePath, valid := s.saveVaultPath(kind, archive); valid {
+			var size int64
+			if info, err := os.Stat(archivePath); err == nil {
+				size = info.Size()
+			}
+			if err := s.manageRemove(archivePath); err == nil {
+				freedBytes += size
+			} else if !errors.Is(err, os.ErrNotExist) {
+				slog.Warn("delete SaveVault snapshot archive", "type", kind, "archive", archive, "error", err)
+			}
+		}
+		catalogKey := saveVaultCatalogKey(kind, archive)
+		if _, exists := s.saveVaultCatalog.Files[catalogKey]; exists {
+			if !catalogDirty {
+				nextCatalog = s.saveVaultCatalog.clone()
+				catalogDirty = true
+			}
+			delete(nextCatalog.Files, catalogKey)
+		}
+	}
+	if freedBytes > 0 {
+		s.adjustUsedBytes(-freedBytes)
+	}
+	if catalogDirty {
+		if err := s.persistSaveVaultCatalog(nextCatalog); err == nil {
+			s.saveVaultCatalog = nextCatalog
+		}
+	}
+	return freedBytes
 }
 
 // saveVaultArchiveReferencedLocked prevents deleting a head, conflict, or

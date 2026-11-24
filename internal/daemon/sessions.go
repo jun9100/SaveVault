@@ -362,6 +362,7 @@ func (d *Daemon) sessionStarted(gameID string, at time.Time) {
 }
 
 func (d *Daemon) sessionEnded(gameID string, started, ended time.Time) {
+	defer d.FlushPendingCloudUpload(gameID)
 	d.sessions.mu.Lock()
 	startHash := d.sessions.startHash[gameID]
 	delete(d.sessions.startHash, gameID)
