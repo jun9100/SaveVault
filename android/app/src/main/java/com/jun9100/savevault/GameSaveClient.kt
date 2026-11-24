@@ -588,7 +588,7 @@ class GameSaveClient(
     private fun requireSuccess(response: Response, operation: String) {
         if (response.isSuccessful) return
         if (response.code == 507) {
-            throw GameSaveException("云端存储空间已满（超出配额）", retryable = false, statusCode = 507)
+            throw GameSaveException("云端存储空间已满（超出配额）", retryable = false, httpStatus = 507)
         }
         val body = runCatching { response.peekBody(512L).string().take(512) }.getOrDefault("")
         val retryable = response.code in setOf(408, 429, 500, 502, 503, 504)

@@ -387,7 +387,7 @@ internal fun GameLibraryContent(
     val cloudReady = state.gameSaveEnabled &&
         state.gameSaveUrl.isNotBlank() &&
         state.gameSaveSyncKey.isNotBlank() &&
-        !state.gameSaveAuth.blocked
+        state.gameSaveAuth.blocked.isEmpty()
     val batchEntries = batchCommands(
         busy = state.busy,
         batchRunning = state.batch != null,

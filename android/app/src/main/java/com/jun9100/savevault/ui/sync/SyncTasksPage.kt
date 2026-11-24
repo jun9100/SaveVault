@@ -98,7 +98,7 @@ internal fun SyncTasksPage(
     val cloudReady = state.gameSaveEnabled &&
         state.gameSaveUrl.isNotBlank() &&
         state.gameSaveSyncKey.isNotBlank() &&
-        !state.gameSaveAuth.blocked
+        state.gameSaveAuth.blocked.isEmpty()
     HandheldPageColumns(
         commandsTitle = "同步与任务命令",
         commands = {
