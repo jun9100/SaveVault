@@ -182,7 +182,11 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 		targetRoot := syncRoot{Name: root, Path: path}
 
 		applied := e.Writing(gameID)
-		defer delta.InvalidateRoot(path)
+		defer applied()
+		// Clear the conflict before overwriting files on disk so observers
+		// watching the restored files never see the resolved conflict still
+		// open; if pulling fails, re-open it so the user can retry.
+		e.clearRootConflict(gameID, root)
 		for relPath := range local.Files {
 			if _, onRemote := filteredRemote.Files[relPath]; onRemote {
 				continue
@@ -206,7 +210,10 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 			rootResp := remoteData
 			rootResp.Manifest = filteredRemote
 			if err := e.pullFiles(ctx, peer, gameID, game, targetRoot, local, rootResp, filesToPull); err != nil {
-				applied()
+				delta.InvalidateRoot(path)
+				e.mu.Lock()
+				e.rootConflicts[rootConflictKey(gameID, root)] = conflict
+				e.mu.Unlock()
 				return err
 			}
 			if root == winreg.LocationName {
@@ -216,9 +223,9 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 				}
 			}
 		}
-		applied()
+		delta.InvalidateRoot(path)
 
-		freshRaw, freshErr := e.ReadManifest(ctx, gameID, path)
+		freshRaw, freshErr := delta.BuildManifest(path)
 		if freshErr == nil {
 			fresh := filterManifest(freshRaw, rules)
 			e.persistRootLineage(gameID, peerID, root, fresh, filteredRemote)
@@ -226,7 +233,6 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 				_ = e.Store.SetAgreedHashForRoot(gameID, peerID, root, fresh.RootHash(delta.PrimaryRoot))
 			}
 		}
-		e.clearRootConflict(gameID, root)
 		e.Log("info", fmt.Sprintf("the %q save location of %q resolved: adopting %s's version",
 			root, game.Name, peer.Name))
 		return nil
