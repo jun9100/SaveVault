@@ -24,6 +24,25 @@ interface Game {
 interface Snapshot {
   id: string;
   timestamp?: string;
+  comment?: string;
+}
+
+interface CloudOffer {
+  gameId: string;
+  gameName: string;
+  snapshotId: string;
+  deviceName?: string;
+  savedAt?: string;
+  diverged?: boolean;
+}
+
+interface DiscoveredSave {
+  id: string;
+  name: string;
+  savePath: string;
+  appId?: string;
+  type?: string;
+  fileCount?: number;
 }
 
 interface SideStats {
@@ -94,6 +113,13 @@ const startDaemon =
 const findGameByAppId =
   callable<[app_id: string], { found: boolean; game?: Game }>("find_game_by_appid");
 const snapshotGame = callable<[game_id: string, comment: string], Done>("snapshot_game");
+const rollbackSnapshot = callable<[game_id: string, snapshot_id: string], Done>("rollback_snapshot");
+const switchBranch = callable<[game_id: string, branch: string], Done>("switch_branch");
+const getCloudOffers = callable<[], CloudOffer[]>("get_cloud_offers");
+const checkCloud = callable<[], Done>("check_cloud");
+const answerCloudOffer = callable<[game_id: string, snapshot_id: string, accept: boolean], Done>("answer_cloud_offer");
+const scanNewGames = callable<[], { success: boolean; games: DiscoveredSave[]; error?: string }>("scan_new_games");
+const trackGame = callable<[name: string, save_path: string, app_id: string, save_type: string], Done>("track_game");
 const resolveConflict = callable<[game_id: string, peer_id: string, resolution: string], Done>("resolve_conflict");
 const resolveLocationConflict =
   callable<[game_id: string, peer_id: string, root: string, resolution: string], Done>("resolve_location_conflict");
@@ -192,12 +218,27 @@ function pausedUntil(p?: SyncPause): string {
 
 const AUTO_SYNC_KEY = "savevault:autoSyncOnGameEvents";
 const LEGACY_AUTO_SYNC_KEY = "opensave:autoSyncOnGameEvents";
+const CLOUD_CHECK_ON_LAUNCH_KEY = "savevault:checkCloudOnLaunch";
 
 function autoSyncEnabled(): boolean {
   return (localStorage.getItem(AUTO_SYNC_KEY) ?? localStorage.getItem(LEGACY_AUTO_SYNC_KEY)) !== "false"; // default on
 }
 function setAutoSyncEnabled(on: boolean) {
   localStorage.setItem(AUTO_SYNC_KEY, on ? "true" : "false");
+}
+function cloudCheckOnLaunchEnabled(): boolean {
+  return localStorage.getItem(CLOUD_CHECK_ON_LAUNCH_KEY) !== "false";
+}
+function setCloudCheckOnLaunchEnabled(on: boolean) {
+  localStorage.setItem(CLOUD_CHECK_ON_LAUNCH_KEY, on ? "true" : "false");
+}
+
+function formatSnapLabel(snap: Snapshot): string {
+  const ts = snap.timestamp ? new Date(snap.timestamp) : null;
+  const timeStr = ts && !isNaN(ts.getTime())
+    ? `${ts.toLocaleDateString([], { month: "2-digit", day: "2-digit" })} ${ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : snap.id;
+  return snap.comment ? `${timeStr} · ${snap.comment}` : timeStr;
 }
 
 const PAUSE_CHOICES = [
@@ -214,6 +255,11 @@ function Content() {
   const [busy, setBusy] = useState(false);
   const [starting, setStarting] = useState(false);
   const [autoSync, setAutoSync] = useState(autoSyncEnabled());
+  const [cloudOnLaunch, setCloudOnLaunch] = useState(cloudCheckOnLaunchEnabled());
+  const [cloudOffers, setCloudOffers] = useState<CloudOffer[]>([]);
+  const [discovered, setDiscovered] = useState<DiscoveredSave[] | null>(null);
+  const [expandedGameId, setExpandedGameId] = useState<string | null>(null);
+  const [confirmRollbackKey, setConfirmRollbackKey] = useState<string | null>(null);
   const [activity, setActivity] = useState<Record<string, SyncActivity>>({});
   const [baseUrl, setBaseUrl] = useState<string>("");
   const [token, setToken] = useState<string>("");
@@ -229,7 +275,14 @@ function Content() {
         daemonToken().then(setToken).catch(() => {});
       }
       wasRunning.current = !!s.running;
-      setGames(s.running ? await getGames() : {});
+      if (s.running) {
+        const [g, offers] = await Promise.all([getGames(), getCloudOffers().catch(() => [])]);
+        setGames(g);
+        setCloudOffers(offers);
+      } else {
+        setGames({});
+        setCloudOffers([]);
+      }
     } catch (e) {
       console.error("[SaveVault] refresh failed", e);
     }
@@ -351,6 +404,45 @@ function Content() {
     }
   };
 
+  const onScanNewGames = async () => {
+    setBusy(true);
+    try {
+      const res = await scanNewGames();
+      if (!res.success) {
+        toaster.toast({ title: "SaveVault", body: res.error ?? "Scan failed" });
+        return;
+      }
+      setDiscovered(res.games ?? []);
+      toaster.toast({
+        title: "SaveVault",
+        body: res.games.length ? `Found ${res.games.length} untracked game${res.games.length === 1 ? "" : "s"}` : "No untracked games found",
+      });
+    } catch (e: any) {
+      toaster.toast({ title: "SaveVault", body: e?.message ?? "Scan failed" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onTrackDiscovered = async (item: DiscoveredSave) => {
+    setBusy(true);
+    try {
+      const saveType = item.type === "emulator" ? "emulator-generic" : "pc";
+      const res = await trackGame(item.name, item.savePath, item.appId ?? "", saveType);
+      if (res.success) {
+        toaster.toast({ title: item.name, body: "Now tracked by SaveVault" });
+        setDiscovered((prev) => (prev ? prev.filter((x) => x.savePath !== item.savePath) : prev));
+        await refresh();
+      } else {
+        toaster.toast({ title: item.name, body: res.error ?? "Could not track game" });
+      }
+    } catch (e: any) {
+      toaster.toast({ title: item.name, body: e?.message ?? "Could not track game" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // Initial probe in flight: avoid flashing ONLINE + 0 games before first status reply.
   if (status === null) {
     return (
@@ -388,7 +480,7 @@ function Content() {
   const heldIds = new Set(emptied.map((e) => e.gameId));
   const pause = data?.syncPause;
   const paused = !!pause?.paused;
-  const waiting = conflicts.length + locations.length + emptied.length;
+  const waiting = conflicts.length + locations.length + emptied.length + cloudOffers.length;
   const nameOf = (id: string) => games[id]?.name ?? id;
   const devices =
     data?.peersOnline !== undefined
@@ -438,6 +530,20 @@ function Content() {
             </ButtonItem>
           </PanelSectionRow>
           <PanelSectionRow>
+            <ButtonItem
+              layout="below"
+              onClick={() => act(checkCloud, "Cloud checked for newer saves")}
+              disabled={busy}
+            >
+              Check cloud updates
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={onScanNewGames} disabled={busy}>
+              Scan for new games
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
             <DropdownItem
               label="Pause syncing"
               description="Nothing is sent or taken while paused; snapshots are still kept."
@@ -451,10 +557,76 @@ function Content() {
         </>
       )}
 
+      {discovered && discovered.length > 0 && (
+        <PanelSection title={`Found games (${discovered.length})`}>
+          {discovered.slice(0, 8).map((item) => (
+            <PanelSectionRow key={item.savePath}>
+              <ButtonItem
+                layout="below"
+                disabled={busy}
+                onClick={() => onTrackDiscovered(item)}
+                description={`${item.fileCount ? `${item.fileCount} files · ` : ""}${item.savePath}`}
+              >
+                + Track {item.name}
+              </ButtonItem>
+            </PanelSectionRow>
+          ))}
+          <PanelSectionRow>
+            <ButtonItem layout="below" disabled={busy} onClick={() => setDiscovered(null)}>
+              Hide scan results
+            </ButtonItem>
+          </PanelSectionRow>
+        </PanelSection>
+      )}
+
       {/* What stops a game syncing until someone decides. Without these the
           only way out was Desktop Mode. */}
       {waiting > 0 && (
         <PanelSection title={`Needs a decision (${waiting})`}>
+          {cloudOffers.map((offer) => (
+            <div key={`cloud-offer-${offer.gameId}-${offer.snapshotId}`}>
+              <PanelSectionRow>
+                <div style={{ fontSize: "0.85em" }}>
+                  <div style={{ fontWeight: "bold" }}>{offer.gameName || nameOf(offer.gameId)}</div>
+                  <div style={{ opacity: 0.75 }}>
+                    {offer.diverged
+                      ? `Cloud conflict with ${offer.deviceName || "another device"} — choose which save to keep.`
+                      : `Newer cloud save from ${offer.deviceName || "another device"} is ready to pull.`}
+                  </div>
+                </div>
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  disabled={busy}
+                  onClick={() =>
+                    act(
+                      () => answerCloudOffer(offer.gameId, offer.snapshotId, true),
+                      "Applied cloud save (local safety snapshot kept)",
+                      offer.gameName || nameOf(offer.gameId),
+                    )
+                  }
+                >
+                  Take cloud save
+                </ButtonItem>
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  disabled={busy}
+                  onClick={() =>
+                    act(
+                      () => answerCloudOffer(offer.gameId, offer.snapshotId, false),
+                      "Kept this device's save",
+                      offer.gameName || nameOf(offer.gameId),
+                    )
+                  }
+                >
+                  Keep this device's
+                </ButtonItem>
+              </PanelSectionRow>
+            </div>
+          ))}
           {emptied.map((e) => (
             <div key={`emptied-${e.gameId}`}>
               <PanelSectionRow>
@@ -591,6 +763,17 @@ function Content() {
           }}
         />
       </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label="Check cloud on game launch"
+          description="Also poll your configured cloud backend when starting a game."
+          checked={cloudOnLaunch}
+          onChange={(v: boolean) => {
+            setCloudOnLaunch(v);
+            setCloudCheckOnLaunchEnabled(v);
+          }}
+        />
+      </PanelSectionRow>
 
       <PanelSection title="Tracked games">
         {list.length === 0 ? (
@@ -646,6 +829,70 @@ function Content() {
                     Snapshot
                   </ButtonItem>
                 </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem
+                    layout="below"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmRollbackKey(null);
+                      setExpandedGameId((prev) => (prev === game.id ? null : game.id));
+                    }}
+                  >
+                    {expandedGameId === game.id ? "Hide history & branches" : "History & branches"}
+                  </ButtonItem>
+                </PanelSectionRow>
+                {expandedGameId === game.id && (() => {
+                  const branchNames = Object.keys(game.branches ?? {});
+                  const activeSnaps = [...(game.branches?.[game.activeBranch]?.snapshots ?? [])].reverse().slice(0, 5);
+                  return (
+                    <>
+                      {branchNames.length > 1 && (
+                        <PanelSectionRow>
+                          <DropdownItem
+                            label="Active branch"
+                            rgOptions={branchNames.map((b) => ({ data: b, label: b }))}
+                            selectedOption={game.activeBranch}
+                            disabled={busy}
+                            onChange={(opt) => {
+                              if (opt.data && opt.data !== game.activeBranch) {
+                                void act(() => switchBranch(game.id, opt.data), `Switched to branch ${opt.data}`, game.name);
+                              }
+                            }}
+                          />
+                        </PanelSectionRow>
+                      )}
+                      {activeSnaps.length === 0 ? (
+                        <PanelSectionRow>
+                          <div style={{ fontSize: "0.8em", opacity: 0.7 }}>No snapshots on branch {game.activeBranch}.</div>
+                        </PanelSectionRow>
+                      ) : (
+                        activeSnaps.map((snap) => {
+                          const rKey = `${game.id}:${snap.id}`;
+                          const confirming = confirmRollbackKey === rKey;
+                          return (
+                            <PanelSectionRow key={snap.id}>
+                              <ButtonItem
+                                layout="below"
+                                disabled={busy}
+                                description={confirming ? "Press again to restore (a safety backup is taken first)" : formatSnapLabel(snap)}
+                                onClick={() => {
+                                  if (!confirming) {
+                                    setConfirmRollbackKey(rKey);
+                                    return;
+                                  }
+                                  setConfirmRollbackKey(null);
+                                  void act(() => rollbackSnapshot(game.id, snap.id), "Restored snapshot", game.name);
+                                }}
+                              >
+                                {confirming ? "Confirm rollback?" : "Restore snapshot"}
+                              </ButtonItem>
+                            </PanelSectionRow>
+                          );
+                        })
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             );
           })
@@ -709,6 +956,9 @@ function registerLifecycleHooks(): () => void {
       const match = await findGameByAppId(appId);
       if (!match.found || !match.game) return;
 
+      if (when === "launch" && cloudCheckOnLaunchEnabled()) {
+        await checkCloud().catch(() => {});
+      }
       const said = lifecycleSaid(await syncGame(match.game.id), when);
       if (said) toaster.toast({ title: match.game.name, body: said });
     } catch (e) {

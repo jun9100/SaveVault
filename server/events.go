@@ -35,6 +35,9 @@ const (
 	eventSaveVaultMeta       = "savevault_meta"
 	eventVerify             = "verify"
 	eventSettings           = "settings"
+	eventQuotaWarning       = "quota_warning"
+	eventQuotaExceeded      = "quota_exceeded"
+	eventAuthLocked         = "auth_locked"
 )
 
 type event struct {
@@ -68,6 +71,7 @@ func (s *server) recordEventLocked(item event) {
 	}
 	s.events = next
 	s.notifyBarkLocked(item)
+	s.notifyWebhooks(item)
 }
 
 // recentEventsLocked returns up to limit events, newest first. The caller must hold s.mu.

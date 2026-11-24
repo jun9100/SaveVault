@@ -24,13 +24,18 @@ type provider interface {
 }
 
 // providerFor returns the provider cfg names, or false for one this build
-// does not know.
+// does not know. When client-side E2EE is enabled for a third-party provider,
+// the returned provider transparently wraps uploads and downloads with
+// Argon2id + XChaCha20-Poly1305 chunked AEAD.
 func (s *Service) providerFor(cfg store.CloudConfig) (provider, bool) {
+	var base provider
 	switch cfg.Provider {
 	case "local":
-		return localFolder{cfg: cfg}, true
+		base = localFolder{cfg: cfg}
 	case "webdav":
-		return webDAV{s: s, cfg: cfg}, true
+		base = webDAV{s: s, cfg: cfg}
+	case "s3":
+		base = s3Provider{s: s, cfg: cfg}
 	case GameSaveProvider:
 		normalized, err := NormalizeGameSaveURL(cfg.URL)
 		if err != nil {
@@ -41,13 +46,18 @@ func (s *Service) providerFor(cfg store.CloudConfig) (provider, bool) {
 	case "webhook":
 		return webhook{s: s, cfg: cfg}, true
 	case "google_drive":
-		return googleDrive{s: s, cfg: cfg}, true
+		base = googleDrive{s: s, cfg: cfg}
 	case "dropbox":
-		return dropbox{s: s}, true
+		base = dropbox{s: s}
 	case "onedrive":
-		return oneDrive{s: s}, true
+		base = oneDrive{s: s}
+	default:
+		return nil, false
 	}
-	return nil, false
+	if cfg.E2EEEnabled && cfg.E2EEPassphrase != "" {
+		return encryptedProvider{inner: base, passphrase: cfg.E2EEPassphrase}, true
+	}
+	return base, true
 }
 
 // failedProvider keeps a malformed built-in provider distinct from an

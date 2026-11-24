@@ -345,6 +345,8 @@ func (r *vaultRegistry) serveSelfRoutes(w http.ResponseWriter, request *http.Req
 		mux.HandleFunc("DELETE /v1/self/savevault/scopes/{type}/{game}/snapshots/{snapshot}/lock", vault.handleDeleteSaveVaultSnapshotLock)
 		mux.HandleFunc("DELETE /v1/self/savevault/scopes/{type}/{game}/snapshots/{snapshot}", vault.handleDeleteSaveVaultScopeSnapshot)
 		mux.HandleFunc("POST /v1/self/savevault/scopes/{type}/{game}/promote", vault.handlePromoteSaveVaultScopeSnapshot)
+		mux.HandleFunc("GET /v1/self/profile/metadata", vault.handleGetProfileMetadata)
+		mux.HandleFunc("PUT /v1/self/profile/metadata", vault.handlePutProfileMetadata)
 		mux.ServeHTTP(w, req)
 	})).ServeHTTP(w, request)
 	return true

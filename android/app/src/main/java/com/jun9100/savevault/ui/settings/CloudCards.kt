@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -174,6 +175,13 @@ internal fun GameSaveCard(
                 ) {
                     Icon(Icons.Outlined.Devices, contentDescription = null)
                     Text("已配对设备管理", modifier = Modifier.padding(start = 6.dp))
+                }
+                OutlinedButton(
+                    onClick = whenIdle(state.busy) { viewModel.syncProfileMetadata(SaveVaultPage.SETTINGS) },
+                    modifier = Modifier.fillMaxWidth().settingButtonFocus().busyDimmed(state.busy),
+                ) {
+                    Icon(Icons.Outlined.Sync, contentDescription = null)
+                    Text("同步云端译名与规则", modifier = Modifier.padding(start = 6.dp))
                 }
             }
             OutlinedButton(

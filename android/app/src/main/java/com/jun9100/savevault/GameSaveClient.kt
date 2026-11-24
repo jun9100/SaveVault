@@ -16,6 +16,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class RemoteSnapshot(
@@ -135,6 +136,14 @@ data class GameSaveDevicesReport(
     val sharedTokenMode: String,
     val usedBytes: Long,
     val quotaBytes: Long,
+)
+
+/** Cross-device user display metadata stored at `/v1/savevault/profile/metadata`. */
+data class GameSaveProfileMetadata(
+    val revision: Long,
+    val customTitles: Map<String, String>,
+    val excludedScopes: Set<String>,
+    val updatedAt: String = "",
 )
 
 /** A token returned by `POST /v1/pair/claim`; it can never be fetched again. */
@@ -337,6 +346,77 @@ class GameSaveClient(
             requireSuccess(response, "吊销设备令牌")
         }
     }.mapFailure()
+
+    /** Reads cross-device custom titles and auto-backup exclusions; null if server predates the route. */
+    fun getProfileMetadata(): Result<GameSaveProfileMetadata?> = runCatching {
+        execute(request("$serviceUrl/v1/savevault/profile/metadata")).use { response ->
+            if (response.code == 404) return@runCatching null
+            requireSuccess(response, "读取云端译名与排除规则")
+            parseProfileMetadata(readBoundedString(response, MAX_JSON_BODY_BYTES))
+        }
+    }.mapFailure()
+
+    /** Merges local custom titles and exclusions into the vault profile and returns the merged server state. */
+    fun mergeProfileMetadata(
+        customTitles: Map<String, String> = emptyMap(),
+        removeTitles: Set<String> = emptySet(),
+        excludedScopes: Set<String> = emptySet(),
+        removeExcluded: Set<String> = emptySet(),
+    ): Result<GameSaveProfileMetadata?> = runCatching {
+        val body = JSONObject().apply {
+            put("merge", true)
+            if (customTitles.isNotEmpty()) {
+                put("custom_titles", JSONObject().apply {
+                    customTitles.forEach { (k, v) -> put(k, v) }
+                })
+            }
+            if (removeTitles.isNotEmpty()) {
+                put("remove_titles", JSONArray().apply { removeTitles.forEach { put(it) } })
+            }
+            if (excludedScopes.isNotEmpty()) {
+                put("excluded_scopes", JSONArray().apply { excludedScopes.forEach { put(it) } })
+            }
+            if (removeExcluded.isNotEmpty()) {
+                put("remove_excluded", JSONArray().apply { removeExcluded.forEach { put(it) } })
+            }
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val req = request("$serviceUrl/v1/savevault/profile/metadata")
+            .put(body)
+            .header("Content-Type", "application/json")
+        execute(req).use { response ->
+            if (response.code == 404) return@runCatching null
+            requireSuccess(response, "同步云端译名与排除规则")
+            parseProfileMetadata(readBoundedString(response, MAX_JSON_BODY_BYTES))
+        }
+    }.mapFailure()
+
+    private fun parseProfileMetadata(body: String): GameSaveProfileMetadata {
+        val json = JSONObject(body)
+        val titlesObj = json.optJSONObject("custom_titles")
+        val titles = linkedMapOf<String, String>()
+        if (titlesObj != null) {
+            val keys = titlesObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next().trim()
+                val value = titlesObj.optString(key).trim()
+                if (key.isNotEmpty() && value.isNotEmpty()) titles[key] = value
+            }
+        }
+        val excludedArr = json.optJSONArray("excluded_scopes")
+        val excluded = linkedSetOf<String>()
+        if (excludedArr != null) {
+            for (i in 0 until excludedArr.length()) {
+                val item = excludedArr.optString(i).trim()
+                if (item.isNotEmpty()) excluded += item
+            }
+        }
+        return GameSaveProfileMetadata(
+            revision = json.optLong("revision", 0L),
+            customTitles = titles,
+            excludedScopes = excluded,
+            updatedAt = json.optString("updated_at").trim(),
+        )
+    }
 
     fun list(): Result<List<RemoteSnapshot>> = runCatching {
         execute(request(listEndpoint())).use { response ->

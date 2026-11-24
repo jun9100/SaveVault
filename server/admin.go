@@ -108,6 +108,11 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /metrics", s.requireAdmin(s.handleMetrics))
 	mux.HandleFunc("GET /admin/api/meta-settings", s.requireAdmin(s.handleGetMetaSettings))
 	mux.HandleFunc("PUT /admin/api/meta-settings", s.requireAdminWrite(s.handlePutMetaSettings))
+	mux.HandleFunc("GET /admin/api/webhooks", s.requireAdmin(s.handleGetWebhooks))
+	mux.HandleFunc("PUT /admin/api/webhooks", s.requireAdminWrite(s.handlePutWebhooks))
+	mux.HandleFunc("POST /admin/api/webhooks/test", s.requireAdminWrite(s.handleTestWebhook))
+	mux.HandleFunc("GET /admin/api/savevault/profile/metadata", s.requireAdmin(s.handleGetProfileMetadata))
+	mux.HandleFunc("PUT /admin/api/savevault/profile/metadata", s.requireAdminWrite(s.handlePutProfileMetadata))
 
 	// Routes kept for scripts written against the previous server-rendered dashboard.
 	mux.HandleFunc("GET /admin/scopes/{id}/logo", s.requireAdmin(s.handleScopeLogo))

@@ -218,6 +218,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	address := s.clientIP(r)
 	if s.logins.blocked(address, now) {
+		s.notifyWebhooks(event{Time: now.UTC(), Kind: eventAuthLocked, Detail: "admin login blocked for " + address})
 		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
 		return
 	}

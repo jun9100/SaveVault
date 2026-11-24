@@ -22,6 +22,9 @@ object GameNames {
     /** The user's own name for a game, keyed by its game key. */
     fun override(gameKey: String): String? = overrides[gameKey]
 
+    /** Snapshot of every user-defined custom title override on this device. */
+    fun allOverrides(): Map<String, String> = overrides
+
     /** Another name source changed (the bundled catalog finished loading). */
     @Synchronized
     fun touch() {
@@ -59,6 +62,27 @@ class GameNameStore(context: Context) {
         val next = if (name.isBlank()) current - gameKey else current + (gameKey to name.trim().take(MAX_NAME_LENGTH))
         preferences.edit().putString(OVERRIDES_KEY, encode(next)).commit()
         load()
+    }
+
+    /** Merges cloud-synced custom titles into local overrides and returns how many changed. */
+    fun mergeOverrides(remote: Map<String, String>): Int = synchronized(LOCK) {
+        if (remote.isEmpty()) return@synchronized 0
+        val current = decode(preferences.getString(OVERRIDES_KEY, null))
+        val next = current.toMutableMap()
+        var changed = 0
+        remote.forEach { (key, rawValue) ->
+            val cleanKey = key.trim()
+            val cleanVal = rawValue.trim().take(MAX_NAME_LENGTH)
+            if (cleanKey.isNotEmpty() && cleanVal.isNotEmpty() && next[cleanKey] != cleanVal) {
+                next[cleanKey] = cleanVal
+                changed++
+            }
+        }
+        if (changed > 0) {
+            preferences.edit().putString(OVERRIDES_KEY, encode(next)).commit()
+            load()
+        }
+        changed
     }
 
     companion object {

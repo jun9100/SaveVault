@@ -81,6 +81,22 @@ type server struct {
 	metaMu       sync.Mutex
 	saveVaultMeta saveVaultMetaState
 
+	// profileMu guards cross-device user display metadata (profile_meta.go).
+	profileMu   sync.Mutex
+	profileMeta profileMetadataState
+
+	// webhookMu is a leaf lock guarding configured notification webhooks and
+	// their lazy background worker (webhooks.go).
+	webhookMu      sync.Mutex
+	webhooks       webhookConfigState
+	webhookClient  *http.Client
+	webhookQueue   chan webhookDelivery
+	webhookCtx     context.Context
+	webhookCancel  context.CancelFunc
+	webhookWG      sync.WaitGroup
+	webhookStarted bool
+	webhookClosed  bool
+
 	// Upstream cover fetching is default-off. The queue starts its two workers
 	// lazily on the first enabled enqueue and Close cancels and joins them.
 	coverFetchEnv                *bool
@@ -183,6 +199,7 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 
 	coverFetchClient, coverFetchTransport := newCoverFetchClient()
 	coverFetchCtx, coverFetchCancel := context.WithCancel(context.Background())
+	webhookCtx, webhookCancel := context.WithCancel(context.Background())
 	claimLogins := options.claimLogins
 	if claimLogins == nil {
 		claimLogins = &loginLimiter{failures: make(map[string]loginFailures)}
@@ -227,7 +244,12 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		saveVaultState:   saveVaultNativeState{Scopes: make(map[string]saveVaultScopeState)},
 		saveVaultManage:  defaultSaveVaultManageState(),
 		saveVaultMeta:    defaultSaveVaultMetaState(),
-		logins:          loginLimiter{failures: make(map[string]loginFailures)},
+		profileMeta:      defaultProfileMetadata(),
+		webhooks:         defaultWebhookConfig(),
+		webhookQueue:     make(chan webhookDelivery, webhookQueueSize),
+		webhookCtx:       webhookCtx,
+		webhookCancel:    webhookCancel,
+		logins:           loginLimiter{failures: make(map[string]loginFailures)},
 		webdavLogins:    loginLimiter{failures: make(map[string]loginFailures)},
 
 		coverFetchEnv:                coverFetchEnvSetting(),
@@ -277,6 +299,14 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		s.Close()
 		return nil, err
 	}
+	if err := s.loadProfileMetadata(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := s.loadWebhooks(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if repaired, err := s.repairSaveVaultHeads(); err != nil {
 		slog.Warn("repair SaveVault heads at startup", "error", err)
 	} else if repaired > 0 {
@@ -297,6 +327,7 @@ func (s *server) Close() {
 			s.coverFetchCancel()
 			s.coverFetchWG.Wait()
 		}
+		s.closeWebhooks()
 		if s.bark != nil {
 			s.bark.Close()
 		}
@@ -354,6 +385,8 @@ func (s *server) handler() http.Handler {
 		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/custom-cover", s.requireToken(s.handleDeleteSaveVaultCustomCover))
 		mux.HandleFunc("GET "+prefix+"/covers/{sha256}", s.requireTokenReadOnly(s.handleSaveVaultCover))
 		mux.HandleFunc("GET "+prefix+"/titles/switch", s.requireTokenReadOnly(s.handleSwitchTitleTable))
+		mux.HandleFunc("GET "+prefix+"/profile/metadata", s.requireTokenReadOnly(s.handleGetProfileMetadata))
+		mux.HandleFunc("PUT "+prefix+"/profile/metadata", s.requireToken(s.handlePutProfileMetadata))
 	}
 
 	// SaveVault uses ordinary WebDAV snapshots, isolated from the encrypted Eden
@@ -509,14 +542,12 @@ func (s *server) setSharedToken(token string) {
 }
 
 func (s *server) getQuotaBytes() int64 {
-	s.quotaMu.Lock()
-	defer s.quotaMu.Unlock()
-	return s.quotaBytes
+	return atomic.LoadInt64(&s.quotaBytes)
 }
 
 func (s *server) setQuotaBytes(quota int64) {
 	s.quotaMu.Lock()
-	s.quotaBytes = quota
+	atomic.StoreInt64(&s.quotaBytes, quota)
 	s.quotaMu.Unlock()
 }
 
@@ -548,13 +579,31 @@ func vaultDirectoryUsedBytes(dataDir string) int64 {
 
 // checkQuota expects the caller to hold s.quotaMu when serializing check + commit.
 func (s *server) checkQuota(additional int64) bool {
-	if s.quotaBytes <= 0 {
+	quota := s.getQuotaBytes()
+	if quota <= 0 {
 		return true
 	}
 	if additional < 0 {
 		additional = 0
 	}
-	return s.usedBytes()+additional <= s.quotaBytes
+	used := s.usedBytes()
+	if used+additional > quota {
+		s.notifyWebhooks(event{
+			Time:   s.now().UTC(),
+			Kind:   eventQuotaExceeded,
+			Detail: fmt.Sprintf("used=%d additional=%d quota=%d", used, additional, quota),
+		})
+		return false
+	}
+	warnThreshold := quota * 80 / 100
+	if used < warnThreshold && used+additional >= warnThreshold {
+		s.notifyWebhooks(event{
+			Time:   s.now().UTC(),
+			Kind:   eventQuotaWarning,
+			Detail: fmt.Sprintf("usage reached %d%% (%d / %d bytes)", (used+additional)*100/quota, used+additional, quota),
+		})
+	}
+	return true
 }
 
 func validIdentifier(value string, maximum int) bool {

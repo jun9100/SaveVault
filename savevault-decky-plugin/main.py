@@ -354,6 +354,113 @@ class Plugin:
             decky.logger.error(f"snapshot_game({game_id}) failed: {e}")
             return {"success": False, "error": str(e)}
 
+    async def rollback_snapshot(self, game_id: str, snapshot_id: str) -> dict:
+        """Restore a historical snapshot of one tracked game from Game Mode."""
+        if not snapshot_id:
+            return {"success": False, "error": "snapshotId is required"}
+        try:
+            await _request_async(
+                f"/api/games/{game_id}/rollback",
+                method="POST",
+                body={"snapshotId": snapshot_id},
+                timeout=60,
+            )
+            return {"success": True}
+        except Exception as e:
+            decky.logger.error(f"rollback_snapshot({game_id}, {snapshot_id}) failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def switch_branch(self, game_id: str, branch: str) -> dict:
+        """Switch a game's active save branch (e.g. main vs mod playthrough)."""
+        if not branch:
+            return {"success": False, "error": "branch name is required"}
+        try:
+            await _request_async(
+                f"/api/games/{game_id}/branch/switch",
+                method="POST",
+                body={"name": branch},
+                timeout=60,
+            )
+            return {"success": True}
+        except Exception as e:
+            decky.logger.error(f"switch_branch({game_id}, {branch}) failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_cloud_offers(self) -> list:
+        """Return cloud saves from other devices waiting for a decision."""
+        try:
+            res = await _request_async("/api/cloud/offers", timeout=5)
+            return res if isinstance(res, list) else []
+        except Exception as e:
+            decky.logger.debug(f"get_cloud_offers failed: {e}")
+            return []
+
+    async def check_cloud(self) -> dict:
+        """Ask the daemon to poll the configured cloud backend for newer saves."""
+        try:
+            await _request_async("/api/cloud/check", method="POST", body={}, timeout=60)
+            return {"success": True}
+        except Exception as e:
+            decky.logger.error(f"check_cloud failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def answer_cloud_offer(self, game_id: str, snapshot_id: str, accept: bool) -> dict:
+        """Accept (take cloud save, keeping a local safety copy) or dismiss a cloud offer."""
+        action = "accept" if accept else "dismiss"
+        try:
+            await _request_async(
+                f"/api/cloud/offers/{action}",
+                method="POST",
+                body={"gameId": game_id, "snapshotId": snapshot_id},
+                timeout=120,
+            )
+            return {"success": True}
+        except Exception as e:
+            decky.logger.error(f"answer_cloud_offer({game_id}, {action}) failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def scan_new_games(self) -> dict:
+        """Discover installed Steam / Proton / emulator saves not yet tracked."""
+        try:
+            found = await _request_async("/api/presets/scan", timeout=45) or []
+            tracked = await self.get_games()
+            tracked_paths = {
+                os.path.normpath(g.get("savePath") or "")
+                for g in tracked.values()
+                if isinstance(g, dict) and g.get("savePath")
+            }
+            untracked = [
+                item for item in found
+                if isinstance(item, dict)
+                and item.get("savePath")
+                and os.path.normpath(item["savePath"]) not in tracked_paths
+            ]
+            # Prefer saves that actually contain files first, newest first.
+            untracked.sort(
+                key=lambda x: (1 if (x.get("fileCount") or 0) > 0 else 0, x.get("latestMtime") or 0),
+                reverse=True,
+            )
+            return {"success": True, "games": untracked[:12]}
+        except Exception as e:
+            decky.logger.error(f"scan_new_games failed: {e}")
+            return {"success": False, "games": [], "error": str(e)}
+
+    async def track_game(self, name: str, save_path: str, app_id: str = "", save_type: str = "") -> dict:
+        """Add a discovered game directly from Game Mode."""
+        if not name or not save_path:
+            return {"success": False, "error": "name and savePath are required"}
+        body = {"name": name, "savePath": save_path}
+        if app_id:
+            body["appId"] = str(app_id)
+        if save_type:
+            body["saveType"] = save_type
+        try:
+            game = await _request_async("/api/games", method="POST", body=body, timeout=30)
+            return {"success": True, "game": game}
+        except Exception as e:
+            decky.logger.error(f"track_game({name}) failed: {e}")
+            return {"success": False, "error": str(e)}
+
     async def resolve_conflict(self, game_id: str, peer_id: str, resolution: str) -> dict:
         """Settle a sync conflict from Game Mode.
 

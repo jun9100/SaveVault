@@ -1774,8 +1774,69 @@ class SourceViewModel(
     /** Names a game by hand; a blank name goes back to the detected one. */
     fun renameGame(gameKey: String, name: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { gameNameStore.rename(gameKey, name) } }
+            withContext(Dispatchers.IO) {
+                runCatching { gameNameStore.rename(gameKey, name) }
+                val config = savedGameSaveConfig()
+                if (config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank()) {
+                    runCatching {
+                        val trimmed = name.trim()
+                        gameSaveClient(config).mergeProfileMetadata(
+                            customTitles = if (trimmed.isNotEmpty()) mapOf(gameKey to trimmed) else emptyMap(),
+                            removeTitles = if (trimmed.isEmpty()) setOf(gameKey) else emptySet(),
+                        )
+                    }
+                }
+            }
             updateState { copy(nameRevision = GameNames.revision) }
+        }
+    }
+
+    /** Two-way merge of custom game titles and auto-backup exclusions with `/v1/savevault/profile/metadata`. */
+    fun syncProfileMetadata(page: SaveVaultPage = SaveVaultPage.SETTINGS) {
+        if (state.value.busy) return
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState { copy(messages = messages.withError(page, "请先配置 SaveVault 云端")) }
+            return
+        }
+        viewModelScope.launch {
+            state.value = state.value.started(page, "正在同步云端译名与排除规则")
+            val result = withContext(Dispatchers.IO) {
+                val localTitles = GameNames.allOverrides()
+                val localExcluded = autoBackupExclusions.excluded()
+                gameSaveClient(config).mergeProfileMetadata(
+                    customTitles = localTitles,
+                    excludedScopes = localExcluded,
+                ).map { merged ->
+                    if (merged == null) return@map null
+                    val updatedTitles = gameNameStore.mergeOverrides(merged.customTitles)
+                    val nextExcluded = if (merged.excludedScopes.isNotEmpty()) {
+                        autoBackupExclusions.setIncluded(merged.excludedScopes, included = false)
+                    } else {
+                        autoBackupExclusions.excluded()
+                    }
+                    Triple(merged, updatedTitles, nextExcluded)
+                }
+            }
+            result.onSuccess { triple ->
+                if (triple == null) {
+                    updateState {
+                        finished(page, error = "当前 SaveVault 云端版本尚不支持元数据漫游同步，请升级服务端")
+                    }
+                    return@onSuccess
+                }
+                val (merged, updatedTitles, nextExcluded) = triple
+                val summary = "已同步云端译名与规则（${merged.customTitles.size} 条译名，${nextExcluded.size} 条排除${if (updatedTitles > 0) "，本机新增 $updatedTitles 条" else ""}）"
+                updateState {
+                    finished(page, action = summary).copy(
+                        nameRevision = GameNames.revision,
+                        autoBackupExcluded = nextExcluded,
+                    )
+                }
+                log(ActivityKind.UPLOAD, ActivityLevel.INFO, summary)
+            }.onFailure { error ->
+                updateState { finished(page, error = "同步云端译名与规则失败：${error.message}") }
+            }
         }
     }
 
@@ -2025,6 +2086,17 @@ class SourceViewModel(
                     action = if (enabled) "已开启这款游戏的自动备份" else "已关闭这款游戏的自动备份",
                 ),
             )
+        }
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching {
+                    gameSaveClient(config).mergeProfileMetadata(
+                        excludedScopes = if (enabled) emptySet() else setOf(libraryKey),
+                        removeExcluded = if (enabled) setOf(libraryKey) else emptySet(),
+                    )
+                }
+            }
         }
     }
 

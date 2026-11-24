@@ -2976,15 +2976,136 @@ function bindSaveVaultRetention(current) {
   };
 }
 
+const WEBHOOK_TYPE_LABELS = {
+  generic: "通用 Webhook (HMAC)",
+  discord: "Discord",
+  telegram: "Telegram Bot",
+  gotify: "Gotify",
+  bark: "Bark",
+  feishu: "飞书机器人",
+  wecom: "企业微信机器人",
+};
+
+const WEBHOOK_EVENT_LABELS = {
+  conflict: "存档冲突",
+  quota_warning: "配额 80% 预警",
+  quota_exceeded: "配额已满",
+  auth_locked: "认证限流锁定",
+  prune: "保留策略清理",
+  device_revoked: "设备吊销",
+  upload: "新存档上传",
+  "*": "全部事件",
+};
+
+function webhookAlertCard(data) {
+  const channels = data?.channels || [];
+  const activeCount = channels.filter((c) => c.enabled).length;
+  return `<section class="card">
+    <div class="card-head">
+      <h2>Webhook 多渠道告警</h2>
+      <div class="row-actions">
+        ${activeCount ? statusChip("accent", `${activeCount} 个已启用`) : statusChip("neutral", "未配置")}
+        <button class="btn sm primary" type="button" data-action="webhook-add">新增渠道</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="hint">支持 Discord、Telegram、Gotify、Bark、飞书、企业微信及带 HMAC-SHA256 签名的通用 Webhook。按当前选中的 Vault 独立配置。</p>
+      ${channels.length === 0
+        ? `<div class="empty-inline">尚未配置通知渠道，点击右上角「新增渠道」开始。</div>`
+        : `<div class="webhook-list">${channels.map((ch) => `
+          <div class="webhook-row">
+            <div class="webhook-meta">
+              <div class="webhook-title">
+                <strong>${esc(ch.name)}</strong>
+                <span class="chip neutral">${esc(WEBHOOK_TYPE_LABELS[ch.type] || ch.type)}</span>
+                ${ch.enabled ? statusChip("accent", "启用") : statusChip("neutral", "停用")}
+                ${ch.has_secret ? `<span class="chip neutral">已设密钥/参数</span>` : ""}
+              </div>
+              <div class="mono muted webhook-url">${esc(ch.url)}</div>
+              <div class="webhook-events">${(ch.events || []).map((ev) => `<span class="chip neutral">${esc(WEBHOOK_EVENT_LABELS[ev] || ev)}</span>`).join("")}</div>
+            </div>
+            <div class="row-actions">
+              <button class="btn sm" type="button" data-action="webhook-test" data-id="${esc(ch.id)}">测试</button>
+              <button class="btn sm" type="button" data-action="webhook-edit" data-id="${esc(ch.id)}">编辑</button>
+              <button class="btn sm ghost danger" type="button" data-action="webhook-delete" data-id="${esc(ch.id)}">删除</button>
+            </div>
+          </div>`).join("")}</div>`}
+    </div>
+  </section>`;
+}
+
+function webhookChannelDialog(existing) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "modal";
+    const isEdit = Boolean(existing);
+    const chosenEvents = new Set(existing?.events || ["conflict", "quota_warning", "quota_exceeded", "auth_locked"]);
+    const typeOptions = Object.entries(WEBHOOK_TYPE_LABELS)
+      .map(([k, label]) => `<option value="${esc(k)}" ${(existing?.type || "generic") === k ? "selected" : ""}>${esc(label)}</option>`)
+      .join("");
+    const eventBoxes = Object.entries(WEBHOOK_EVENT_LABELS)
+      .map(([k, label]) => `<label class="check-field"><input type="checkbox" name="ev" value="${esc(k)}" ${chosenEvents.has(k) ? "checked" : ""}><span>${esc(label)}</span></label>`)
+      .join("");
+    dialog.innerHTML = `<form method="dialog" class="modal-form">
+      <h3>${isEdit ? "编辑 Webhook 渠道" : "新增 Webhook 渠道"}</h3>
+      <div class="inline-fields">
+        <label class="field"><span>名称</span><input name="name" maxlength="80" required value="${esc(existing?.name || "")}" placeholder="例如：运维告警群"></label>
+        <label class="field"><span>渠道类型</span><select name="type">${typeOptions}</select></label>
+      </div>
+      <label class="field"><span>Webhook URL</span><input name="url" type="url" required value="${esc(existing?.url || "")}" placeholder="https://..."></label>
+      <label class="field"><span>密钥 / Chat ID / Gotify Key（可选）</span>
+        <input name="secret" type="password" autocomplete="new-password" placeholder="${existing?.has_secret ? "留空保持现有值" : "Generic 填 HMAC 密钥；Telegram 填 chat_id；Gotify 填 App Token"}">
+      </label>
+      ${existing?.has_secret ? `<label class="check-field"><input type="checkbox" name="clear_secret"><span>清除已保存的密钥/参数</span></label>` : ""}
+      <div class="field"><span>订阅事件</span><div class="webhook-ev-grid">${eventBoxes}</div></div>
+      <label class="check-field"><input type="checkbox" name="enabled" ${existing ? (existing.enabled ? "checked" : "") : "checked"}><span>启用该渠道</span></label>
+      <div class="form-actions">
+        <button class="btn" value="cancel" type="submit" formnovalidate>取消</button>
+        <button class="btn primary" value="ok" type="submit">${isEdit ? "保存" : "添加"}</button>
+      </div>
+    </form>`;
+    document.body.append(dialog);
+    dialog.addEventListener("close", () => {
+      let result = null;
+      if (dialog.returnValue === "ok") {
+        const fd = new FormData(dialog.querySelector("form"));
+        const events = fd.getAll("ev").map(String);
+        result = {
+          id: existing?.id || "",
+          name: String(fd.get("name") || "").trim(),
+          type: String(fd.get("type") || "generic"),
+          url: String(fd.get("url") || "").trim(),
+          secret: String(fd.get("secret") || "").trim(),
+          clear_secret: fd.get("clear_secret") === "on",
+          events: events.length ? events : ["conflict", "quota_exceeded"],
+          enabled: fd.get("enabled") === "on",
+        };
+      }
+      dialog.remove();
+      resolve(result);
+    });
+    dialog.showModal();
+  });
+}
+
+async function saveWebhookChannels(nextChannels, okMsg) {
+  const res = await guarded(() => api("webhooks", { method: "PUT", body: { channels: nextChannels } }), okMsg);
+  if (res) {
+    store.webhooks = { ...(store.webhooks || {}), channels: res.channels || [] };
+    if (currentRoute().name === "maintenance") renderMaintenance();
+  }
+}
+
 async function renderMaintenance() {
-  if (!store.saveVaultRetention || !store.saveVaultTombstones) {
+  if (!store.saveVaultRetention || !store.saveVaultTombstones || !store.webhooks) {
     main.innerHTML = `<div class="skeleton"></div>`;
     try {
-      const [retentionData, tombstoneData] = await Promise.all([
-        api("savevault/retention"), api("savevault/tombstones"),
+      const [retentionData, tombstoneData, webhookData] = await Promise.all([
+        api("savevault/retention"), api("savevault/tombstones"), api("webhooks"),
       ]);
       store.saveVaultRetention = retentionData;
       store.saveVaultTombstones = tombstoneData.tombstones || [];
+      store.webhooks = webhookData;
       await refreshSaveVaultRetentionPreview();
     } catch (error) {
       if (error instanceof UnauthorizedError) { showLogin(); return; }
@@ -3106,6 +3227,7 @@ async function renderMaintenance() {
               ? `当前由环境变量 <code>GAME_SAVE_COVER_FETCH</code> 控制，网页上的开关不可修改。` : ""}</p>
           </div>
         </section>
+        ${webhookAlertCard(store.webhooks)}
         <section class="card">
           <div class="card-head"><h2>监控与脚本</h2></div>
           <div class="card-body form">
@@ -3202,6 +3324,7 @@ async function switchVault(vaultID) {
   store.overviewSaveVaultGames = null;
   store.scopeDetail = null;
   store.events = null;
+  store.webhooks = null;
   store.saveVaultFiles = null;
   clearSaveVaultCaches();
   store.deviceTokens = null;
@@ -3568,6 +3691,52 @@ async function onAction(event) {
       if (!ok) return;
       if (await guarded(() => api("sessions/revoke-all", { method: "POST", body: { role: "admin" } }), "已注销全部管理员会话")) {
         showLogin();
+      }
+      return;
+    }
+    case "webhook-add": {
+      const input = await webhookChannelDialog(null);
+      if (!input) return;
+      const list = (store.webhooks?.channels || []).map((c) => ({
+        id: c.id, name: c.name, type: c.type, url: c.url, events: c.events, enabled: c.enabled,
+      }));
+      list.push(input);
+      await saveWebhookChannels(list, "已添加 Webhook 通知渠道");
+      return;
+    }
+    case "webhook-edit": {
+      const current = (store.webhooks?.channels || []).find((c) => c.id === id);
+      if (!current) return;
+      const input = await webhookChannelDialog(current);
+      if (!input) return;
+      const list = (store.webhooks?.channels || []).map((c) => (c.id === id ? input : {
+        id: c.id, name: c.name, type: c.type, url: c.url, events: c.events, enabled: c.enabled,
+      }));
+      await saveWebhookChannels(list, "已更新 Webhook 通知渠道");
+      return;
+    }
+    case "webhook-delete": {
+      const current = (store.webhooks?.channels || []).find((c) => c.id === id);
+      if (!current) return;
+      const ok = await confirmDialog({
+        title: `删除通知渠道「${current.name}」？`, danger: true, confirm: "删除",
+        message: "删除后将不再向该地址推送告警事件。",
+      });
+      if (!ok) return;
+      const list = (store.webhooks?.channels || []).filter((c) => c.id !== id).map((c) => ({
+        id: c.id, name: c.name, type: c.type, url: c.url, events: c.events, enabled: c.enabled,
+      }));
+      await saveWebhookChannels(list, "已删除 Webhook 通知渠道");
+      return;
+    }
+    case "webhook-test": {
+      try {
+        const res = await api("webhooks/test", { method: "POST", body: { id } });
+        if (res.ok) toast(`测试推送成功（HTTP ${res.status_code}）`);
+        else toast(`测试推送失败：${res.error || "未知错误"}`, true);
+      } catch (error) {
+        if (error instanceof UnauthorizedError) { showLogin(); return; }
+        toast(error.message || String(error), true);
       }
       return;
     }
@@ -4030,6 +4199,7 @@ function showLogin() {
   store.overviewSaveVaultGames = null;
   store.scopeDetail = null;
   store.events = null;
+  store.webhooks = null;
   store.saveVaultFiles = null;
   store.saveVaultScopes = null;
   store.saveVaultGames = null;

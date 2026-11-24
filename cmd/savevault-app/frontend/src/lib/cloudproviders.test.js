@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cloudTileKey, cloudTiles, connectedProviderOf, GAME_SAVE_PROVIDER, isEmail, providerStatus, providers, saveTypeLabel } from './cloudproviders.js';
+import { cloudTileKey, cloudTiles, connectedProviderOf, GAME_SAVE_PROVIDER, isEmail, providerStatus, providers, saveTypeLabel, supportsCloudE2EE } from './cloudproviders.js';
 
 describe('connectedProviderOf', () => {
   it('is the OAuth provider the tokens were issued for', () => {
@@ -36,6 +36,10 @@ describe('providerStatus', () => {
     const gameSave = { provider: GAME_SAVE_PROVIDER, url: 'https://nas.example/savevault' };
     expect(providerStatus(GAME_SAVE_PROVIDER, null, gameSave)).toBe('Configured');
   });
+  it('requires both endpoint url and bucket for S3 / R2', () => {
+    expect(providerStatus('s3', null, { provider: 's3', url: 'https://r2.example', s3Bucket: '' })).toBe('Not configured');
+    expect(providerStatus('s3', null, { provider: 's3', url: 'https://r2.example', s3Bucket: 'saves' })).toBe('Configured');
+  });
   it('says nothing before the settings load', () => {
     expect(providerStatus('local', null, null)).toBe('');
   });
@@ -47,6 +51,14 @@ describe('providers', () => {
       label: 'game-save',
       oauth: false
     });
+  });
+  it('offers S3 / R2 and gates client-side E2EE to third-party providers', () => {
+    expect(providers.find((provider) => provider.id === 's3')).toMatchObject({ label: 'S3 / R2', oauth: false });
+    expect(supportsCloudE2EE('s3')).toBe(true);
+    expect(supportsCloudE2EE('webdav')).toBe(true);
+    expect(supportsCloudE2EE('google_drive')).toBe(true);
+    expect(supportsCloudE2EE(GAME_SAVE_PROVIDER)).toBe(false);
+    expect(supportsCloudE2EE('webhook')).toBe(false);
   });
 });
 

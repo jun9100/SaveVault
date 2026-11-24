@@ -153,6 +153,13 @@ type cloudSyncPatch struct {
 	Headers                  *string           `json:"headers"`
 	ClearHeaders             bool              `json:"clearHeaders"`
 	FolderID                 *string           `json:"folderId"`
+	E2EEEnabled              *bool             `json:"e2eeEnabled"`
+	E2EEPassphrase           *string           `json:"e2eePassphrase"`
+	ClearE2EEPassphrase      bool              `json:"clearE2EEPassphrase"`
+	S3Region                 *string           `json:"s3Region"`
+	S3Bucket                 *string           `json:"s3Bucket"`
+	S3Prefix                 *string           `json:"s3Prefix"`
+	S3PathStyle              *bool             `json:"s3PathStyle"`
 	CustomClientIDs          map[string]string `json:"customClientIds"`
 	CustomClientSecrets      map[string]string `json:"customClientSecrets"`
 	ClearCustomClientSecrets map[string]bool   `json:"clearCustomClientSecrets"`
@@ -284,6 +291,26 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	}
 	if patch.FolderID != nil {
 		cfg.FolderID = *patch.FolderID
+	}
+	if patch.E2EEEnabled != nil {
+		cfg.E2EEEnabled = *patch.E2EEEnabled
+	}
+	if patch.ClearE2EEPassphrase {
+		cfg.E2EEPassphrase = ""
+	} else if patch.E2EEPassphrase != nil && *patch.E2EEPassphrase != "" {
+		cfg.E2EEPassphrase = *patch.E2EEPassphrase
+	}
+	if patch.S3Region != nil {
+		cfg.S3Region = strings.TrimSpace(*patch.S3Region)
+	}
+	if patch.S3Bucket != nil {
+		cfg.S3Bucket = strings.TrimSpace(*patch.S3Bucket)
+	}
+	if patch.S3Prefix != nil {
+		cfg.S3Prefix = strings.TrimSpace(*patch.S3Prefix)
+	}
+	if patch.S3PathStyle != nil {
+		cfg.S3PathStyle = *patch.S3PathStyle
 	}
 	if patch.CustomClientIDs != nil {
 		if cfg.CustomClientIDs == nil {

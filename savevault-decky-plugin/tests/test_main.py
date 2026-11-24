@@ -180,5 +180,60 @@ class FindingTheDaemon(unittest.TestCase):
         self.assertIsNone(main.daemon_command("/home/deck", which=lambda _: None, is_file=lambda p: False))
 
 
+class GameModeFullLoop(unittest.TestCase):
+    def test_rollback_branch_cloud_offers_and_scan_track(self):
+        with open(main.TOKEN_FILE, "w", encoding="utf-8") as fh:
+            fh.write("deck-test-token")
+        stub = StubDaemon({
+            "POST /api/games/hades/rollback": (200, {"id": "snap_1"}),
+            "POST /api/games/hades/branch/switch": (200, {"success": True}),
+            "GET /api/cloud/offers": (200, [{"gameId": "hades", "gameName": "Hades", "snapshotId": "snap_9", "diverged": True}]),
+            "POST /api/cloud/check": (200, {"ok": True}),
+            "POST /api/cloud/offers/accept": (200, {"success": True}),
+            "POST /api/cloud/offers/dismiss": (200, {"success": True}),
+            "GET /api/games": (200, {"hades": {"id": "hades", "savePath": "/saves/hades"}}),
+            "GET /api/presets/scan": (200, [
+                {"id": "1", "name": "Hades", "savePath": "/saves/hades", "fileCount": 5, "latestMtime": 200},
+                {"id": "2", "name": "Celeste", "savePath": "/saves/celeste", "fileCount": 3, "latestMtime": 100},
+                {"id": "3", "name": "Empty", "savePath": "/saves/empty", "fileCount": 0, "latestMtime": 300},
+            ]),
+            "POST /api/games": (201, {"id": "celeste", "name": "Celeste"}),
+        })
+        try:
+            p = main.Plugin()
+            self.assertEqual(run(p.get_daemon_token()), "deck-test-token")
+            self.assertTrue(run(p.rollback_snapshot("hades", "snap_1"))["success"])
+            self.assertTrue(run(p.switch_branch("hades", "mods"))["success"])
+            offers = run(p.get_cloud_offers())
+            self.assertEqual(len(offers), 1)
+            self.assertTrue(run(p.check_cloud())["success"])
+            self.assertTrue(run(p.answer_cloud_offer("hades", "snap_9", True))["success"])
+            self.assertTrue(run(p.answer_cloud_offer("hades", "snap_9", False))["success"])
+
+            scan = run(p.scan_new_games())
+            self.assertTrue(scan["success"])
+            # Tracked Hades is excluded; Celeste (with files) sorts before Empty (0 files).
+            self.assertEqual([g["name"] for g in scan["games"]], ["Celeste", "Empty"])
+
+            tracked = run(p.track_game("Celeste", "/saves/celeste", "504230", "pc"))
+            self.assertTrue(tracked["success"])
+        finally:
+            stub.close()
+            try:
+                os.remove(main.TOKEN_FILE)
+            except OSError:
+                pass
+
+        bodies = {(m, path): body for m, path, body in stub.seen}
+        self.assertEqual(bodies[("POST", "/api/games/hades/rollback")], {"snapshotId": "snap_1"})
+        self.assertEqual(bodies[("POST", "/api/games/hades/branch/switch")], {"name": "mods"})
+        self.assertEqual(bodies[("POST", "/api/cloud/offers/accept")], {"gameId": "hades", "snapshotId": "snap_9"})
+        self.assertEqual(bodies[("POST", "/api/cloud/offers/dismiss")], {"gameId": "hades", "snapshotId": "snap_9"})
+        self.assertEqual(
+            bodies[("POST", "/api/games")],
+            {"name": "Celeste", "savePath": "/saves/celeste", "appId": "504230", "saveType": "pc"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

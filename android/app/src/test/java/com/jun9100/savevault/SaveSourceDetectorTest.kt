@@ -1,8 +1,11 @@
 package com.jun9100.savevault
 
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -525,5 +528,93 @@ class SaveSourceDetectorTest {
         )
         val keys = report.detected.filterNot { it.candidate }.map { it.gameKey }.toSet()
         assertEquals(setOf("ppsspp:ULUS10041", "ppsspp:NPJH50465"), keys)
+    }
+
+    @Test
+    fun detects3dsPerGameTitleAndResolvesChineseCatalogName() {
+        val root = "/storage/emulated/0/azahar"
+        val savePath = "$root/sdmc/Nintendo 3DS/00000000000000000000000000000000/00000000000000000000000000000000/title/00040000/00055d00/data/00000001"
+        val report = SaveSourceDetector.scanDirectories(
+            rootPath = root,
+            directoryPaths = listOf(root, savePath),
+        )
+        val detected = report.detected.single()
+        assertEquals("citra", detected.kind)
+        assertEquals("0004000000055D00", detected.titleId)
+        assertEquals("3ds:0004000000055D00", detected.gameKey)
+
+        val presented = GameCatalog.present(detected)
+        assertEquals("宝可梦 X", presented.localizedName)
+        assertEquals("Pokemon X", presented.originalName)
+        assertNull(presented.switchTitleId)
+    }
+
+    @Test
+    fun detectsVita3kPerGameAndParsesBinaryParamSfoTitle() {
+        val root = createTempDir(prefix = "savevault-vita3k-")
+        try {
+            val sfoDir = File(root, "ux0/user/00/savedata/PCSE00120/sce_sys").apply { mkdirs() }
+            File(sfoDir, "param.sfo").writeBytes(buildTestParamSfo("Persona 4 Golden"))
+
+            val detected = SaveSourceDetector.detect(root)
+            val vita = detected.single { it.kind == "vita3k" && it.titleId == "PCSE00120" }
+            assertEquals("vita3k:PCSE00120", vita.gameKey)
+            assertEquals("Persona 4 Golden", vita.displayName)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun detectsDolphinWiiAsciiGameIdGcCardsAndDrasticBackup() {
+        val root = "/storage/emulated/0"
+        val report = SaveSourceDetector.scanDirectories(
+            rootPath = root,
+            directoryPaths = listOf(
+                root,
+                "$root/custom-dolphin/Wii/title/00010000/524d4745/data",
+                "$root/custom-dolphin/GC/USA/Card A",
+                "$root/DraStic/backup",
+                "$root/DraStic/savestates",
+            ),
+        )
+        val wii = report.detected.single { it.gameKey == "wii:524D4745" }
+        assertEquals("dolphin", wii.kind)
+        assertEquals("Wii RMGE", wii.displayName)
+
+        val gc = report.detected.single { it.gameKey == "gc:USA:card a" }
+        assertEquals("dolphin", gc.kind)
+        assertEquals("GameCube USA Card A", gc.displayName)
+
+        val drastic = report.detected.filter { it.gameKey == "emulator:drastic" }
+        assertEquals(2, drastic.size)
+        assertEquals(setOf("DraStic/backup", "DraStic/savestates"), drastic.map { it.relativePath }.toSet())
+    }
+
+    private fun buildTestParamSfo(title: String): ByteArray {
+        val keyBytes = "TITLE\u0000".toByteArray(Charsets.UTF_8)
+        val valBytes = (title + "\u0000").toByteArray(Charsets.UTF_8)
+        val keyTableOffset = 20 + 16
+        val dataTableOffset = keyTableOffset + ((keyBytes.size + 3) and 3.inv())
+        val out = ByteBuffer.allocate(dataTableOffset + valBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+        out.put(0x00)
+        out.put('P'.code.toByte())
+        out.put('S'.code.toByte())
+        out.put('F'.code.toByte())
+        out.putInt(0x00000101)
+        out.putInt(keyTableOffset)
+        out.putInt(dataTableOffset)
+        out.putInt(1)
+        // Entry 0: keyOffset=0, format=0x0204 (UTF8), len=valBytes.size, maxLen=valBytes.size, dataOffset=0
+        out.putShort(0)
+        out.putShort(0x0204)
+        out.putInt(valBytes.size)
+        out.putInt(valBytes.size)
+        out.putInt(0)
+        out.position(keyTableOffset)
+        out.put(keyBytes)
+        out.position(dataTableOffset)
+        out.put(valBytes)
+        return out.array()
     }
 }

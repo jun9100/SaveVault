@@ -1,6 +1,8 @@
 package com.jun9100.savevault
 
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 data class DetectedSave(
     val kind: String,
@@ -69,6 +71,13 @@ object SaveSourceDetector {
     private val broadPcSaveDirectoryNames = setOf("saved", "userdata")
     // PSP product codes such as ULUS10041 or NPJH50465 prefix every save folder name.
     private val pspGameIdPattern = Regex("^[A-Z]{4}[0-9]{5}")
+    // PS Vita title IDs (e.g. PCSG00001, PCSE00120, PCSA00029, VLJS05025).
+    private val vitaTitleIdPattern = Regex("^[A-Z]{4}[0-9]{5}$")
+    // 3DS lower 32-bit TitleID (8 hex digits) and Wii 32-bit TitleID (8 hex digits).
+    private val hex8Pattern = Regex("^[0-9a-fA-F]{8}$")
+    private val hex2Pattern = Regex("^[0-9a-fA-F]{2}$")
+    private val gcRegionDirs = setOf("usa", "eur", "jap", "jpn")
+    private val gcCardDirs = setOf("card a", "card b")
     private val androidPersistentDirectoryNames = setOf(
         "files",
         "databases",
@@ -163,13 +172,24 @@ object SaveSourceDetector {
             .map { it.path }
             .toList()
         val truncated = directories.size > MAX_SCAN_DIRECTORIES
-        return scanDirectories(
+        val report = scanDirectories(
             rootPath = root.path,
             directoryPaths = directories.take(MAX_SCAN_DIRECTORIES),
             selectedRootName = selectedRootName,
             truncated = truncated,
             androidGames = androidGames,
         )
+        // Enrich local Vita3K save directories with titles from sce_sys/param.sfo when readable.
+        val enriched = report.detected.map { save ->
+            if (save.kind == "vita3k" && save.titleId != null) {
+                val sfo = File(File(root, save.relativePath), "sce_sys/param.sfo")
+                val title = ParamSfoParser.readTitle(sfo)
+                if (!title.isNullOrBlank()) save.copy(displayName = title) else save
+            } else {
+                save
+            }
+        }
+        return if (enriched == report.detected) report else report.copy(detected = enriched)
     }
 
     /**
@@ -419,8 +439,87 @@ object SaveSourceDetector {
             lowerPath.contains("retroarch") && last in setOf("saves", "states") ->
                 simpleDetection("retroarch", relative, "RetroArch 存档目录", "RetroArch", found)?.let { found += it }
 
+            // Dolphin Wii per-game save data: .../Wii/title/00010000/<8-hex>/data
+            fullLower.size >= 4 &&
+                last == "data" &&
+                hex8Pattern.matches(fullParts[fullParts.size - 2]) &&
+                fullLower[fullLower.size - 3] == "00010000" &&
+                fullLower[fullLower.size - 4] == "title" -> {
+                val gameHex = fullParts[fullParts.size - 2].uppercase()
+                val asciiId = decodeAsciiGameId(gameHex)
+                if (found.none { it.kind == "dolphin" && it.relativePath == relative }) {
+                    found += DetectedSave(
+                        kind = "dolphin",
+                        relativePath = relative,
+                        titleId = gameHex,
+                        note = if (asciiId != null) "Dolphin Wii 游戏存档（$asciiId）" else "Dolphin Wii 游戏存档",
+                        displayName = "Wii ${asciiId ?: gameHex}",
+                        gameKey = "wii:$gameHex",
+                    )
+                }
+            }
+
+            // Dolphin GameCube GCI folder mode: .../GC/<USA|EUR|JAP>/Card A|B
+            fullLower.size >= 3 &&
+                last in gcCardDirs &&
+                fullLower[fullLower.size - 2] in gcRegionDirs &&
+                fullLower[fullLower.size - 3] == "gc" -> {
+                val region = fullParts[fullParts.size - 2].uppercase()
+                val card = fullParts.last()
+                if (found.none { it.kind == "dolphin" && it.relativePath == relative }) {
+                    found += DetectedSave(
+                        kind = "dolphin",
+                        relativePath = relative,
+                        note = "Dolphin GameCube 记忆卡目录（$region · $card）",
+                        displayName = "GameCube $region $card",
+                        gameKey = "gc:$region:${card.lowercase()}",
+                    )
+                }
+            }
+
             lowerPath.contains("dolphin") && last in setOf("wii", "gc", "statesaves", "state saves") ->
                 simpleDetection("dolphin", relative, "Dolphin 存档目录", "Dolphin", found)?.let { found += it }
+
+            // 3DS (Citra / Azahar / Lime3DS / Panda3DS) per-game save:
+            // .../title/00040000/<8-hex>/data/00000001
+            fullLower.size >= 5 &&
+                last == "00000001" &&
+                fullLower[fullLower.size - 2] == "data" &&
+                hex8Pattern.matches(fullParts[fullParts.size - 3]) &&
+                fullLower[fullLower.size - 4] == "00040000" &&
+                fullLower[fullLower.size - 5] == "title" -> {
+                val fullTitleId = "00040000${fullParts[fullParts.size - 3].uppercase()}"
+                if (found.none { it.kind == "citra" && it.relativePath == relative }) {
+                    found += DetectedSave(
+                        kind = "citra",
+                        relativePath = relative,
+                        titleId = fullTitleId,
+                        note = "3DS 游戏存档（Citra / Azahar / Lime3DS）",
+                        displayName = "3DS $fullTitleId",
+                        gameKey = "3ds:$fullTitleId",
+                    )
+                }
+            }
+
+            // PS Vita (Vita3K) per-game savedata: .../ux0/user/<2-hex>/savedata/<TITLE_ID>
+            fullLower.size >= 5 &&
+                vitaTitleIdPattern.matches(fullParts.last().uppercase()) &&
+                fullLower[fullLower.size - 2] == "savedata" &&
+                hex2Pattern.matches(fullParts[fullParts.size - 3]) &&
+                fullLower[fullLower.size - 4] == "user" &&
+                fullLower[fullLower.size - 5] == "ux0" -> {
+                val vitaId = fullParts.last().uppercase()
+                if (found.none { it.kind == "vita3k" && it.relativePath == relative }) {
+                    found += DetectedSave(
+                        kind = "vita3k",
+                        relativePath = relative,
+                        titleId = vitaId,
+                        note = "Vita3K 游戏存档：$vitaId",
+                        displayName = "PS Vita $vitaId",
+                        gameKey = "vita3k:$vitaId",
+                    )
+                }
+            }
 
             // ePSXe (on its own or inside 小鸡模拟器) keeps every game's memory
             // cards in memcards and its save states in sstates; both are one game
@@ -456,8 +555,10 @@ object SaveSourceDetector {
             (lowerPath.contains("mupen64") || lowerPath.contains("m64plus")) && last in emulatorSaveDirectoryNames ->
                 simpleDetection("mupen64plus", relative, "Mupen64Plus 存档目录", "Mupen64Plus", found)?.let { found += it }
 
-            lowerPath.contains("drastic") && last in emulatorSaveDirectoryNames ->
-                simpleDetection("drastic", relative, "DraStic 存档目录", "DraStic", found)?.let { found += it }
+            lowerPath.contains("drastic") && (last == "backup" || last in emulatorSaveDirectoryNames) ->
+                simpleDetection("drastic", relative, "DraStic 存档目录（${if (last == "backup") "游戏存档" else "即时存档"}）", "DraStic (NDS)", found)
+                    ?.copy(gameKey = "emulator:drastic")
+                    ?.let { found += it }
 
             lowerPath.contains("lemuroid") && last in emulatorSaveDirectoryNames ->
                 simpleDetection("lemuroid", relative, "Lemuroid 存档目录", "Lemuroid", found)?.let { found += it }
@@ -752,6 +853,17 @@ object SaveSourceDetector {
         return absolutePath.removePrefix(prefix).trim('/').ifEmpty { "." }
     }
 
+    private fun decodeAsciiGameId(hex8: String): String? {
+        if (hex8.length != 8) return null
+        val chars = CharArray(4)
+        for (i in 0 until 4) {
+            val code = hex8.substring(i * 2, i * 2 + 2).toIntOrNull(16) ?: return null
+            if (code !in 0x30..0x39 && code !in 0x41..0x5A) return null
+            chars[i] = code.toChar()
+        }
+        return String(chars)
+    }
+
     private val emulatorSaveDirectoryNames = setOf(
         "save",
         "saves",
@@ -783,4 +895,62 @@ object ScanPruning {
     fun skip(parentName: String, name: String): Boolean =
         name.lowercase() in anywhere ||
             (parentName.equals("linuxfs", ignoreCase = true) && name.lowercase() in linuxSystemDirectories)
+}
+
+/**
+ * Pure binary parser for Sony PSP/PS Vita `param.sfo` (`\u0000PSF`) metadata files.
+ * Extracts the human-readable `TITLE` / `STITLE` entry without any external library.
+ */
+object ParamSfoParser {
+    private const val MAX_SFO_BYTES = 256 * 1024
+    private const val UTF8_FORMAT = 0x0204
+    private const val UTF8_SPECIAL_FORMAT = 0x0004
+
+    fun readTitle(file: File): String? {
+        if (!file.isFile || file.length() <= 20L || file.length() > MAX_SFO_BYTES) return null
+        return runCatching { parseTitle(file.readBytes()) }.getOrNull()
+    }
+
+    fun parseTitle(bytes: ByteArray): String? {
+        if (bytes.size < 20) return null
+        if (bytes[0] != 0x00.toByte() || bytes[1] != 'P'.code.toByte() || bytes[2] != 'S'.code.toByte() || bytes[3] != 'F'.code.toByte()) {
+            return null
+        }
+        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val keyTableOffset = buf.getInt(8)
+        val dataTableOffset = buf.getInt(12)
+        val entryCount = buf.getInt(16)
+        if (entryCount <= 0 || entryCount > 512) return null
+        if (keyTableOffset < 20 || dataTableOffset < keyTableOffset || dataTableOffset > bytes.size) return null
+        if (20 + entryCount * 16 > keyTableOffset) return null
+
+        var title: String? = null
+        var shortTitle: String? = null
+        for (i in 0 until entryCount) {
+            val base = 20 + i * 16
+            val keyOffset = buf.getShort(base).toInt() and 0xFFFF
+            val format = buf.getShort(base + 2).toInt() and 0xFFFF
+            val dataLen = buf.getInt(base + 4)
+            val dataOffset = buf.getInt(base + 12)
+            if (format != UTF8_FORMAT && format != UTF8_SPECIAL_FORMAT) continue
+
+            val keyStart = keyTableOffset + keyOffset
+            if (keyStart < keyTableOffset || keyStart >= dataTableOffset) continue
+            var keyEnd = keyStart
+            while (keyEnd < dataTableOffset && bytes[keyEnd] != 0.toByte()) keyEnd++
+            val key = String(bytes, keyStart, keyEnd - keyStart, Charsets.UTF_8)
+            if (key != "TITLE" && key != "STITLE") continue
+
+            val valStart = dataTableOffset + dataOffset
+            if (valStart < dataTableOffset || dataLen <= 0 || valStart + dataLen > bytes.size) continue
+            val value = String(bytes, valStart, dataLen, Charsets.UTF_8)
+                .trimEnd('\u0000')
+                .replace('\n', ' ')
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (value.isBlank()) continue
+            if (key == "TITLE") title = value else shortTitle = value
+        }
+        return title ?: shortTitle
+    }
 }

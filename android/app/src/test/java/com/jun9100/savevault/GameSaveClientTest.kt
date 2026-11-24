@@ -215,6 +215,21 @@ class GameSaveClientTest {
             client.deleteScopeSnapshot(GameSaveTypes.SWITCH, gameId, snap1ID).getOrThrow()
             val finalScope = client.getScope(GameSaveTypes.SWITCH, gameId).getOrThrow()
             assertEquals(listOf(snap2ID), finalScope.snapshots.map(GameSaveScopeSnapshot::id))
+
+            // Cross-device profile metadata GET & PUT merge.
+            val merged = client.mergeProfileMetadata(
+                customTitles = mapOf("3ds:0004000000055D00" to "宝可梦 X"),
+                excludedScopes = setOf("android:com.example.temp"),
+            ).getOrThrow()
+            assertNotNull(merged)
+            assertEquals(1L, merged!!.revision)
+            assertEquals("宝可梦 X", merged.customTitles["3ds:0004000000055D00"])
+            assertEquals(setOf("android:com.example.temp"), merged.excludedScopes)
+
+            val fetched = client.getProfileMetadata().getOrThrow()
+            assertNotNull(fetched)
+            assertEquals(1L, fetched!!.revision)
+            assertEquals("宝可梦 X", fetched.customTitles["3ds:0004000000055D00"])
         } finally {
             root.deleteRecursively()
             server.close()
@@ -324,6 +339,39 @@ private class MiniGameSaveServer : AutoCloseable {
             respond(client, 204, ByteArray(0))
             return
         }
+        if (path == "/v1/savevault/profile/metadata") {
+            synchronized(profileTitles) {
+                if (method == "PUT") {
+                    val reqJson = JSONObject(String(body))
+                    reqJson.optJSONObject("custom_titles")?.let { obj ->
+                        val keys = obj.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            profileTitles[k] = obj.optString(k)
+                        }
+                    }
+                    reqJson.optJSONArray("remove_titles")?.let { arr ->
+                        for (i in 0 until arr.length()) profileTitles.remove(arr.optString(i))
+                    }
+                    reqJson.optJSONArray("excluded_scopes")?.let { arr ->
+                        for (i in 0 until arr.length()) profileExcluded += arr.optString(i)
+                    }
+                    reqJson.optJSONArray("remove_excluded")?.let { arr ->
+                        for (i in 0 until arr.length()) profileExcluded.remove(arr.optString(i))
+                    }
+                    profileRevision++
+                }
+                val payload = JSONObject()
+                    .put("revision", profileRevision)
+                    .put("updated_at", "2026-11-24T06:00:00Z")
+                    .put("custom_titles", JSONObject().apply { profileTitles.forEach { (k, v) -> put(k, v) } })
+                    .put("excluded_scopes", JSONArray().apply { profileExcluded.forEach { put(it) } })
+                    .toString()
+                    .toByteArray()
+                respond(client, 200, payload, "Content-Type: application/json")
+            }
+            return
+        }
         if (method == "GET" && path == "/v1/savevault/files") {
             val payload = JSONObject().put("files", JSONArray().apply {
                 files.entries.sortedBy { it.key }.forEach { (key, value) ->
@@ -420,6 +468,9 @@ private class MiniGameSaveServer : AutoCloseable {
     )
 
     private val scopes = linkedMapOf<String, ScopeState>()
+    private var profileRevision = 0L
+    private val profileTitles = linkedMapOf<String, String>()
+    private val profileExcluded = linkedSetOf<String>()
 
     private fun handleScope(
         client: Socket,

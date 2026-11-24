@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { toast, settings } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
-  import { connectedProviderOf, GAME_SAVE_PROVIDER, isOAuth } from '../lib/cloudproviders.js';
+  import { connectedProviderOf, GAME_SAVE_PROVIDER, isOAuth, supportsCloudE2EE } from '../lib/cloudproviders.js';
   import ProviderPicker from './cloud/ProviderPicker.svelte';
   import ProviderFields from './cloud/ProviderFields.svelte';
   import AuthStatus from './cloud/AuthStatus.svelte';
@@ -68,8 +68,11 @@
   async function save() {
     busy.set(true);
     try {
-      settings.set(await api.post('/api/settings', { cloudSync: config }));
-      savedConfig = structuredClone(config);
+      const updated = await api.post('/api/settings', { cloudSync: config });
+      settings.set(updated);
+      const next = updated?.cloudSync ?? config;
+      savedConfig = structuredClone(next);
+      config = structuredClone(next);
       refreshKey += 1;
       toast(tt('cloud.backup.providerSaved'), 'success');
     } catch (e) {
@@ -161,6 +164,29 @@
         <label for="cb-driveid">{$t('cloud.backup.driveFolderId')}</label>
         <input id="cb-driveid" bind:value={config.folderId} placeholder={$t('cloud.backup.driveFolderIdPlaceholder')} />
         <span class="hint">{$t('cloud.backup.driveFolderIdHint')}</span>
+      </div>
+    {/if}
+
+    {#if supportsCloudE2EE(config.provider)}
+      <div class="e2ee-box">
+        <label class="check">
+          <input type="checkbox" bind:checked={config.e2eeEnabled} />
+          {$t('cloud.e2ee.enable')}
+        </label>
+        <p class="hint">{$t('cloud.e2ee.hint')}</p>
+        {#if config.e2eeEnabled}
+          <div class="field">
+            <label for="cb-e2ee-pass">{$t('cloud.e2ee.passphrase')}</label>
+            <input
+              id="cb-e2ee-pass"
+              type="password"
+              bind:value={config.e2eePassphrase}
+              placeholder={config.hasE2EEPassphrase ? '••••••••' : $t('cloud.e2ee.passphrasePlaceholder')}
+              autocomplete="off"
+            />
+            <span class="hint">{$t('cloud.e2ee.passphraseHint')}</span>
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -256,6 +282,17 @@
   }
   .folder-id {
     margin-top: 16px;
+  }
+  .e2ee-box {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .e2ee-box .hint {
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    margin: 4px 0 10px 27px;
+    line-height: 1.5;
   }
   .pair-entry {
     margin: -4px 0 14px;

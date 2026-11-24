@@ -163,6 +163,11 @@ func Ready(cfg store.CloudConfig) bool {
 	switch cfg.Provider {
 	case "local", "webdav", "webhook":
 		return strings.TrimSpace(cfg.URL) != ""
+	case "s3":
+		return strings.TrimSpace(cfg.URL) != "" &&
+			strings.TrimSpace(cfg.S3Bucket) != "" &&
+			strings.TrimSpace(cfg.Username) != "" &&
+			strings.TrimSpace(cfg.Password) != ""
 	case GameSaveProvider:
 		if cfg.GameSaveAuthBlock != "" {
 			return false

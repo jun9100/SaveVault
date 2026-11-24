@@ -25,6 +25,7 @@ export const providers = [
     oauth: false,
     icon: 'cloud'
   },
+  { id: 's3', label: 'S3 / R2', oauth: false, icon: 'server' },
   { id: GAME_SAVE_PROVIDER, label: 'game-save', oauth: false, icon: 'server' },
   {
     id: 'webhook',
@@ -40,6 +41,9 @@ export const providerById = (id) => providers.find((p) => p.id === id);
 
 const oauthIds = new Set(providers.filter((p) => p.oauth).map((p) => p.id));
 export const isOAuth = (id) => oauthIds.has(id);
+
+/** Whether client-side zero-knowledge E2EE can transparently wrap this provider. */
+export const supportsCloudE2EE = (id) => Boolean(id) && id !== GAME_SAVE_PROVIDER && id !== 'webhook';
 
 // A cloud group is a game inside one save-type namespace. The native service
 // can legitimately hold identical game ids and filenames for PC and Switch,
@@ -90,7 +94,8 @@ export function providerStatus(id, connected, cfg) {
     return isEmail(email) ? email : tt('cloud.providers.status.connected');
   }
   if (isOAuth(id)) return tt('cloud.providers.status.signIn');
-  if (id === cfg.provider && cfg.url) return tt('cloud.providers.status.configured');
+  if (id === 's3' && id === cfg.provider && cfg.url && cfg.s3Bucket) return tt('cloud.providers.status.configured');
+  if (id !== 's3' && id === cfg.provider && cfg.url) return tt('cloud.providers.status.configured');
   return tt('cloud.providers.status.notConfigured');
 }
 

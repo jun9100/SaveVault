@@ -62,6 +62,47 @@
     </div>
     {/if}
   </div>
+{:else if config.provider === 's3'}
+  <div class="field">
+    <label for="cb-s3-endpoint">{$t('cloud.fields.s3Endpoint')}</label>
+    <input
+      id="cb-s3-endpoint"
+      bind:value={config.url}
+      placeholder="https://<account>.r2.cloudflarestorage.com"
+    />
+  </div>
+  <div class="two">
+    <div class="field">
+      <label for="cb-s3-bucket">{$t('cloud.fields.s3Bucket')}</label>
+      <input id="cb-s3-bucket" bind:value={config.s3Bucket} placeholder="savevault-backups" />
+    </div>
+    <div class="field">
+      <label for="cb-s3-region">{$t('cloud.fields.s3Region')}</label>
+      <input id="cb-s3-region" bind:value={config.s3Region} placeholder="auto" />
+    </div>
+    <div class="field">
+      <label for="cb-s3-ak">{$t('cloud.fields.s3AccessKey')}</label>
+      <input id="cb-s3-ak" bind:value={config.username} autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="cb-s3-sk">{$t('cloud.fields.s3SecretKey')}</label>
+      <input
+        id="cb-s3-sk"
+        type="password"
+        bind:value={config.password}
+        placeholder={config.hasPassword ? '••••••••' : ''}
+        autocomplete="off"
+      />
+    </div>
+    <div class="field two-wide">
+      <label for="cb-s3-prefix">{$t('cloud.fields.s3Prefix')}</label>
+      <input id="cb-s3-prefix" bind:value={config.s3Prefix} placeholder="savevault/" />
+    </div>
+  </div>
+  <label class="check s3-path-style">
+    <input type="checkbox" bind:checked={config.s3PathStyle} />
+    {$t('cloud.fields.s3PathStyle')}
+  </label>
 {:else if config.provider === 'webhook'}
   <div class="field">
     <label for="cb-hook">{$t('cloud.fields.webhookUrl')}</label>
@@ -84,4 +125,5 @@
     gap: 12px;
   }
   .two-wide { grid-column: 1 / -1; }
+  .s3-path-style { margin-top: 8px; }
 </style>

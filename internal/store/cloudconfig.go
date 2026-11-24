@@ -31,6 +31,13 @@ type CloudConfig struct {
 	GameSaveAuthBlock   string `db:"game_save_auth_block" json:"-"`
 	GameSaveAuthWarning int    `db:"game_save_auth_warning" json:"-"`
 
+	E2EEEnabled    bool   `db:"e2ee_enabled" json:"e2eeEnabled"`
+	E2EEPassphrase string `db:"e2ee_passphrase" json:"e2eePassphrase"`
+	S3Region       string `db:"s3_region" json:"s3Region"`
+	S3Bucket       string `db:"s3_bucket" json:"s3Bucket"`
+	S3Prefix       string `db:"s3_prefix" json:"s3Prefix"`
+	S3PathStyle    bool   `db:"s3_path_style" json:"s3PathStyle"`
+
 	CustomClientIDsJSON     string `db:"custom_client_ids" json:"-"`
 	CustomClientSecretsJSON string `db:"custom_client_secrets" json:"-"`
 }
@@ -63,6 +70,9 @@ func (s *Store) GetCloudConfig() (CloudConfig, error) {
 	}
 	if c.RefreshToken, err = s.decryptSecret(c.RefreshToken); err != nil {
 		return CloudConfig{}, fmt.Errorf("decrypt cloud refresh token: %w", err)
+	}
+	if c.E2EEPassphrase, err = s.decryptSecret(c.E2EEPassphrase); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud e2ee passphrase: %w", err)
 	}
 	if c.CustomClientIDsJSON != "" {
 		if err := json.Unmarshal([]byte(c.CustomClientIDsJSON), &c.CustomClientIDs); err != nil {
@@ -112,6 +122,9 @@ func (s *Store) UpdateCloudConfig(c CloudConfig) error {
 	if stored.RefreshToken, err = s.encryptSecret(c.RefreshToken); err != nil {
 		return fmt.Errorf("encrypt cloud refresh token: %w", err)
 	}
+	if stored.E2EEPassphrase, err = s.encryptSecret(c.E2EEPassphrase); err != nil {
+		return fmt.Errorf("encrypt cloud e2ee passphrase: %w", err)
+	}
 
 	_, err = s.db.NamedExec(`
 		UPDATE cloud_config SET
@@ -127,7 +140,13 @@ func (s *Store) UpdateCloudConfig(c CloudConfig) error {
 			access_token = :access_token,
 			refresh_token = :refresh_token,
 			expiry_time_ms = :expiry_time_ms,
-			user_email = :user_email
+			user_email = :user_email,
+			e2ee_enabled = :e2ee_enabled,
+			e2ee_passphrase = :e2ee_passphrase,
+			s3_region = :s3_region,
+			s3_bucket = :s3_bucket,
+			s3_prefix = :s3_prefix,
+			s3_path_style = :s3_path_style
 		WHERE id = 1`, stored)
 	if err != nil {
 		return fmt.Errorf("update cloud config: %w", err)

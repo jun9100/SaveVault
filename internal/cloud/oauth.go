@@ -329,6 +329,8 @@ func ProviderLabel(provider string) string {
 		return "Local folder"
 	case "webdav":
 		return "WebDAV"
+	case "s3":
+		return "S3 / R2"
 	case GameSaveProvider:
 		return "game-save"
 	case "webhook":

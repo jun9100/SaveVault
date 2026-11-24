@@ -190,7 +190,7 @@ object GameCatalog {
         "dolphin" -> GameIconKey.DOLPHIN
         "duckstation" -> GameIconKey.DUCKSTATION
         "aethersx2" -> GameIconKey.AETHERSX2
-        "emulator" -> GameIconKey.EMULATOR
+        "citra", "vita3k", "drastic", "melonds", "epsxe", "mame", "mupen64plus", "lemuroid", "emulator" -> GameIconKey.EMULATOR
         else -> GameIconKey.UNKNOWN
     }
 
@@ -221,6 +221,29 @@ object GameCatalog {
         // Switch 2
         "0400C3F00006E000" to Entry("马力欧赛车 世界", "Mario Kart World"),
         "040074A01BF12000" to Entry("大金刚 蕉力全开", "Donkey Kong Bananza"),
+        // Nintendo 3DS (Citra / Azahar / Lime3DS)
+        "0004000000055D00" to Entry("宝可梦 X", "Pokemon X"),
+        "0004000000055E00" to Entry("宝可梦 Y", "Pokemon Y"),
+        "000400000011C400" to Entry("宝可梦 欧米伽红宝石", "Pokemon Omega Ruby"),
+        "000400000011C500" to Entry("宝可梦 阿尔法蓝宝石", "Pokemon Alpha Sapphire"),
+        "0004000000164800" to Entry("宝可梦 太阳", "Pokemon Sun"),
+        "0004000000175E00" to Entry("宝可梦 月亮", "Pokemon Moon"),
+        "00040000001B5000" to Entry("宝可梦 究极之日", "Pokemon Ultra Sun"),
+        "00040000001B5100" to Entry("宝可梦 究极之月", "Pokemon Ultra Moon"),
+        "0004000000033500" to Entry("塞尔达传说：时之笛 3D", "The Legend of Zelda: Ocarina of Time 3D"),
+        "00040000000EC300" to Entry("塞尔达传说：众神的三角力量2", "The Legend of Zelda: A Link Between Worlds"),
+        "0004000000125500" to Entry("塞尔达传说：梅祖拉的假面 3D", "The Legend of Zelda: Majora's Mask 3D"),
+        "0004000000126300" to Entry("怪物猎人4G", "Monster Hunter 4 Ultimate"),
+        "0004000000197100" to Entry("怪物猎人XX", "Monster Hunter XX"),
+        "00040000000A0500" to Entry("火焰之纹章 觉醒", "Fire Emblem Awakening"),
+        "0004000000179800" to Entry("火焰之纹章 if", "Fire Emblem Fates"),
+        "00040000001B4000" to Entry("火焰之纹章 回声：另一位英雄王", "Fire Emblem Echoes: Shadows of Valentia"),
+        "0004000000086300" to Entry("来吧！动物森友会", "Animal Crossing: New Leaf"),
+        "0004000000054000" to Entry("超级马力欧 3D大陆", "Super Mario 3D Land"),
+        "0004000000030800" to Entry("马力欧卡丁车7", "Mario Kart 7"),
+        "0004000000183600" to Entry("星之卡比：机械星球", "Kirby: Planet Robobot"),
+        "00040000000FC500" to Entry("勇气默示录", "Bravely Default"),
+        "0004000000055F00" to Entry("路易吉洋馆2", "Luigi's Mansion: Dark Moon"),
     )
 
     private val switchTitleIdPattern = SwitchTitleIds.pattern
