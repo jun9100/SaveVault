@@ -32,6 +32,7 @@ import (
 	"github.com/jun9100/savevault/internal/delta"
 	"github.com/jun9100/savevault/internal/ignore"
 	"github.com/jun9100/savevault/internal/logging"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 const (
@@ -194,8 +195,9 @@ type gameWatch struct {
 	// way the main folder is: a change in any of them is a change to the game,
 	// and without this a settings folder would only ever sync when the user
 	// pressed the button.
-	extra  map[string]string
-	isFile bool
+	extra   map[string]string
+	regKeys []string
+	isFile  bool
 	// lastAuto is when this game's last automatic snapshot was taken (unix
 	// nanoseconds, 0 for none yet); see minAutoSnapshotInterval.
 	lastAuto atomic.Int64
@@ -393,6 +395,13 @@ func (e *Engine) Watch(gameID, savePath string) error {
 // game changed, and what follows — snapshot, then sync — is the same work
 // whichever folder it came from.
 func (e *Engine) WatchWithLocations(gameID, savePath string, extra map[string]string) error {
+	return e.WatchWithRegistry(gameID, savePath, extra, nil)
+}
+
+// WatchWithRegistry watches a game's main save folder, extra save locations,
+// and (on Windows) any live Windows Registry keys the game stores saves under
+// via RegNotifyChangeKeyValue.
+func (e *Engine) WatchWithRegistry(gameID, savePath string, extra map[string]string, regKeys []string) error {
 	isFile, err := delta.ResolveLocalSaveFilePath(savePath)
 	if err != nil {
 		return fmt.Errorf("inspect save path: %w", err)
@@ -484,6 +493,7 @@ func (e *Engine) WatchWithLocations(gameID, savePath string, extra map[string]st
 		gameID:   gameID,
 		savePath: savePath,
 		extra:    watched,
+		regKeys:  append([]string(nil), regKeys...),
 		isFile:   isFile,
 		fsw:      fsw,
 		cancel:   cancel,
@@ -712,6 +722,23 @@ func (e *Engine) run(ctx context.Context, gw *gameWatch) {
 	}
 
 	go e.registerFolders(ctx, gw)
+	if winreg.WatchSupported() && len(gw.regKeys) > 0 {
+		regDir := gw.extra[winreg.LocationName]
+		keys := append([]string(nil), gw.regKeys...)
+		go func() {
+			_ = winreg.WatchKeys(ctx, keys, func(changedKey string) {
+				if regDir != "" {
+					if _, err := winreg.CaptureToDir(keys, regDir); err != nil {
+						e.log("warn", fmt.Sprintf("capture registry change %q for %q: %v", changedKey, gw.gameID, err))
+					}
+				}
+				select {
+				case gw.rescan <- struct{}{}:
+				default:
+				}
+			})
+		}()
+	}
 
 	for {
 		select {

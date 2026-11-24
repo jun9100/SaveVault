@@ -7,6 +7,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.jun9100.savevault.StoragePermissionFlow
+import com.jun9100.savevault.StoragePermissionPolicy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -145,16 +149,30 @@ internal fun SourcesPage(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val legacyStorageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        viewModel.refreshAllFilesAccess()
+    }
     val onGrantAllFiles: () -> Unit = {
-        val opened = runCatching {
-            viewModel.allFilesAccessIntent()?.let(context::startActivity)
-        }.isSuccess
-        if (!opened) {
-            // 少数机型没有「所有文件访问」直达页，退回应用详情页让用户自己进设置。
-            runCatching {
-                context.startActivity(
-                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
-                )
+        when (StoragePermissionPolicy.flowForSdk(Build.VERSION.SDK_INT)) {
+            StoragePermissionFlow.LEGACY_RUNTIME_PERMISSIONS -> {
+                val perms = StoragePermissionPolicy.legacyPermissionsForSdk(Build.VERSION.SDK_INT)
+                if (perms.isNotEmpty()) {
+                    legacyStorageLauncher.launch(perms)
+                }
+            }
+            StoragePermissionFlow.MANAGE_ALL_FILES_SETTINGS -> {
+                val intent = viewModel.allFilesAccessIntent()
+                val opened = intent != null && runCatching { context.startActivity(intent) }.isSuccess
+                if (!opened) {
+                    // 少数机型没有「所有文件访问」直达页，退回应用详情页让用户自己进设置。
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+                        )
+                    }
+                }
             }
         }
     }
@@ -187,7 +205,7 @@ internal fun SourcesPage(
                 state = state,
                 pending = pending,
                 canAddRoot = canAddRoot,
-                canRequestAllFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
+                canRequestAllFiles = StoragePermissionPolicy.canRequestStorageAccess(Build.VERSION.SDK_INT),
                 onPickFolder = onPickFolder,
                 onAddRootPath = { addingRootPath = true },
                 onGrantAllFiles = onGrantAllFiles,

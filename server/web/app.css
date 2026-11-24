@@ -1782,6 +1782,11 @@ pre.snippet {
 .webhook-ev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 7px; padding-top: 4px; }
 .empty-inline { margin-top: 10px; font-size: var(--text-xs); color: var(--muted); }
 
+.toolbox-block { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.toolbox-block:first-child { padding-top: 0; border-top: 0; }
+.toolbox-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--text-sm); }
+.toolbox-file { max-width: 240px; font-size: var(--text-xs); color: var(--text-2); }
+
 @media (max-width: 900px) {
   .vault-switcher { display: none; }
 }

@@ -105,6 +105,7 @@ internal fun SettingsPage(
             messages.action?.takeIf { !state.busy }?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             messages.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             GameSaveCard(state, viewModel, initialFocus = firstControl)
+            LanPeerCard(state)
         },
         right = { firstControl ->
             SyncTasksCard(attention = attention, onOpen = viewModel::openSyncTasks, focusRequester = firstControl)

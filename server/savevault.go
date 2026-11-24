@@ -288,6 +288,9 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 	// We deliberately fail closed on filesystems that cannot provide this
 	// guarantee instead of falling back to a truncating write.
 	linkErr := os.Link(temporaryPath, destination)
+	if linkErr == nil {
+		s.adjustUsedBytes(written)
+	}
 	s.quotaMu.Unlock()
 	if linkErr != nil {
 		err := linkErr
@@ -370,11 +373,16 @@ func (s *server) handleSaveVaultNativeDelete(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusConflict, "SaveVault archive is referenced by a recoverable snapshot")
 		return
 	}
+	var removedSize int64
+	if info, statErr := os.Stat(path); statErr == nil && info.Mode().IsRegular() {
+		removedSize = info.Size()
+	}
 	if err := os.Remove(path); errors.Is(err, os.ErrNotExist) {
 		writeError(w, http.StatusNotFound, "SaveVault archive not found")
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, "cannot delete SaveVault archive")
 	} else {
+		s.adjustUsedBytes(-removedSize)
 		next := s.saveVaultCatalog.clone()
 		delete(next.Files, saveVaultCatalogKey(kind, name))
 		if err := s.persistSaveVaultCatalog(next); err != nil {

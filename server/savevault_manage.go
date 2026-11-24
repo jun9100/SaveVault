@@ -404,17 +404,33 @@ func (s *server) manageRename(oldpath, newpath string) error {
 }
 
 func (s *server) manageRemove(path string) error {
-	if s.manageFileOps.Remove != nil {
-		return s.manageFileOps.Remove(path)
+	var size int64
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		size = info.Size()
 	}
-	return os.Remove(path)
+	var err error
+	if s.manageFileOps.Remove != nil {
+		err = s.manageFileOps.Remove(path)
+	} else {
+		err = os.Remove(path)
+	}
+	if err == nil && size > 0 {
+		s.adjustUsedBytes(-size)
+	}
+	return err
 }
 
 func (s *server) manageRemoveAll(path string) error {
+	var err error
 	if s.manageFileOps.RemoveAll != nil {
-		return s.manageFileOps.RemoveAll(path)
+		err = s.manageFileOps.RemoveAll(path)
+	} else {
+		err = os.RemoveAll(path)
 	}
-	return os.RemoveAll(path)
+	if err == nil {
+		s.reconcileUsedBytes()
+	}
+	return err
 }
 
 func (s *server) manageWriteJSON(path string, value any) error {

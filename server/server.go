@@ -61,7 +61,11 @@ type server struct {
 	claimLogins   *loginLimiter
 	claimFailures *globalClaimFailures
 
-	quotaMu sync.Mutex
+	quotaMu             sync.Mutex
+	usedBytesVal        atomic.Int64
+	usedBytesInit       atomic.Bool
+	usedBytesReconciles atomic.Int64
+	usedBytesUpdatedAt  atomic.Int64
 
 	saveVaultMu      sync.Mutex
 	saveVaultCatalog saveVaultCatalog
@@ -312,6 +316,7 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 	} else if repaired > 0 {
 		slog.Warn("repaired SaveVault heads with missing archives", "count", repaired)
 	}
+	s.initUsedBytesLedger()
 	return s, nil
 }
 
@@ -387,6 +392,10 @@ func (s *server) handler() http.Handler {
 		mux.HandleFunc("GET "+prefix+"/titles/switch", s.requireTokenReadOnly(s.handleSwitchTitleTable))
 		mux.HandleFunc("GET "+prefix+"/profile/metadata", s.requireTokenReadOnly(s.handleGetProfileMetadata))
 		mux.HandleFunc("PUT "+prefix+"/profile/metadata", s.requireToken(s.handlePutProfileMetadata))
+		mux.HandleFunc("POST "+prefix+"/chunks/missing", s.requireTokenReadOnly(s.handleChunksMissing))
+		mux.HandleFunc("PUT "+prefix+"/chunks/{hash}", s.requireToken(s.handlePutChunk))
+		mux.HandleFunc("GET "+prefix+"/chunks/{hash}", s.requireTokenReadOnly(s.handleGetChunk))
+		mux.HandleFunc("POST "+prefix+"/chunks/assemble/{type}/{name}", s.requireToken(s.handleAssembleChunks))
 	}
 
 	// SaveVault uses ordinary WebDAV snapshots, isolated from the encrypted Eden
@@ -549,32 +558,6 @@ func (s *server) setQuotaBytes(quota int64) {
 	s.quotaMu.Lock()
 	atomic.StoreInt64(&s.quotaBytes, quota)
 	s.quotaMu.Unlock()
-}
-
-func (s *server) usedBytes() int64 {
-	return vaultDirectoryUsedBytes(s.dataDir)
-}
-
-func vaultDirectoryUsedBytes(dataDir string) int64 {
-	var used int64
-	for _, sub := range []string{"objects", "savevault-native", "savevault", "savevault-meta"} {
-		_ = filepath.Walk(filepath.Join(dataDir, sub), func(_ string, info os.FileInfo, err error) error {
-			if err != nil || info == nil || !info.Mode().IsRegular() {
-				return nil
-			}
-			// Ignore staged temporary upload files (.upload-*, .part, etc.) so
-			// in-flight writes are not double-counted against additional.
-			if strings.HasPrefix(info.Name(), ".") {
-				return nil
-			}
-			used += info.Size()
-			return nil
-		})
-	}
-	if info, err := os.Stat(filepath.Join(dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
-		used += info.Size()
-	}
-	return used
 }
 
 // checkQuota expects the caller to hold s.quotaMu when serializing check + commit.

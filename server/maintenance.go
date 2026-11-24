@@ -246,6 +246,7 @@ func (s *server) runMaintenanceLocked(dryRun bool) (pruneReport, error) {
 	}
 	report.Covers = covers
 	if !dryRun && (report.Snapshots > 0 || report.Objects > 0 || report.Covers > 0) {
+		s.reconcileUsedBytes()
 		s.recordEventLocked(event{Kind: eventPrune, Detail: "removed " + itoa(report.Snapshots) +
 			" snapshots, " + itoa(report.Objects) + " objects, " + itoa(report.Covers) +
 			" covers, " + formatBytes(report.ReclaimedBytes)})

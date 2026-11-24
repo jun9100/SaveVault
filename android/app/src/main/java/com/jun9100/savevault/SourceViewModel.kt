@@ -1802,35 +1802,31 @@ class SourceViewModel(
         viewModelScope.launch {
             state.value = state.value.started(page, "正在同步云端译名与排除规则")
             val result = withContext(Dispatchers.IO) {
-                val localTitles = GameNames.allOverrides()
-                val localExcluded = autoBackupExclusions.excluded()
-                gameSaveClient(config).mergeProfileMetadata(
-                    customTitles = localTitles,
-                    excludedScopes = localExcluded,
-                ).map { merged ->
-                    if (merged == null) return@map null
-                    val updatedTitles = gameNameStore.mergeOverrides(merged.customTitles)
-                    val nextExcluded = if (merged.excludedScopes.isNotEmpty()) {
-                        autoBackupExclusions.setIncluded(merged.excludedScopes, included = false)
-                    } else {
-                        autoBackupExclusions.excluded()
-                    }
-                    Triple(merged, updatedTitles, nextExcluded)
-                }
+                ProfileMetadataCoordinator.sync(
+                    localTitles = GameNames.allOverrides(),
+                    localExcluded = autoBackupExclusions.excluded(),
+                    remoteMerge = { titles, excluded ->
+                        gameSaveClient(config).mergeProfileMetadata(
+                            customTitles = titles,
+                            excludedScopes = excluded,
+                        )
+                    },
+                    applyRemoteTitles = { gameNameStore.mergeOverrides(it) },
+                    applyRemoteExcluded = { autoBackupExclusions.setIncluded(it, included = false) },
+                )
             }
-            result.onSuccess { triple ->
-                if (triple == null) {
+            result.onSuccess { outcome ->
+                if (outcome == null) {
                     updateState {
                         finished(page, error = "当前 SaveVault 云端版本尚不支持元数据漫游同步，请升级服务端")
                     }
                     return@onSuccess
                 }
-                val (merged, updatedTitles, nextExcluded) = triple
-                val summary = "已同步云端译名与规则（${merged.customTitles.size} 条译名，${nextExcluded.size} 条排除${if (updatedTitles > 0) "，本机新增 $updatedTitles 条" else ""}）"
+                val summary = outcome.summaryText()
                 updateState {
                     finished(page, action = summary).copy(
                         nameRevision = GameNames.revision,
-                        autoBackupExcluded = nextExcluded,
+                        autoBackupExcluded = outcome.mergedExcludedScopes,
                     )
                 }
                 log(ActivityKind.UPLOAD, ActivityLevel.INFO, summary)

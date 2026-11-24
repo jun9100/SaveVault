@@ -256,10 +256,14 @@ func (s *server) handleSaveVaultPut(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 	destination := s.saveVaultFilePath(name)
-	_, statErr := os.Stat(destination)
+	existingInfo, statErr := os.Stat(destination)
 	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
 		writeError(w, http.StatusInternalServerError, "cannot inspect destination snapshot")
 		return
+	}
+	var oldSize int64
+	if statErr == nil && existingInfo != nil && existingInfo.Mode().IsRegular() {
+		oldSize = existingInfo.Size()
 	}
 
 	temporary, err := os.CreateTemp(s.saveVaultDirectory(), ".upload-*.part")
@@ -300,6 +304,7 @@ func (s *server) handleSaveVaultPut(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 	published = true
+	s.adjustUsedBytes(written - oldSize)
 	if statErr == nil {
 		w.WriteHeader(http.StatusNoContent)
 	} else {
@@ -334,7 +339,12 @@ func (s *server) handleSaveVaultGet(w http.ResponseWriter, r *http.Request, name
 }
 
 func (s *server) handleSaveVaultDelete(w http.ResponseWriter, name string) {
-	if err := os.Remove(s.saveVaultFilePath(name)); err != nil {
+	path := s.saveVaultFilePath(name)
+	var removedSize int64
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		removedSize = info.Size()
+	}
+	if err := os.Remove(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "snapshot not found")
 		} else {
@@ -342,6 +352,7 @@ func (s *server) handleSaveVaultDelete(w http.ResponseWriter, name string) {
 		}
 		return
 	}
+	s.adjustUsedBytes(-removedSize)
 	w.WriteHeader(http.StatusNoContent)
 }
 

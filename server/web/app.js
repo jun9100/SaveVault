@@ -45,6 +45,9 @@ const store = {
   activityFilter: "all",
   pruneReport: null,
   verifyReport: null,
+  chunkStats: null,
+  rebuildReport: null,
+  vaultImportReport: null,
 };
 
 // ---------- utilities ----------
@@ -3096,16 +3099,64 @@ async function saveWebhookChannels(nextChannels, okMsg) {
   }
 }
 
+function onlineToolboxCard(chunkStats, rebuildReport, importReport) {
+  const usedBytes = chunkStats?.used_bytes ?? 0;
+  const chunkCount = chunkStats?.chunks ?? 0;
+  const chunkBytes = chunkStats?.bytes ?? 0;
+  const reconciles = chunkStats?.reconciles ?? 0;
+  return `<section class="card">
+    <div class="card-head"><h2>在线运维工具箱</h2>${statusChip("accent", `账本 ${formatBytes(usedBytes)}`)}</div>
+    <div class="card-body form">
+      <div class="toolbox-block">
+        <div class="toolbox-title"><strong>重建存档索引（rebuild-heads）</strong></div>
+        <p class="hint">当迁移磁盘或状态文件损坏导致游戏头指针丢失时，扫描磁盘上现存的不可变 ZIP 归档恢复最新快照头（绝不删除已有正常数据）。</p>
+        <div class="form-actions">
+          <button class="btn sm" type="button" data-action="rebuild-preview">预览差异</button>
+          <button class="btn sm primary" type="button" data-action="rebuild-run">执行重建</button>
+        </div>
+        ${rebuildReport ? `<div class="report ${rebuildReport.rebuilt ? "" : "ok"}">
+          <b>${rebuildReport.dry_run ? "索引重建预览" : "索引重建完成"}</b>
+          <span>共扫描 ${rebuildReport.scanned || 0} 个范围，${rebuildReport.dry_run ? "可重建" : "已重建"} ${rebuildReport.rebuilt || 0} 个${rebuildReport.orphaned_archives ? `，无法校验的孤立归档 ${rebuildReport.orphaned_archives} 个` : ""}。</span>
+          ${(rebuildReport.details || []).slice(0, 12).map((d) => `<span class="mono">${esc(d)}</span>`).join("")}
+        </div>` : ""}
+      </div>
+      <div class="toolbox-block">
+        <div class="toolbox-title"><strong>整库备份导出与校验迁移</strong></div>
+        <p class="hint">将当前 Vault（含状态、存档归档、封面、自定义元数据与 Webhook）打包为带 SHA-256 清单的 <code>.tar.gz</code>，可在另一台 NAS/VPS 上先校验预览再一键导入。</p>
+        <div class="form-actions">
+          <button class="btn sm" type="button" data-action="vault-export">${icon("download")}导出当前 Vault (.tar.gz)</button>
+          <input type="file" id="vault-import-file" accept=".tar.gz,.tgz,application/gzip" class="toolbox-file">
+          <button class="btn sm" type="button" data-action="vault-import-preview">校验预览</button>
+          <button class="btn sm danger" type="button" data-action="vault-import-apply">导入恢复</button>
+        </div>
+        ${importReport ? `<div class="report ok">
+          <b>${importReport.dry_run ? "归档校验通过（未写入）" : "整库导入完成"}</b>
+          <span>来源 Vault：<code>${esc(importReport.source_vault_id || "default")}</code> · 共 ${importReport.files || 0} 个文件（${formatBytes(importReport.total_bytes || 0)}）${importReport.applied ? ` · 校准后已用 ${formatBytes(importReport.used_bytes || 0)}` : ""}。</span>
+        </div>` : ""}
+      </div>
+      <div class="toolbox-block">
+        <div class="toolbox-title"><strong>O(1) 配额账本与 FastCDC 去重分块</strong></div>
+        <p class="hint">分块对象数：<b>${chunkCount}</b>（${formatBytes(chunkBytes)}） · 账本校准次数：<b>${reconciles}</b></p>
+        <div class="form-actions">
+          <button class="btn sm" type="button" data-action="quota-reconcile">重新校准账本</button>
+          <button class="btn sm" type="button" data-action="chunks-gc">清理过期分块</button>
+        </div>
+      </div>
+    </div>
+  </section>`;
+}
+
 async function renderMaintenance() {
-  if (!store.saveVaultRetention || !store.saveVaultTombstones || !store.webhooks) {
+  if (!store.saveVaultRetention || !store.saveVaultTombstones || !store.webhooks || !store.chunkStats) {
     main.innerHTML = `<div class="skeleton"></div>`;
     try {
-      const [retentionData, tombstoneData, webhookData] = await Promise.all([
-        api("savevault/retention"), api("savevault/tombstones"), api("webhooks"),
+      const [retentionData, tombstoneData, webhookData, chunkStats] = await Promise.all([
+        api("savevault/retention"), api("savevault/tombstones"), api("webhooks"), api("chunks/stats"),
       ]);
       store.saveVaultRetention = retentionData;
       store.saveVaultTombstones = tombstoneData.tombstones || [];
       store.webhooks = webhookData;
+      store.chunkStats = chunkStats;
       await refreshSaveVaultRetentionPreview();
     } catch (error) {
       if (error instanceof UnauthorizedError) { showLogin(); return; }
@@ -3228,6 +3279,7 @@ async function renderMaintenance() {
           </div>
         </section>
         ${webhookAlertCard(store.webhooks)}
+        ${onlineToolboxCard(store.chunkStats, store.rebuildReport, store.vaultImportReport)}
         <section class="card">
           <div class="card-head"><h2>监控与脚本</h2></div>
           <div class="card-body form">
@@ -3325,6 +3377,9 @@ async function switchVault(vaultID) {
   store.scopeDetail = null;
   store.events = null;
   store.webhooks = null;
+  store.chunkStats = null;
+  store.rebuildReport = null;
+  store.vaultImportReport = null;
   store.saveVaultFiles = null;
   clearSaveVaultCaches();
   store.deviceTokens = null;
@@ -4158,6 +4213,109 @@ async function onAction(event) {
       } else { target.disabled = false; target.innerHTML = `${icon("shield")}开始校验`; }
       return;
     }
+    case "rebuild-preview": {
+      target.disabled = true;
+      const report = await guarded(() => api("savevault/rebuild-heads/preview"));
+      target.disabled = false;
+      if (report) {
+        store.rebuildReport = { ...report, dry_run: true };
+        if (currentRoute().name === "maintenance") renderMaintenance();
+      }
+      return;
+    }
+    case "rebuild-run": {
+      const ok = await confirmDialog({
+        title: "重建存档头指针？", confirm: "执行重建",
+        message: "仅对缺失头指针的 SaveVault 范围按最新归档恢复索引，不会删除或覆盖已有正常范围。",
+      });
+      if (!ok) return;
+      target.disabled = true;
+      const report = await guarded(() => api("savevault/rebuild-heads", { method: "POST" }), "存档索引重建完成");
+      target.disabled = false;
+      if (report) {
+        store.rebuildReport = { ...report, dry_run: false };
+        clearSaveVaultCaches();
+        await refresh();
+      }
+      return;
+    }
+    case "vault-export": {
+      target.disabled = true;
+      try {
+        const res = await api("vault/export", { raw: true });
+        const blob = await res.blob();
+        const cd = res.headers.get("Content-Disposition") || "";
+        const match = /filename="([^"]+)"/.exec(cd);
+        const filename = match ? match[1] : `savevault-${store.activeVault || "default"}.tar.gz`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast("Vault 备份包已开始下载");
+      } catch (error) {
+        if (error instanceof UnauthorizedError) { showLogin(); return; }
+        toast(error.message || String(error), true);
+      } finally {
+        target.disabled = false;
+      }
+      return;
+    }
+    case "vault-import-preview":
+    case "vault-import-apply": {
+      const fileInput = $("#vault-import-file");
+      const file = fileInput?.files?.[0];
+      if (!file) { toast("请先选择导出的 .tar.gz 备份包", true); return; }
+      const dry = action === "vault-import-preview";
+      if (!dry) {
+        const ok = await confirmDialog({
+          title: "确认导入并覆盖当前 Vault？", danger: true, confirm: "确认导入",
+          message: `将从 ${file.name}（${formatBytes(file.size)}）校验并恢复文件与元数据到当前 Vault，并重新加载服务端状态。建议先执行“校验预览”。`,
+        });
+        if (!ok) return;
+      }
+      target.disabled = true;
+      const report = await guarded(
+        () => api(`vault/import?dryRun=${dry ? "true" : "false"}`, { method: "POST", upload: file, contentType: "application/gzip" }),
+        dry ? "备份包校验通过" : "Vault 导入并重载完成",
+      );
+      target.disabled = false;
+      if (report) {
+        store.vaultImportReport = report;
+        if (!dry) {
+          store.chunkStats = null;
+          store.webhooks = null;
+          clearSaveVaultCaches();
+          await refresh();
+        } else if (currentRoute().name === "maintenance") {
+          renderMaintenance();
+        }
+      }
+      return;
+    }
+    case "quota-reconcile": {
+      target.disabled = true;
+      const res = await guarded(() => api("quota/reconcile", { method: "POST" }), "配额账本已重新校准");
+      target.disabled = false;
+      if (res) {
+        store.chunkStats = { ...(store.chunkStats || {}), used_bytes: res.used_bytes, quota_bytes: res.quota_bytes, reconciles: res.reconciles };
+        if (currentRoute().name === "maintenance") renderMaintenance();
+      }
+      return;
+    }
+    case "chunks-gc": {
+      target.disabled = true;
+      const res = await guarded(() => api("chunks/gc", { method: "POST", body: { min_age_seconds: 3600 } }), "分块垃圾回收完成");
+      target.disabled = false;
+      if (res) {
+        store.chunkStats = await guarded(() => api("chunks/stats"));
+        if (currentRoute().name === "maintenance") renderMaintenance();
+      }
+      return;
+    }
   }
 }
 
@@ -4200,6 +4358,9 @@ function showLogin() {
   store.scopeDetail = null;
   store.events = null;
   store.webhooks = null;
+  store.chunkStats = null;
+  store.rebuildReport = null;
+  store.vaultImportReport = null;
   store.saveVaultFiles = null;
   store.saveVaultScopes = null;
   store.saveVaultGames = null;

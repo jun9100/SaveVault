@@ -222,6 +222,9 @@ func (s *server) handleSaveVaultScopePrune(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	s.saveVaultMu.Unlock()
+	if response.FreedBytes > 0 {
+		s.adjustUsedBytes(-response.FreedBytes)
+	}
 
 	detail := fmt.Sprintf("removed %d snapshots, freed %d bytes", response.Removed, response.FreedBytes)
 	if response.Failed > 0 {

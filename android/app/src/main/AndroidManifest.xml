@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!--
       免 root 读取 /storage/emulated/0/Android/data/<pkg>：Eden、Yuzu、Winlator
       一类模拟器与容器的存档都在那里，而 SAF 从 Android 11 起禁止用户选中该子树。

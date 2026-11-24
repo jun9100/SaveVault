@@ -1410,7 +1410,8 @@ func (d *Daemon) watchGame(gameID, savePath string) error {
 	if err != nil {
 		extra = nil // watch what we can rather than nothing
 	}
-	return d.Watcher.WatchWithLocations(gameID, savePath, extra)
+	regKeys, _ := d.Store.GameRegistryKeys(gameID)
+	return d.Watcher.WatchWithRegistry(gameID, savePath, extra, regKeys)
 }
 
 // RewatchGame restarts a game's watch, picking up any change to its set of

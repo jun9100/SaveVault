@@ -113,6 +113,11 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/api/webhooks/test", s.requireAdminWrite(s.handleTestWebhook))
 	mux.HandleFunc("GET /admin/api/savevault/profile/metadata", s.requireAdmin(s.handleGetProfileMetadata))
 	mux.HandleFunc("PUT /admin/api/savevault/profile/metadata", s.requireAdminWrite(s.handlePutProfileMetadata))
+	mux.HandleFunc("POST /admin/api/quota/reconcile", s.requireAdminWrite(s.handleReconcileQuota))
+	mux.HandleFunc("GET /admin/api/chunks/stats", s.requireAdmin(s.handleGetChunkStats))
+	mux.HandleFunc("POST /admin/api/chunks/gc", s.requireAdminWrite(s.handleGCChunks))
+	mux.HandleFunc("GET /admin/api/vault/export", s.requireAdmin(s.handleExportVault))
+	mux.HandleFunc("POST /admin/api/vault/import", s.requireAdminWrite(s.handleImportVault))
 
 	// Routes kept for scripts written against the previous server-rendered dashboard.
 	mux.HandleFunc("GET /admin/scopes/{id}/logo", s.requireAdmin(s.handleScopeLogo))
@@ -1006,6 +1011,10 @@ func (s *server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		"SaveVault versions removed by automatic retention since start.", s.retentionRemoved.Load())
 	metric("game_save_savevault_orphan_archives", "gauge", "SaveVault archives no version references.", orphanArchives)
 	metric("game_save_savevault_orphan_bytes", "gauge", "Bytes used by unreferenced SaveVault archives.", orphanBytes)
+	chunkCount, chunkBytes := s.chunkStoreStats()
+	metric("game_save_vault_used_bytes", "gauge", "Vault storage bytes tracked by O(1) quota ledger.", s.usedBytes())
+	metric("game_save_chunks_count", "gauge", "Content-addressed deduplication chunks stored.", chunkCount)
+	metric("game_save_chunks_bytes", "gauge", "Bytes used by content-addressed deduplication chunks.", chunkBytes)
 	metric("game_save_http_requests_total", "counter", "HTTP requests served since start.", s.requests.Load())
 	metric("game_save_start_time_seconds", "gauge", "Process start time.", s.startedAt.Unix())
 

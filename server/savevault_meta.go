@@ -371,6 +371,7 @@ func (s *server) storeSaveVaultCover(digest string, data []byte) (bool, error) {
 	if err := os.Rename(temporaryPath, path); err != nil {
 		return false, err
 	}
+	s.adjustUsedBytes(int64(len(data)))
 	return true, nil
 }
 
@@ -419,7 +420,9 @@ func (s *server) applySaveVaultCustomCoverLocked(gameKey string, cover saveVault
 	next.Games[gameKey] = record
 	if err := s.persistSaveVaultMeta(next); err != nil {
 		if created {
-			_ = os.Remove(s.saveVaultMetaCoverPath(cover.SHA256))
+			if os.Remove(s.saveVaultMetaCoverPath(cover.SHA256)) == nil {
+				s.adjustUsedBytes(-int64(len(data)))
+			}
 		}
 		return http.StatusInternalServerError, current, err
 	}
