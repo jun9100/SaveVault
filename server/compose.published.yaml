@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# 直接使用 Docker Hub 上已发布的镜像，不需要在 NAS 上编译。
+# 直接使用已发布的预构建镜像（GHCR），不需要在 NAS 上编译。
 # 首次使用：cp .env.example .env && 改 GAME_SAVE_ADMIN_TOKEN，然后 docker compose -f compose.published.yaml up -d
 services:
   savevault:
-    image: jun9100/savevault-server:1.9.1
+    image: ${GAME_SAVE_IMAGE:-ghcr.io/jun9100/savevault-server:v1.10.0}
     container_name: savevault
     # 数据目录里的文件属于这个 uid；用 PUID/PGID 调整成 NAS 上的实际用户。
     user: "${PUID:-10001}:${PGID:-10001}"
