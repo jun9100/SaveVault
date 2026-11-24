@@ -30,7 +30,7 @@ jobs:
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
           version="${version#server-}"
@@ -40,14 +40,19 @@ jobs:
           esac
           plain="${version#v}"
           short_sha="${GITHUB_SHA::7}"
+          has_dockerhub="false"
+          if [ -n "$DOCKERHUB_TOKEN" ]; then
+            has_dockerhub="true"
+          fi
           printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'has_dockerhub=%s\n' "$has_dockerhub" >> "$GITHUB_OUTPUT"
           {
             echo "tags<<EOF"
             echo "${GHCR_IMAGE}:${version}"
             echo "${GHCR_IMAGE}:${plain}"
             echo "${GHCR_IMAGE}:latest"
             echo "${GHCR_IMAGE}:sha-${short_sha}"
-            if [ "$HAS_DOCKERHUB" = "true" ]; then
+            if [ "$has_dockerhub" = "true" ]; then
               echo "${DOCKERHUB_IMAGE}:${version}"
               echo "${DOCKERHUB_IMAGE}:${plain}"
               echo "${DOCKERHUB_IMAGE}:latest"
@@ -68,7 +73,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub (optional)
-        if: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+        if: steps.version.outputs.has_dockerhub == 'true'
         uses: docker/login-action@v3
         with:
           registry: docker.io
