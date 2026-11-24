@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -313,7 +314,9 @@ func (r *vaultRegistry) DeleteUserWithPurge(username string, purgeData bool) err
 		vaultsRoot := filepath.Clean(filepath.Join(r.root, "vaults"))
 		target := filepath.Clean(filepath.Join(vaultsRoot, vaultID))
 		if strings.HasPrefix(target, vaultsRoot+string(filepath.Separator)) {
-			_ = os.RemoveAll(target)
+			if err := os.RemoveAll(target); err != nil {
+				slog.Warn("purge deleted user vault directory", "vault", vaultID, "error", err)
+			}
 		}
 	}
 	return nil
@@ -427,7 +430,9 @@ func (r *vaultRegistry) UpdateUser(username string, patch userPatch) (userRecord
 			vault.setSharedToken(rotatedToken)
 		}
 	} else if updated.Status == userStatusActive {
-		_, _ = r.vaultWithMeta(updated.VaultID, updated.Token, updated.Username, updated.QuotaBytes)
+		if _, err := r.vaultWithMeta(updated.VaultID, updated.Token, updated.Username, updated.QuotaBytes); err != nil {
+			slog.Warn("load re-enabled user vault", "user", updated.Username, "vault", updated.VaultID, "error", err)
+		}
 	}
 	if newHash != "" || updated.Status == userStatusDisabled {
 		r.sessions.revokeUser(updated.Username, "")
@@ -436,6 +441,10 @@ func (r *vaultRegistry) UpdateUser(username string, patch userPatch) (userRecord
 }
 
 func (r *vaultRegistry) SetPassword(username, password string) error {
+	return r.setPassword(username, password, "")
+}
+
+func (r *vaultRegistry) setPassword(username, password, exceptSessionID string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters")
 	}
@@ -459,7 +468,7 @@ func (r *vaultRegistry) SetPassword(username, password string) error {
 	}
 	r.users = next
 	r.usersMu.Unlock()
-	r.sessions.revokeUser(actualUsername, "")
+	r.sessions.revokeUser(actualUsername, exceptSessionID)
 	return nil
 }
 

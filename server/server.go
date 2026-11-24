@@ -63,9 +63,7 @@ type server struct {
 
 	quotaMu             sync.Mutex
 	usedBytesVal        atomic.Int64
-	usedBytesInit       atomic.Bool
 	usedBytesReconciles atomic.Int64
-	usedBytesUpdatedAt  atomic.Int64
 
 	saveVaultMu      sync.Mutex
 	saveVaultCatalog saveVaultCatalog
@@ -250,6 +248,7 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		saveVaultMeta:    defaultSaveVaultMetaState(),
 		profileMeta:      defaultProfileMetadata(),
 		webhooks:         defaultWebhookConfig(),
+		webhookClient:    newWebhookHTTPClient(),
 		webhookQueue:     make(chan webhookDelivery, webhookQueueSize),
 		webhookCtx:       webhookCtx,
 		webhookCancel:    webhookCancel,
@@ -316,7 +315,7 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 	} else if repaired > 0 {
 		slog.Warn("repaired SaveVault heads with missing archives", "count", repaired)
 	}
-	s.initUsedBytesLedger()
+	s.reconcileUsedBytes()
 	return s, nil
 }
 
@@ -563,11 +562,8 @@ func (s *server) setQuotaBytes(quota int64) {
 // checkQuota expects the caller to hold s.quotaMu when serializing check + commit.
 func (s *server) checkQuota(additional int64) bool {
 	quota := s.getQuotaBytes()
-	if quota <= 0 {
+	if quota <= 0 || additional <= 0 {
 		return true
-	}
-	if additional < 0 {
-		additional = 0
 	}
 	used := s.usedBytes()
 	if used+additional > quota {
@@ -577,14 +573,6 @@ func (s *server) checkQuota(additional int64) bool {
 			Detail: fmt.Sprintf("used=%d additional=%d quota=%d", used, additional, quota),
 		})
 		return false
-	}
-	warnThreshold := quota * 80 / 100
-	if used < warnThreshold && used+additional >= warnThreshold {
-		s.notifyWebhooks(event{
-			Time:   s.now().UTC(),
-			Kind:   eventQuotaWarning,
-			Detail: fmt.Sprintf("usage reached %d%% (%d / %d bytes)", (used+additional)*100/quota, used+additional, quota),
-		})
 	}
 	return true
 }

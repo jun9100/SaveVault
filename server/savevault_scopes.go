@@ -179,18 +179,20 @@ func (s *server) saveVaultStatePath() string {
 }
 
 func (s *server) loadSaveVaultState() error {
-	if err := readJSONFile(s.saveVaultStatePath(), &s.saveVaultState); err != nil {
+	var state saveVaultNativeState
+	if err := readJSONFile(s.saveVaultStatePath(), &state); err != nil {
 		return err
 	}
-	if s.saveVaultState.Scopes == nil {
-		s.saveVaultState.Scopes = make(map[string]saveVaultScopeState)
+	if state.Scopes == nil {
+		state.Scopes = make(map[string]saveVaultScopeState)
 	}
-	for key, scope := range s.saveVaultState.Scopes {
+	for key, scope := range state.Scopes {
 		if scope.Snapshots == nil {
 			scope.Snapshots = make(map[string]saveVaultScopeSnapshot)
-			s.saveVaultState.Scopes[key] = scope
+			state.Scopes[key] = scope
 		}
 	}
+	s.saveVaultState = state
 	return nil
 }
 

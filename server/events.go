@@ -50,7 +50,12 @@ type event struct {
 }
 
 func (s *server) loadEvents() error {
-	return readJSONFile(filepath.Join(s.dataDir, "events.json"), &s.events)
+	var events []event
+	if err := readJSONFile(filepath.Join(s.dataDir, "events.json"), &events); err != nil {
+		return err
+	}
+	s.events = events
+	return nil
 }
 
 // recordEventLocked appends to the activity log. The caller must hold s.mu. The log is advisory,

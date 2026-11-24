@@ -77,12 +77,14 @@ func saveVaultCatalogKey(kind, name string) string {
 }
 
 func (s *server) loadSaveVaultCatalog() error {
-	if err := readJSONFile(s.saveVaultCatalogPath(), &s.saveVaultCatalog); err != nil {
+	var catalog saveVaultCatalog
+	if err := readJSONFile(s.saveVaultCatalogPath(), &catalog); err != nil {
 		return err
 	}
-	if s.saveVaultCatalog.Files == nil {
-		s.saveVaultCatalog.Files = make(map[string]saveVaultFileMetadata)
+	if catalog.Files == nil {
+		catalog.Files = make(map[string]saveVaultFileMetadata)
 	}
+	s.saveVaultCatalog = catalog
 	return nil
 }
 

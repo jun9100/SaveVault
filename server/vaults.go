@@ -351,6 +351,15 @@ func (r *vaultRegistry) vaultForPairingClaim(request *http.Request) (string, *se
 }
 
 func (r *vaultRegistry) handler() http.Handler {
+	tenantAdminMux := http.NewServeMux()
+	tenantAdminMux.HandleFunc("GET /admin/api/users", r.handleUserList)
+	tenantAdminMux.HandleFunc("POST /admin/api/users", r.handleUserCreate)
+	tenantAdminMux.HandleFunc("PATCH /admin/api/users/{username}", r.handleUserPatch)
+	tenantAdminMux.HandleFunc("DELETE /admin/api/users/{username}", r.handleUserDelete)
+	tenantAdminMux.HandleFunc("POST /admin/api/users/{username}/password", r.handleUserPassword)
+	tenantAdminMux.HandleFunc("GET /admin/api/vaults", r.handleVaultList)
+	tenantAdminMux.HandleFunc("POST /admin/api/sessions/revoke-all", r.handleRevokeAllSessions)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodPost && request.URL.Path == "/v1/pair/claim" {
 			defaultVault, err := r.Vault(defaultVaultID)
@@ -395,6 +404,15 @@ func (r *vaultRegistry) handler() http.Handler {
 				return
 			}
 		}
+		if r.isGlobalTenantRoute(request) {
+			defaultVault, err := r.Vault(defaultVaultID)
+			if err != nil || defaultVault == nil {
+				http.Error(w, "vault unavailable", http.StatusInternalServerError)
+				return
+			}
+			r.serveTenantRoutes(w, request, defaultVault, tenantAdminMux)
+			return
+		}
 		id, vault, isAdminPath := r.vaultForRequest(request)
 		if vault == nil {
 			if isAdminPath && id != "" {
@@ -402,9 +420,6 @@ func (r *vaultRegistry) handler() http.Handler {
 				return
 			}
 			http.Error(w, "vault unavailable", http.StatusInternalServerError)
-			return
-		}
-		if r.serveTenantRoutes(w, request, vault) {
 			return
 		}
 		if !isAdminPath && id != defaultVaultID {
@@ -439,38 +454,29 @@ func (r *vaultRegistry) maintenanceLoop(ctx context.Context, interval time.Durat
 	}
 }
 
-// serveTenantRoutes handles the two endpoints that are not scoped to a single
-// vault: the login that turns a password into a vault token, and the admin
-// user list that manages tenants. It reports whether it wrote the response.
-func (r *vaultRegistry) serveTenantRoutes(w http.ResponseWriter, request *http.Request, vault *server) bool {
+func (r *vaultRegistry) isGlobalTenantRoute(request *http.Request) bool {
 	if request.Method == http.MethodPost && request.URL.Path == "/v1/login" {
-		vault.withCommonHeaders(http.HandlerFunc(r.handleLogin)).ServeHTTP(w, request)
 		return true
 	}
-	isUsers := strings.HasPrefix(request.URL.Path, "/admin/api/users")
-	isVaults := request.URL.Path == "/admin/api/vaults"
-	isRevokeSessions := request.URL.Path == "/admin/api/sessions/revoke-all"
-	if !isUsers && !isVaults && !isRevokeSessions {
-		return false
-	}
-	users := http.NewServeMux()
-	users.HandleFunc("GET /admin/api/users", r.handleUserList)
-	users.HandleFunc("POST /admin/api/users", r.handleUserCreate)
-	users.HandleFunc("PATCH /admin/api/users/{username}", r.handleUserPatch)
-	users.HandleFunc("DELETE /admin/api/users/{username}", r.handleUserDelete)
-	users.HandleFunc("POST /admin/api/users/{username}/password", r.handleUserPassword)
-	users.HandleFunc("GET /admin/api/vaults", r.handleVaultList)
-	users.HandleFunc("POST /admin/api/sessions/revoke-all", r.handleRevokeAllSessions)
+	return strings.HasPrefix(request.URL.Path, "/admin/api/users") ||
+		request.URL.Path == "/admin/api/vaults" ||
+		request.URL.Path == "/admin/api/sessions/revoke-all"
+}
 
-	write := request.Method != http.MethodGet
+// serveTenantRoutes handles global endpoints not scoped to a single vault
+// (tenant password login, user management, vault listing, session revocation).
+func (r *vaultRegistry) serveTenantRoutes(w http.ResponseWriter, request *http.Request, vault *server, adminMux *http.ServeMux) {
+	if request.Method == http.MethodPost && request.URL.Path == "/v1/login" {
+		vault.withCommonHeaders(http.HandlerFunc(r.handleLogin)).ServeHTTP(w, request)
+		return
+	}
 	var h http.HandlerFunc
-	if write {
-		h = vault.requireAdminWrite(users.ServeHTTP)
+	if request.Method != http.MethodGet {
+		h = vault.requireAdminWrite(adminMux.ServeHTTP)
 	} else {
-		h = vault.requireAdmin(users.ServeHTTP)
+		h = vault.requireAdmin(adminMux.ServeHTTP)
 	}
 	vault.withCommonHeaders(h).ServeHTTP(w, request)
-	return true
 }
 
 func (r *vaultRegistry) Close() {

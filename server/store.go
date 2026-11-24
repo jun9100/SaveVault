@@ -160,14 +160,15 @@ func writeJSONFile(path string, value any) error {
 }
 
 func (s *server) loadState() error {
-	if err := readJSONFile(filepath.Join(s.dataDir, "state.json"), &s.state); err != nil {
+	var state serverState
+	if err := readJSONFile(filepath.Join(s.dataDir, "state.json"), &state); err != nil {
 		return err
 	}
-	if s.state.Scopes == nil {
-		s.state.Scopes = make(map[string]scope)
+	if state.Scopes == nil {
+		state.Scopes = make(map[string]scope)
 	}
 	// Releases before the record format did not store blob sizes; recover them from disk.
-	for scopeID, stored := range s.state.Scopes {
+	for scopeID, stored := range state.Scopes {
 		changed := false
 		for snapshotID, record := range stored.Snapshots {
 			if record.Size != 0 {
@@ -180,22 +181,25 @@ func (s *server) loadState() error {
 			}
 		}
 		if changed {
-			s.state.Scopes[scopeID] = stored
+			state.Scopes[scopeID] = stored
 		}
 	}
+	s.state = state
 	return nil
 }
 
 func (s *server) loadDashboard() error {
-	if err := readJSONFile(filepath.Join(s.dataDir, "dashboard.json"), &s.dashboard); err != nil {
+	var dash dashboardState
+	if err := readJSONFile(filepath.Join(s.dataDir, "dashboard.json"), &dash); err != nil {
 		return err
 	}
-	if s.dashboard.Scopes == nil {
-		s.dashboard.Scopes = make(map[string]scopeMetadata)
+	if dash.Scopes == nil {
+		dash.Scopes = make(map[string]scopeMetadata)
 	}
-	if s.dashboard.Devices == nil {
-		s.dashboard.Devices = make(map[string]deviceInfo)
+	if dash.Devices == nil {
+		dash.Devices = make(map[string]deviceInfo)
 	}
+	s.dashboard = dash
 	return nil
 }
 
@@ -205,12 +209,14 @@ func (s *server) loadSettings(defaults serverSettings) error {
 		s.settings = defaults
 		return nil
 	}
-	if err := readJSONFile(path, &s.settings); err != nil {
+	var loaded serverSettings
+	if err := readJSONFile(path, &loaded); err != nil {
 		return err
 	}
-	if !s.settings.Retention.valid() {
+	if !loaded.Retention.valid() {
 		return errors.New("settings.json contains an invalid retention policy")
 	}
+	s.settings = loaded
 	return nil
 }
 
@@ -219,7 +225,18 @@ func (s *server) persistState(state serverState) error {
 }
 
 func (s *server) persistDashboard(state dashboardState) error {
-	return writeJSONFile(filepath.Join(s.dataDir, "dashboard.json"), state)
+	path := filepath.Join(s.dataDir, "dashboard.json")
+	var oldSize int64
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		oldSize = info.Size()
+	}
+	if err := writeJSONFile(path, state); err != nil {
+		return err
+	}
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+		s.adjustUsedBytes(info.Size() - oldSize)
+	}
+	return nil
 }
 
 func (s *server) persistSettings(settings serverSettings) error {

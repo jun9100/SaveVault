@@ -230,6 +230,10 @@ class GameSaveClientTest {
             assertNotNull(fetched)
             assertEquals(1L, fetched!!.revision)
             assertEquals("宝可梦 X", fetched.customTitles["3ds:0004000000055D00"])
+            val summary = fetched.summaryText(addedLocalTitles = 1, excludedCount = 2)
+            assertTrue(summary.contains("1 条译名"))
+            assertTrue(summary.contains("2 条排除"))
+            assertTrue(summary.contains("本机新增 1 条"))
         } finally {
             root.deleteRecursively()
             server.close()
@@ -310,7 +314,7 @@ private class MiniGameSaveServer : AutoCloseable {
                             .put("online", tok.online)
                             .put("created_at", tok.createdAt)
                             .put("last_used_at", tok.lastUsedAt)
-                            .apply { if (tok.revokedAt.isNotBlank()) put("revoked_at", tok.revokedAt) },
+                            .put("revoked_at", if (tok.revokedAt.isNotBlank()) tok.revokedAt else JSONObject.NULL),
                     )
                 }
             }

@@ -4,7 +4,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -28,9 +30,6 @@ func (s *server) handleClientDeviceList(w http.ResponseWriter, r *http.Request) 
 		tokens = append(tokens, s.deviceTokenViewLocked(record, now))
 	}
 	mode := s.deviceTokens.SharedTokenMode
-	if mode == "" {
-		mode = sharedTokenModeAllow
-	}
 	s.tokensMu.Unlock()
 	s.mu.Unlock()
 
@@ -146,29 +145,16 @@ func (s *server) handleDeleteSaveVaultScopeSnapshot(w http.ResponseWriter, r *ht
 	}
 	s.saveVaultState = nextState
 
-	archiveReferenced := false
-	for otherKey, otherScope := range s.saveVaultState.Scopes {
-		otherKind, _, validKey := parseSaveVaultStateKey(otherKey)
-		if !validKey || otherKind != kind {
-			continue
-		}
-		for _, otherSnap := range otherScope.Snapshots {
-			if otherSnap.Archive == snap.Archive {
-				archiveReferenced = true
-				break
-			}
-		}
-		if archiveReferenced {
-			break
-		}
-	}
 	var freedBytes int64
-	if !archiveReferenced && snap.Archive != "" {
+	if !s.saveVaultArchiveReferencedLocked(kind, snap.Archive) && snap.Archive != "" {
 		if archivePath, valid := s.saveVaultPath(kind, snap.Archive); valid {
+			var size int64
 			if info, err := os.Stat(archivePath); err == nil {
-				freedBytes = info.Size()
+				size = info.Size()
 			}
-			if err := s.manageRemove(archivePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := s.manageRemove(archivePath); err == nil {
+				freedBytes = size
+			} else if !errors.Is(err, os.ErrNotExist) {
 				slog.Warn("delete SaveVault snapshot archive", "type", kind, "archive", snap.Archive, "error", err)
 			}
 		}
@@ -183,7 +169,7 @@ func (s *server) handleDeleteSaveVaultScopeSnapshot(w http.ResponseWriter, r *ht
 	}
 	s.saveVaultMu.Unlock()
 
-	s.recordSaveVaultManageEvent(eventRetention, "deleted snapshot "+snapshotID, kind, gameID, snapshotID)
+	s.recordSaveVaultManageEvent(eventDeleteSnapshot, "deleted snapshot "+snapshotID, kind, gameID, snapshotID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deleted":     true,
 		"snapshot":    snapshotID,
@@ -237,19 +223,25 @@ func (r *vaultRegistry) handleRevokeAllSessions(w http.ResponseWriter, request *
 		Username string `json:"username"`
 		Role     string `json:"role"`
 	}
-	if request.Body != nil && request.ContentLength != 0 {
-		if !decodeAdminJSON(w, request, &body) {
-			return
-		}
+	dec := json.NewDecoder(http.MaxBytesReader(w, request.Body, maxMetadataBytes))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
 	}
+	username := strings.TrimSpace(body.Username)
+	role := strings.TrimSpace(body.Role)
 	removed := 0
 	switch {
-	case strings.TrimSpace(body.Username) != "":
-		removed = r.sessions.revokeUser(strings.TrimSpace(body.Username), "")
-	case body.Role == sessionRoleTenant:
+	case username != "":
+		removed = r.sessions.revokeUser(username, "")
+	case role == sessionRoleTenant:
 		removed = r.sessions.revokeRole(sessionRoleTenant)
-	default:
+	case role == "" || role == sessionRoleAdmin:
 		removed = r.sessions.revokeRole(sessionRoleAdmin)
+	default:
+		writeError(w, http.StatusBadRequest, "invalid session role")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"revoked": removed})
 }
@@ -259,9 +251,6 @@ func (r *vaultRegistry) handleRevokeAllSessions(w http.ResponseWriter, request *
 // -----------------------------------------------------------------------------
 
 func (r *vaultRegistry) tenantSessionFromRequest(request *http.Request) (sessionRecord, userRecord, *server, bool) {
-	if r.sessions == nil {
-		return sessionRecord{}, userRecord{}, nil, false
-	}
 	cookie, err := request.Cookie(tenantSessionCookie)
 	if err != nil {
 		return sessionRecord{}, userRecord{}, nil, false
@@ -288,7 +277,7 @@ func (r *vaultRegistry) tenantSessionFromRequest(request *http.Request) (session
 	r.mu.Unlock()
 	if vault == nil {
 		var loadErr error
-		vault, loadErr = r.vaultWithTokenAndQuota(user.VaultID, user.Token, user.QuotaBytes)
+		vault, loadErr = r.vaultWithMeta(user.VaultID, user.Token, user.Username, user.QuotaBytes)
 		if loadErr != nil {
 			return sessionRecord{}, userRecord{}, nil, false
 		}
@@ -492,10 +481,9 @@ func (r *vaultRegistry) handleSelfPassword(w http.ResponseWriter, request *http.
 		writeError(w, http.StatusUnauthorized, "current password is incorrect")
 		return
 	}
-	if err := r.SetPassword(user.Username, body.NewPassword); err != nil {
+	if err := r.setPassword(user.Username, body.NewPassword, sess.ID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	r.sessions.revokeUser(user.Username, sess.ID)
 	w.WriteHeader(http.StatusNoContent)
 }

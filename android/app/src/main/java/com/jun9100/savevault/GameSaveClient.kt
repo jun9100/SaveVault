@@ -144,7 +144,11 @@ data class GameSaveProfileMetadata(
     val customTitles: Map<String, String>,
     val excludedScopes: Set<String>,
     val updatedAt: String = "",
-)
+) {
+    fun summaryText(addedLocalTitles: Int, excludedCount: Int): String =
+        "已同步云端译名与规则（${customTitles.size} 条译名，$excludedCount 条排除" +
+            "${if (addedLocalTitles > 0) "，本机新增 $addedLocalTitles 条" else ""}）"
+}
 
 /** A token returned by `POST /v1/pair/claim`; it can never be fetched again. */
 data class GameSavePairingResult(
@@ -272,13 +276,13 @@ class GameSaveClient(
             requireSuccess(response, "查询 SaveVault 云端凭据")
             val json = JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES))
             GameSaveWhoami(
-                auth = json.optString("auth").trim(),
-                tokenId = json.optString("token_id").trim(),
-                deviceId = json.optString("device_id").trim(),
-                name = json.optString("name").trim(),
-                sharedTokenMode = json.optString("shared_token_mode").trim(),
-                vaultId = json.optString("vault_id").trim(),
-                username = json.optString("username").trim(),
+                auth = json.optStringOrEmpty("auth"),
+                tokenId = json.optStringOrEmpty("token_id"),
+                deviceId = json.optStringOrEmpty("device_id"),
+                name = json.optStringOrEmpty("name"),
+                sharedTokenMode = json.optStringOrEmpty("shared_token_mode"),
+                vaultId = json.optStringOrEmpty("vault_id"),
+                username = json.optStringOrEmpty("username"),
                 usedBytes = json.optLong("used_bytes", 0L).coerceAtLeast(0L),
                 quotaBytes = json.optLong("quota_bytes", 0L).coerceAtLeast(0L),
             )
@@ -293,24 +297,24 @@ class GameSaveClient(
             }
             requireSuccess(response, "读取已配对设备列表")
             val json = JSONObject(readBoundedString(response, MAX_JSON_BODY_BYTES))
-            val currentTokenId = json.optString("current_token_id").trim()
+            val currentTokenId = json.optStringOrEmpty("current_token_id")
             val array = json.optJSONArray("tokens")
             val tokens = buildList {
                 if (array != null) {
                     for (index in 0 until array.length()) {
                         val item = array.optJSONObject(index) ?: continue
-                        val id = item.optString("id").trim()
+                        val id = item.optStringOrEmpty("id")
                         if (id.isBlank()) continue
                         add(
                             GameSaveDeviceTokenInfo(
                                 id = id,
-                                name = item.optString("name").trim(),
-                                deviceId = item.optString("device_id").trim(),
-                                displayName = item.optString("display_name").trim(),
+                                name = item.optStringOrEmpty("name"),
+                                deviceId = item.optStringOrEmpty("device_id"),
+                                displayName = item.optStringOrEmpty("display_name"),
                                 online = item.optBoolean("online"),
-                                createdAt = item.optString("created_at").trim(),
-                                lastUsedAt = item.optString("last_used_at").trim(),
-                                revokedAt = item.optString("revoked_at").trim(),
+                                createdAt = item.optStringOrEmpty("created_at"),
+                                lastUsedAt = item.optStringOrEmpty("last_used_at"),
+                                revokedAt = item.optStringOrEmpty("revoked_at"),
                             ),
                         )
                     }
@@ -324,8 +328,8 @@ class GameSaveClient(
             GameSaveDevicesReport(
                 tokens = tokens,
                 currentTokenId = currentTokenId,
-                currentDeviceId = json.optString("current_device_id").trim(),
-                sharedTokenMode = json.optString("shared_token_mode").trim(),
+                currentDeviceId = json.optStringOrEmpty("current_device_id"),
+                sharedTokenMode = json.optStringOrEmpty("shared_token_mode"),
                 usedBytes = json.optLong("used_bytes", 0L).coerceAtLeast(0L),
                 quotaBytes = json.optLong("quota_bytes", 0L).coerceAtLeast(0L),
             )
@@ -397,8 +401,9 @@ class GameSaveClient(
         if (titlesObj != null) {
             val keys = titlesObj.keys()
             while (keys.hasNext()) {
-                val key = keys.next().trim()
-                val value = titlesObj.optString(key).trim()
+                val rawKey = keys.next()
+                val key = rawKey.trim()
+                val value = titlesObj.optStringOrEmpty(rawKey)
                 if (key.isNotEmpty() && value.isNotEmpty()) titles[key] = value
             }
         }
@@ -406,7 +411,8 @@ class GameSaveClient(
         val excluded = linkedSetOf<String>()
         if (excludedArr != null) {
             for (i in 0 until excludedArr.length()) {
-                val item = excludedArr.optString(i).trim()
+                if (excludedArr.isNull(i)) continue
+                val item = excludedArr.optString(i, "").trim()
                 if (item.isNotEmpty()) excluded += item
             }
         }
@@ -414,9 +420,13 @@ class GameSaveClient(
             revision = json.optLong("revision", 0L),
             customTitles = titles,
             excludedScopes = excluded,
-            updatedAt = json.optString("updated_at").trim(),
+            updatedAt = json.optStringOrEmpty("updated_at"),
         )
     }
+
+    /** AOSP org.json returns the literal string "null" from optString() when a field is JSON null. */
+    private fun JSONObject.optStringOrEmpty(key: String): String =
+        if (isNull(key)) "" else optString(key, "").trim()
 
     fun list(): Result<List<RemoteSnapshot>> = runCatching {
         execute(request(listEndpoint())).use { response ->

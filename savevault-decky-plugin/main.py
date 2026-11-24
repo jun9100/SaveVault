@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import decky
@@ -21,8 +22,10 @@ try:
     import aiohttp
 
     HAVE_AIOHTTP = True
-except Exception:  # pragma: no cover - environment dependent
+except ImportError:  # pragma: no cover - environment dependent
     HAVE_AIOHTTP = False
+
+_LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 # Sync events forwarded from the daemon's dashboard WebSocket to the panel.
 SYNC_EVENT_TYPES = ("sync-start", "sync-progress", "sync-complete", "sync-error")
@@ -88,7 +91,7 @@ def _request(path: str, method: str = "GET", body=None, timeout: float = 10.0):
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _LOOPBACK_OPENER.open(req, timeout=timeout) as resp:
             raw = resp.read()
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as e:
@@ -100,10 +103,7 @@ def _request(path: str, method: str = "GET", body=None, timeout: float = 10.0):
         except (ValueError, AttributeError):
             pass
         finally:
-            try:
-                e.close()
-            except Exception:
-                pass
+            e.close()
         raise DaemonRefused(message, reason, e.code) from None
 
 
@@ -232,12 +232,20 @@ def daemon_command(home: str, which=shutil.which, is_file=os.path.isfile):
 
 
 class Plugin:
+    _wake_events = None
+    _events_task = None
+
     # ── Status ───────────────────────────────────────────────────────────
 
     async def get_daemon_status(self) -> dict:
-        """Whether the daemon is reachable, plus its status payload."""
+        """Whether the daemon is reachable, plus its status payload, URL and token."""
         try:
-            return {"running": True, "data": await _request_async("/api/status", timeout=3)}
+            return {
+                "running": True,
+                "data": await _request_async("/api/status", timeout=3),
+                "baseUrl": _daemon_url(),
+                "token": _daemon_token(),
+            }
         except Exception as e:
             return {"running": False, "error": str(e)}
 
@@ -275,12 +283,18 @@ class Plugin:
         "offline" — so the hooks can stay quiet about a PC that is simply
         switched off instead of reporting a failure at every launch."""
         try:
-            answer = await _request_async(f"/api/games/{game_id}/sync", method="POST", body={}, timeout=120) or {}
+            gid = urllib.parse.quote(game_id, safe="")
+            answer = await _request_async(f"/api/games/{gid}/sync", method="POST", body={}, timeout=120) or {}
             if answer.get("queued"):
                 return {"success": True, "outcome": "queued"}
-            outcome = game_outcome(answer.get("results") or {})
+            results = answer.get("results") or {}
+            outcome = game_outcome(results)
             if outcome in ("error", "paused", "held", "offline"):
-                return {"success": False, "reason": outcome, "error": f"sync {outcome}"}
+                detail = next(
+                    (r.get("error") for r in results.values() if isinstance(r, dict) and r.get("error")),
+                    f"sync {outcome}",
+                )
+                return {"success": False, "reason": outcome, "error": detail}
             return {"success": True, "outcome": outcome}
         except DaemonRefused as e:
             reason = reason_of(str(e), e.reason)
@@ -317,7 +331,8 @@ class Plugin:
         if answer not in ("restore", "delete"):
             return {"success": False, "error": f"unknown answer {answer}"}
         try:
-            await _request_async(f"/api/games/{game_id}/emptied", method="POST", body={"answer": answer}, timeout=60)
+            gid = urllib.parse.quote(game_id, safe="")
+            await _request_async(f"/api/games/{gid}/emptied", method="POST", body={"answer": answer}, timeout=60)
             return {"success": True}
         except Exception as e:
             decky.logger.error(f"answer_emptied({game_id}, {answer}) failed: {e}")
@@ -330,8 +345,9 @@ class Plugin:
         if resolution not in ("keep-local", "keep-remote"):
             return {"success": False, "error": f"unknown resolution {resolution}"}
         try:
+            gid = urllib.parse.quote(game_id, safe="")
             await _request_async(
-                f"/api/games/{game_id}/resolve-location-conflict",
+                f"/api/games/{gid}/resolve-location-conflict",
                 method="POST",
                 body={"peerId": peer_id, "root": root, "resolution": resolution},
                 timeout=30,
@@ -343,8 +359,9 @@ class Plugin:
 
     async def snapshot_game(self, game_id: str, comment: str = "") -> dict:
         try:
+            gid = urllib.parse.quote(game_id, safe="")
             await _request_async(
-                f"/api/games/{game_id}/snapshot",
+                f"/api/games/{gid}/snapshot",
                 method="POST",
                 body={"comment": comment or "Steam Deck snapshot"},
                 timeout=60,
@@ -359,8 +376,9 @@ class Plugin:
         if not snapshot_id:
             return {"success": False, "error": "snapshotId is required"}
         try:
+            gid = urllib.parse.quote(game_id, safe="")
             await _request_async(
-                f"/api/games/{game_id}/rollback",
+                f"/api/games/{gid}/rollback",
                 method="POST",
                 body={"snapshotId": snapshot_id},
                 timeout=60,
@@ -375,8 +393,9 @@ class Plugin:
         if not branch:
             return {"success": False, "error": "branch name is required"}
         try:
+            gid = urllib.parse.quote(game_id, safe="")
             await _request_async(
-                f"/api/games/{game_id}/branch/switch",
+                f"/api/games/{gid}/branch/switch",
                 method="POST",
                 body={"name": branch},
                 timeout=60,
@@ -423,7 +442,7 @@ class Plugin:
         """Discover installed Steam / Proton / emulator saves not yet tracked."""
         try:
             found = await _request_async("/api/presets/scan", timeout=45) or []
-            tracked = await self.get_games()
+            tracked = await _request_async("/api/games", timeout=10) or {}
             tracked_paths = {
                 os.path.normpath(g.get("savePath") or "")
                 for g in tracked.values()
@@ -535,13 +554,13 @@ class Plugin:
             return {"success": False, "error": str(e)}
 
         # Wait for it to answer rather than reporting success optimistically.
-        deadline = asyncio.get_event_loop().time() + DAEMON_START_TIMEOUT
-        while asyncio.get_event_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + DAEMON_START_TIMEOUT
+        while loop.time() < deadline:
             await asyncio.sleep(0.5)
             if (await self.get_daemon_status()).get("running"):
-                wake = getattr(self, "_wake_events", None)
-                if wake is not None:
-                    wake.set()
+                if self._wake_events is not None:
+                    self._wake_events.set()
                 return {"success": True, "alreadyRunning": False}
             if proc.poll() is not None:
                 return {"success": False, "error": f"The sync service exited immediately (code {proc.returncode})."}
@@ -567,6 +586,8 @@ class Plugin:
 
         backoff = 2
         while True:
+            if self._wake_events is not None:
+                self._wake_events.clear()
             url = _daemon_url().replace("http://", "ws://", 1) + "/ws"
             headers = {}
             token = _daemon_token()
@@ -595,11 +616,9 @@ class Plugin:
             except Exception as e:
                 decky.logger.debug(f"sync event stream disconnected: {e}")
 
-            wake = getattr(self, "_wake_events", None)
-            if wake is not None:
-                wake.clear()
+            if self._wake_events is not None:
                 try:
-                    await asyncio.wait_for(wake.wait(), timeout=backoff)
+                    await asyncio.wait_for(self._wake_events.wait(), timeout=backoff)
                     backoff = 2
                     continue
                 except asyncio.TimeoutError:
@@ -611,7 +630,7 @@ class Plugin:
     # ── Decky lifecycle ──────────────────────────────────────────────────
 
     async def _main(self):
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.get_running_loop()
         self._wake_events = asyncio.Event()
         self._events_task = self.loop.create_task(self._pump_sync_events())
         decky.logger.info("SaveVault plugin loaded")
@@ -620,11 +639,10 @@ class Plugin:
         # The daemon is deliberately left running: it is a background sync
         # service, not something that should stop when the panel closes. Only
         # our own watcher is torn down.
-        task = getattr(self, "_events_task", None)
-        if task:
-            task.cancel()
+        if self._events_task:
+            self._events_task.cancel()
             try:
-                await task
+                await self._events_task
             except asyncio.CancelledError:
                 pass
         decky.logger.info("SaveVault plugin unloaded")

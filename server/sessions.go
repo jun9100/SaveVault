@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -75,9 +74,6 @@ func (st *sessionStore) create(role, username, vaultID string, now time.Time) (s
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if st.sessions == nil {
-		st.sessions = make(map[string]sessionRecord)
-	}
 	for sid, existing := range st.sessions {
 		if !now.Before(existing.ExpiresAt) {
 			delete(st.sessions, sid)
@@ -121,9 +117,6 @@ func parseSessionCookieValue(value string) (id string, expires int64, sig string
 }
 
 func (st *sessionStore) validate(value, expectedRole string, now time.Time) (sessionRecord, bool) {
-	if st == nil {
-		return sessionRecord{}, false
-	}
 	id, expires, sig, ok := parseSessionCookieValue(value)
 	if !ok || now.Unix() >= expires {
 		return sessionRecord{}, false
@@ -143,9 +136,6 @@ func (st *sessionStore) validate(value, expectedRole string, now time.Time) (ses
 }
 
 func (st *sessionStore) revokeCookie(value string) {
-	if st == nil {
-		return
-	}
 	id, _, _, ok := parseSessionCookieValue(value)
 	if !ok {
 		return
@@ -156,9 +146,6 @@ func (st *sessionStore) revokeCookie(value string) {
 }
 
 func (st *sessionStore) revokeRole(role string) int {
-	if st == nil {
-		return 0
-	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	removed := 0
@@ -172,9 +159,6 @@ func (st *sessionStore) revokeRole(role string) int {
 }
 
 func (st *sessionStore) revokeUser(username, exceptID string) int {
-	if st == nil {
-		return 0
-	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	removed := 0
@@ -188,9 +172,6 @@ func (st *sessionStore) revokeUser(username, exceptID string) int {
 }
 
 func (st *sessionStore) revokeVault(vaultID string) int {
-	if st == nil {
-		return 0
-	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	removed := 0
@@ -206,5 +187,3 @@ func (st *sessionStore) revokeVault(vaultID string) int {
 func hasSelfWriteHeader(r *http.Request) bool {
 	return r.Header.Get(selfCSRFHeader) == "1" || hasAdminWriteHeader(r)
 }
-
-var errSessionUnavailable = errors.New("session store unavailable")

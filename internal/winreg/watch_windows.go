@@ -5,6 +5,8 @@ package winreg
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +20,8 @@ const (
 	regNotifyChangeLastSet = 0x00000004
 	regNotifyFilter        = regNotifyChangeName | regNotifyChangeLastSet
 	winErrKeyDeleted       = 1018
-	watchRetryBackoff      = 300 * time.Millisecond
+	watchMinBackoff        = 250 * time.Millisecond
+	watchMaxBackoff        = 4 * time.Second
 )
 
 var (
@@ -26,20 +29,30 @@ var (
 	procRegNotifyChangeKeyValue = advapi32DLL.NewProc("RegNotifyChangeKeyValue")
 )
 
-func watchSupported() bool { return true }
-
 func watchKeys(ctx context.Context, paths []string, onChange func(keyPath string)) error {
-	var wg sync.WaitGroup
-	for _, p := range paths {
-		path := p
+	var (
+		wg       sync.WaitGroup
+		errMu    sync.Mutex
+		firstErr error
+	)
+	for _, path := range paths {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			watchSingleKey(ctx, path, onChange)
+			if err := watchSingleKey(ctx, path, onChange); err != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+			}
 		}()
 	}
 	wg.Wait()
-	return nil
+	if ctx.Err() != nil {
+		return nil
+	}
+	return firstErr
 }
 
 // openNearestExistingKey opens targetPath for REG_NOTIFY if it exists, or
@@ -65,21 +78,21 @@ func openNearestExistingKey(hive registry.Key, sub string) (h registry.Key, exac
 	}
 }
 
-func watchSingleKey(ctx context.Context, path string, onChange func(keyPath string)) {
+func watchSingleKey(ctx context.Context, path string, onChange func(keyPath string)) error {
+	// Win32 cancels async RegNotifyChangeKeyValue registrations if the
+	// registering OS thread exits, so pin this goroutine to one OS thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	hiveName, sub, err := splitHive(path)
 	if err != nil {
-		return
+		return err
 	}
-	root, ok := hiveKeys[hiveName]
-	if !ok {
-		return
-	}
+	root := hiveKeys[hiveName]
 
-	// Create one manual-reset stop event bridged to ctx.Done(), and ensure the
-	// bridge goroutine has exited before closing the handle.
 	stopEvent, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
-		return
+		return fmt.Errorf("create registry stop event: %w", err)
 	}
 	stopCtx, stopCancel := context.WithCancel(ctx)
 	stopDone := make(chan struct{})
@@ -96,25 +109,28 @@ func watchSingleKey(ctx context.Context, path string, onChange func(keyPath stri
 
 	changeEvent, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		return
+		return fmt.Errorf("create registry change event: %w", err)
 	}
 	defer func() { _ = windows.CloseHandle(changeEvent) }()
 
 	handles := []windows.Handle{stopEvent, changeEvent}
+	backoff := watchMinBackoff
 
 	for ctx.Err() == nil {
 		keyHandle, exact, openErr := openNearestExistingKey(root, sub)
 		if openErr != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(watchRetryBackoff):
-				continue
+			if !sleepContext(ctx, backoff) {
+				return nil
 			}
+			backoff = min(backoff*2, watchMaxBackoff)
+			continue
+		}
+		if exact {
+			backoff = watchMinBackoff
 		}
 
-		reopen := false
-		for !reopen && ctx.Err() == nil {
+		for ctx.Err() == nil {
+			_ = windows.ResetEvent(changeEvent)
 			r0, _, _ := procRegNotifyChangeKeyValue.Call(
 				uintptr(keyHandle),
 				1, // bWatchSubtree = TRUE
@@ -123,44 +139,62 @@ func watchSingleKey(ctx context.Context, path string, onChange func(keyPath stri
 				1, // fAsynchronous = TRUE
 			)
 			if r0 != 0 {
-				if r0 == winErrKeyDeleted && onChange != nil && ctx.Err() == nil {
+				if r0 == winErrKeyDeleted && exact && onChange != nil && ctx.Err() == nil {
 					onChange(path)
 				}
-				reopen = true
 				break
 			}
 
 			waitRes, waitErr := windows.WaitForMultipleObjects(handles, false, windows.INFINITE)
-			if waitErr != nil || waitRes == windows.WAIT_OBJECT_0 {
-				// Context cancelled (stopEvent fired) or wait error.
+			if waitErr != nil {
 				_ = keyHandle.Close()
-				return
+				return fmt.Errorf("wait registry event %q: %w", path, waitErr)
+			}
+			if waitRes == windows.WAIT_OBJECT_0 || ctx.Err() != nil {
+				_ = keyHandle.Close()
+				return nil
 			}
 			if waitRes == windows.WAIT_OBJECT_0+1 {
-				if ctx.Err() != nil {
+				if exact {
+					if onChange != nil {
+						onChange(path)
+					}
+					continue
+				}
+				// Watching a broad ancestor (e.g. HKCU\Software): only fire
+				// onChange once the exact target key actually appears, and
+				// break to reopen directly on the target key.
+				if target, err := registry.OpenKey(root, sub, registry.NOTIFY); err == nil {
+					_ = target.Close()
+					if onChange != nil {
+						onChange(path)
+					}
+					backoff = watchMinBackoff
+					break
+				}
+				// Target still absent: rate-limit re-arming on noisy ancestors.
+				if !sleepContext(ctx, backoff) {
 					_ = keyHandle.Close()
-					return
+					return nil
 				}
-				if onChange != nil {
-					onChange(path)
-				}
-				// If we were watching an ancestor because target didn't exist
-				// yet, reopen so we attach directly to the target once created.
-				if !exact {
-					reopen = true
-				}
+				backoff = min(backoff*2, watchMaxBackoff)
 			}
 		}
 		_ = keyHandle.Close()
-		if ctx.Err() != nil {
-			return
+		if !sleepContext(ctx, backoff) {
+			return nil
 		}
-		if reopen {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
+	}
+	return nil
+}
+
+func sleepContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
 	}
 }

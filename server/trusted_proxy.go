@@ -25,14 +25,10 @@ func parseTrustedProxies(raw string) (*trustedProxyList, error) {
 		return nil, nil
 	}
 	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == ';'
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ';'
 	})
 	prefixes := make([]netip.Prefix, 0, len(parts))
 	for _, entry := range parts {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
 		if strings.Contains(entry, "/") {
 			prefix, err := netip.ParsePrefix(entry)
 			if err != nil {
@@ -98,12 +94,12 @@ func (t *trustedProxyList) clientIP(r *http.Request) string {
 	if !ok || !t.contains(peer) {
 		return direct
 	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		hops := strings.Split(xff, ",")
+	if xffValues := r.Header.Values("X-Forwarded-For"); len(xffValues) > 0 {
+		hops := strings.Split(strings.Join(xffValues, ","), ",")
 		for i := len(hops) - 1; i >= 0; i-- {
 			addr, valid := parseAddrString(hops[i])
 			if !valid {
-				continue
+				return peer.String()
 			}
 			if !t.contains(addr) {
 				return addr.String()

@@ -207,7 +207,7 @@ func webhookEventTopic(kind string) string {
 }
 
 func webhookChannelSubscribes(ch webhookChannel, topic string) bool {
-	if !ch.Enabled || topic == "" {
+	if !ch.Enabled {
 		return false
 	}
 	for _, ev := range ch.Events {
@@ -243,8 +243,6 @@ func webhookSummaryForEvent(vaultID string, item event) (webhookNotification, bo
 		title = "SaveVault 设备凭据已吊销"
 	case "upload":
 		title = "SaveVault 收到新存档上传"
-	default:
-		title = "SaveVault 通知"
 	}
 	parts := make([]string, 0, 5)
 	if vaultID != "" && vaultID != defaultVaultID {
@@ -308,8 +306,8 @@ func buildWebhookRequest(ctx context.Context, ch webhookChannel, notice webhookN
 		payload := map[string]any{
 			"text": notice.Title + "\n" + notice.Body,
 		}
-		if strings.TrimSpace(ch.Secret) != "" {
-			payload["chat_id"] = strings.TrimSpace(ch.Secret)
+		if ch.Secret != "" {
+			payload["chat_id"] = ch.Secret
 		}
 		body, err = json.Marshal(payload)
 	case webhookTypeGotify:
@@ -318,8 +316,8 @@ func buildWebhookRequest(ctx context.Context, ch webhookChannel, notice webhookN
 			"message":  notice.Body,
 			"priority": 5,
 		})
-		if strings.TrimSpace(ch.Secret) != "" {
-			headers["X-Gotify-Key"] = strings.TrimSpace(ch.Secret)
+		if ch.Secret != "" {
+			headers["X-Gotify-Key"] = ch.Secret
 		}
 	case webhookTypeBark:
 		body, err = json.Marshal(map[string]any{
@@ -363,6 +361,15 @@ func buildWebhookRequest(ctx context.Context, ch webhookChannel, notice webhookN
 	return req, nil
 }
 
+func newWebhookHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: webhookTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 func (s *server) sendWebhookSync(ctx context.Context, ch webhookChannel, notice webhookNotification) (int, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, webhookTimeout)
 	defer cancel()
@@ -370,11 +377,7 @@ func (s *server) sendWebhookSync(ctx context.Context, ch webhookChannel, notice 
 	if err != nil {
 		return 0, err
 	}
-	client := s.webhookClient
-	if client == nil {
-		client = &http.Client{Timeout: webhookTimeout}
-	}
-	resp, err := client.Do(req)
+	resp, err := s.webhookClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -434,9 +437,6 @@ func (s *server) notifyWebhooks(item event) {
 }
 
 func (s *server) closeWebhooks() {
-	if s.webhookCancel == nil {
-		return
-	}
 	s.webhookMu.Lock()
 	s.webhookClosed = true
 	s.webhookMu.Unlock()
@@ -444,10 +444,9 @@ func (s *server) closeWebhooks() {
 	s.webhookWG.Wait()
 }
 
-func (s *server) handleGetWebhooks(w http.ResponseWriter, _ *http.Request) {
-	s.webhookMu.Lock()
-	views := make([]webhookChannelView, 0, len(s.webhooks.Channels))
-	for _, ch := range s.webhooks.Channels {
+func webhookChannelViews(channels []webhookChannel) []webhookChannelView {
+	views := make([]webhookChannelView, 0, len(channels))
+	for _, ch := range channels {
 		views = append(views, webhookChannelView{
 			ID:        ch.ID,
 			Name:      ch.Name,
@@ -458,6 +457,12 @@ func (s *server) handleGetWebhooks(w http.ResponseWriter, _ *http.Request) {
 			Enabled:   ch.Enabled,
 		})
 	}
+	return views
+}
+
+func (s *server) handleGetWebhooks(w http.ResponseWriter, _ *http.Request) {
+	s.webhookMu.Lock()
+	views := webhookChannelViews(s.webhooks.Channels)
 	s.webhookMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"channels": views,
@@ -554,19 +559,7 @@ func (s *server) handlePutWebhooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.webhooks = updated
-	views := make([]webhookChannelView, 0, len(next))
-	for _, ch := range next {
-		views = append(views, webhookChannelView{
-			ID:        ch.ID,
-			Name:      ch.Name,
-			Type:      ch.Type,
-			URL:       ch.URL,
-			HasSecret: ch.Secret != "",
-			Events:    append([]string(nil), ch.Events...),
-			Enabled:   ch.Enabled,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"channels": views})
+	writeJSON(w, http.StatusOK, map[string]any{"channels": webhookChannelViews(next)})
 }
 
 func (s *server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {

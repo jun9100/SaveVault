@@ -144,7 +144,6 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 		return report, err
 	}
 	s.saveVaultState = next
-	sort.Strings(report.Details)
 	slog.Warn("rebuilt SaveVault heads from archives", "rebuilt", report.Rebuilt, "scanned", report.Scanned)
 	return report, nil
 }

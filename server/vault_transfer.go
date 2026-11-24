@@ -29,17 +29,17 @@ const (
 )
 
 var allowedVaultRootFiles = map[string]bool{
-	"state.json":                 true,
-	"dashboard.json":             true,
-	"settings.json":              true,
-	"events.json":                true,
-	"device-tokens.json":         true,
-	"savevault-native.json":      true,
+	"state.json":                  true,
+	"dashboard.json":              true,
+	"settings.json":               true,
+	"events.json":                 true,
+	"device-tokens.json":          true,
+	"savevault-native.json":       true,
 	"savevault-native-state.json": true,
-	"savevault-manage.json":      true,
-	"savevault-meta.json":        true,
-	"profile-metadata.json":      true,
-	"webhooks.json":              true,
+	"savevault-manage.json":       true,
+	"savevault-meta.json":         true,
+	"profile-metadata.json":       true,
+	"webhooks.json":               true,
 }
 
 var allowedVaultSubdirs = []string{
@@ -96,22 +96,37 @@ func (s *server) collectVaultExportFiles() ([]string, error) {
 	var rels []string
 	for name := range allowedVaultRootFiles {
 		full := filepath.Join(s.dataDir, name)
-		if info, err := os.Stat(full); err == nil && info.Mode().IsRegular() {
+		info, err := os.Stat(full)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode().IsRegular() {
 			rels = append(rels, name)
 		}
 	}
 	for _, sub := range allowedVaultSubdirs {
 		subRoot := filepath.Join(s.dataDir, sub)
-		_ = filepath.Walk(subRoot, func(full string, info os.FileInfo, err error) error {
-			if err != nil || info == nil || !info.Mode().IsRegular() {
-				return nil
+		if _, err := os.Stat(subRoot); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		err := filepath.Walk(subRoot, func(full string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				if errors.Is(walkErr, os.ErrNotExist) {
+					return nil
+				}
+				return walkErr
 			}
-			if strings.HasPrefix(info.Name(), ".") {
+			if !info.Mode().IsRegular() || strings.HasPrefix(info.Name(), ".") {
 				return nil
 			}
 			rel, relErr := filepath.Rel(s.dataDir, full)
 			if relErr != nil {
-				return nil
+				return relErr
 			}
 			slashRel := filepath.ToSlash(rel)
 			if isAllowedVaultRelPath(slashRel) {
@@ -119,6 +134,9 @@ func (s *server) collectVaultExportFiles() ([]string, error) {
 			}
 			return nil
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	sort.Strings(rels)
 	return rels, nil
@@ -153,53 +171,73 @@ func (s *server) handleExportVault(w http.ResponseWriter, _ *http.Request) {
 
 	for _, rel := range rels {
 		full := filepath.Join(s.dataDir, filepath.FromSlash(rel))
-		data, readErr := os.ReadFile(full)
-		if readErr != nil {
-			if errors.Is(readErr, os.ErrNotExist) {
+		f, openErr := os.Open(full)
+		if openErr != nil {
+			if errors.Is(openErr, os.ErrNotExist) {
 				continue
 			}
-			slog.Warn("vault export read file failed", "path", rel, "error", readErr)
+			slog.Warn("vault export open failed", "path", rel, "error", openErr)
+			return
+		}
+		info, statErr := f.Stat()
+		if statErr != nil || !info.Mode().IsRegular() {
+			_ = f.Close()
+			if statErr != nil {
+				slog.Warn("vault export stat failed", "path", rel, "error", statErr)
+				return
+			}
 			continue
 		}
-		info, statErr := os.Stat(full)
-		modTime := manifest.ExportedAt
-		if statErr == nil {
-			modTime = info.ModTime().UTC()
-		}
-		sum := sha256.Sum256(data)
 		hdr := &tar.Header{
 			Name:    rel,
 			Mode:    0o600,
-			Size:    int64(len(data)),
-			ModTime: modTime,
+			Size:    info.Size(),
+			ModTime: info.ModTime().UTC(),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
+			_ = f.Close()
 			slog.Warn("vault export write header", "path", rel, "error", err)
 			return
 		}
-		if _, err := tw.Write(data); err != nil {
-			slog.Warn("vault export write body", "path", rel, "error", err)
+		hasher := sha256.New()
+		written, copyErr := io.Copy(io.MultiWriter(tw, hasher), io.LimitReader(f, info.Size()))
+		_ = f.Close()
+		if copyErr != nil || written != info.Size() {
+			slog.Warn("vault export stream file failed", "path", rel, "written", written, "expected", info.Size(), "error", copyErr)
 			return
 		}
 		manifest.Files = append(manifest.Files, vaultExportFileEntry{
 			Path:   rel,
-			Size:   int64(len(data)),
-			SHA256: hex.EncodeToString(sum[:]),
+			Size:   written,
+			SHA256: hex.EncodeToString(hasher.Sum(nil)),
 		})
 	}
 
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err == nil {
-		_ = tw.WriteHeader(&tar.Header{
-			Name:    vaultExportManifestName,
-			Mode:    0o600,
-			Size:    int64(len(manifestBytes)),
-			ModTime: manifest.ExportedAt,
-		})
-		_, _ = tw.Write(manifestBytes)
+	if err != nil {
+		slog.Warn("vault export marshal manifest", "error", err)
+		return
 	}
-	_ = tw.Close()
-	_ = gz.Close()
+	if err := tw.WriteHeader(&tar.Header{
+		Name:    vaultExportManifestName,
+		Mode:    0o600,
+		Size:    int64(len(manifestBytes)),
+		ModTime: manifest.ExportedAt,
+	}); err != nil {
+		slog.Warn("vault export write manifest header", "error", err)
+		return
+	}
+	if _, err := tw.Write(manifestBytes); err != nil {
+		slog.Warn("vault export write manifest body", "error", err)
+		return
+	}
+	if err := tw.Close(); err != nil {
+		slog.Warn("vault export close tar", "error", err)
+		return
+	}
+	if err := gz.Close(); err != nil {
+		slog.Warn("vault export close gzip", "error", err)
+	}
 }
 
 func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +253,12 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 
 	gz, err := gzip.NewReader(http.MaxBytesReader(w, r.Body, maxVaultImportBytes))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid gzip archive")
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "vault archive exceeds maximum import size")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid gzip archive")
+		}
 		return
 	}
 	defer gz.Close()
@@ -232,7 +275,12 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "corrupted tar archive: "+err.Error())
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "vault archive exceeds maximum import size")
+			} else {
+				writeError(w, http.StatusBadRequest, "corrupted tar archive: "+err.Error())
+			}
 			return
 		}
 		if hdr.Typeflag == tar.TypeDir {
@@ -244,6 +292,10 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 		}
 		cleanName := path.Clean(strings.TrimPrefix(hdr.Name, "./"))
 		if cleanName == vaultExportManifestName {
+			if manifest != nil {
+				writeError(w, http.StatusBadRequest, "duplicate manifest.json in vault archive")
+				return
+			}
 			raw, readErr := io.ReadAll(io.LimitReader(tr, 16<<20))
 			if readErr != nil {
 				writeError(w, http.StatusBadRequest, "cannot read manifest.json")
@@ -259,6 +311,10 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 		}
 		if !isAllowedVaultRelPath(cleanName) {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("disallowed path in vault archive: %q", hdr.Name))
+			return
+		}
+		if _, dup := extracted[cleanName]; dup {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("duplicate path in vault archive: %q", cleanName))
 			return
 		}
 		fileCount++
@@ -283,8 +339,17 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 		hasher := sha256.New()
 		written, copyErr := io.Copy(io.MultiWriter(out, hasher), io.LimitReader(tr, maxVaultImportBytes-totalBytes+1))
 		closeErr := out.Close()
-		if copyErr != nil || closeErr != nil {
-			writeError(w, http.StatusBadRequest, "failed to extract "+cleanName)
+		if copyErr != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(copyErr, &maxErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "vault archive exceeds maximum import size")
+			} else {
+				writeError(w, http.StatusBadRequest, "failed to extract "+cleanName)
+			}
+			return
+		}
+		if closeErr != nil {
+			writeError(w, http.StatusInternalServerError, "cannot flush staged file "+cleanName)
 			return
 		}
 		totalBytes += written
@@ -307,11 +372,13 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported vault archive manifest version %d", manifest.Version))
 		return
 	}
-	if len(manifest.Files) != len(extracted) {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("manifest lists %d files but archive contained %d", len(manifest.Files), len(extracted)))
-		return
-	}
+	seenManifest := make(map[string]struct{}, len(manifest.Files))
 	for _, expected := range manifest.Files {
+		if _, dup := seenManifest[expected.Path]; dup {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("duplicate manifest entry: %s", expected.Path))
+			return
+		}
+		seenManifest[expected.Path] = struct{}{}
 		actual, ok := extracted[expected.Path]
 		if !ok {
 			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("missing file listed in manifest: %s", expected.Path))
@@ -321,6 +388,10 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("checksum mismatch for %s", expected.Path))
 			return
 		}
+	}
+	if len(seenManifest) != len(extracted) {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("manifest lists %d files but archive contained %d", len(seenManifest), len(extracted)))
+		return
 	}
 
 	if dryRun {
@@ -335,23 +406,42 @@ func (s *server) handleImportVault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply staged files into the active vault data directory and reload all
-	// in-memory state cleanly.
-	appliedFiles := 0
+	if !s.maintaining.TryLock() {
+		writeError(w, http.StatusConflict, "another maintenance or import operation is already running")
+		return
+	}
+	defer s.maintaining.Unlock()
+
+	// Remove root state JSON files absent from the backup so stale state does
+	// not survive import, then install staged files in deterministic order.
+	for name := range allowedVaultRootFiles {
+		if _, present := extracted[name]; !present {
+			_ = os.Remove(filepath.Join(s.dataDir, name))
+		}
+	}
+	ordered := make([]string, 0, len(extracted))
 	for rel := range extracted {
+		ordered = append(ordered, rel)
+	}
+	sort.Strings(ordered)
+	appliedFiles := 0
+	for _, rel := range ordered {
 		src := filepath.Join(stageDir, filepath.FromSlash(rel))
 		dst := filepath.Join(s.dataDir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			s.reconcileUsedBytes()
 			writeError(w, http.StatusInternalServerError, "cannot create destination directory during import")
 			return
 		}
 		if err := os.Rename(src, dst); err != nil {
+			s.reconcileUsedBytes()
 			writeError(w, http.StatusInternalServerError, "cannot install imported file "+rel)
 			return
 		}
 		appliedFiles++
 	}
 	if err := s.reloadVaultStateAfterImport(); err != nil {
+		s.reconcileUsedBytes()
 		slog.Error("reload vault state after import failed", "vault", s.vaultID, "error", err)
 		writeError(w, http.StatusInternalServerError, "imported files but failed to reload vault state: "+err.Error())
 		return
@@ -375,6 +465,10 @@ func (s *server) reloadVaultStateAfterImport() error {
 		return err
 	}
 	if err := s.loadDashboard(); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	if err := s.loadSettings(serverSettings{}); err != nil {
 		s.mu.Unlock()
 		return err
 	}

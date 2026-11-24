@@ -46,7 +46,7 @@ import com.jun9100.savevault.ui.input.whenIdle
 
 /** The credential status wording and colour level; pure, so 设置's lines are unit tested. */
 internal object GameSaveAuthText {
-    enum class Level { NORMAL, TERTIARY, ERROR }
+    enum class Level { NORMAL, ERROR }
 
     fun status(ui: GameSaveAuthUi): Pair<String, Level>? {
         val whoami = ui.whoami
@@ -131,7 +131,6 @@ internal fun GameSaveCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = when (level) {
                         GameSaveAuthText.Level.ERROR -> MaterialTheme.colorScheme.error
-                        GameSaveAuthText.Level.TERTIARY -> MaterialTheme.colorScheme.tertiary
                         GameSaveAuthText.Level.NORMAL -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
@@ -237,7 +236,9 @@ private fun SummaryRow(
 }
 
 /** The clipboard's text, read only when the user asks; null when it is empty or unreadable. */
-internal fun readClipboardText(context: Context): String? = runCatching {
+internal fun readClipboardText(context: Context): String? = try {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
     clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
-}.getOrNull()
+} catch (_: SecurityException) {
+    null
+}

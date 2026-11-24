@@ -1,8 +1,8 @@
 // Package mobilecore exposes a gomobile-compatible bridge over SaveVault's
 // X25519 + XChaCha20-Poly1305 E2EE primitives, incremental block delta engine,
-// and LAN peer discovery wire protocol so Android/iOS builds can either bind
-// this package directly via `gomobile bind -target=android ./pkg/mobilecore`
-// or validate wire interoperability against the desktop core.
+// and LAN peer discovery wire protocol so Android/iOS builds can bind this
+// package via `gomobile bind -target=android ./pkg/mobilecore` or verify wire
+// interoperability against the desktop core.
 package mobilecore
 
 import (
@@ -21,7 +21,6 @@ import (
 // desktop and Steam Deck peers (8385).
 const DefaultLanDiscoveryPort = discovery.DefaultPort
 
-// IdentityJSON represents a serialized X25519 device identity for mobile storage.
 type identityPayload struct {
 	PrivateKey string `json:"privateKey"`
 	PublicKey  string `json:"publicKey"`
@@ -37,46 +36,35 @@ func GenerateIdentityJSON() (string, error) {
 		PrivateKey: e2ee.EncodeKey(id.Private),
 		PublicKey:  e2ee.EncodeKey(id.Public),
 	})
+	return string(raw), err
+}
+
+func derivePairwiseKey(myPrivateKeyBase64, peerPublicKeyBase64 string, fn func([]byte, []byte) ([]byte, error)) (string, error) {
+	priv, err := e2ee.DecodeKey(myPrivateKeyBase64)
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %w", err)
+	}
+	pub, err := e2ee.DecodeKey(peerPublicKeyBase64)
+	if err != nil {
+		return "", fmt.Errorf("invalid peer public key: %w", err)
+	}
+	key, err := fn(priv, pub)
 	if err != nil {
 		return "", err
 	}
-	return string(raw), nil
+	return base64.StdEncoding.EncodeToString(key), nil
 }
 
 // DeriveSharedKeyBase64 computes the X25519 + HKDF-SHA256 payload encryption
 // key shared between this device and a paired peer.
 func DeriveSharedKeyBase64(myPrivateKeyBase64, peerPublicKeyBase64 string) (string, error) {
-	priv, err := e2ee.DecodeKey(myPrivateKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("invalid private key: %w", err)
-	}
-	pub, err := e2ee.DecodeKey(peerPublicKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("invalid peer public key: %w", err)
-	}
-	shared, err := e2ee.SharedKey(priv, pub)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(shared), nil
+	return derivePairwiseKey(myPrivateKeyBase64, peerPublicKeyBase64, e2ee.SharedKey)
 }
 
 // DeriveAuthKeyBase64 computes the domain-separated X25519 + HKDF-SHA256
 // request authentication key used to sign LAN/relay requests.
 func DeriveAuthKeyBase64(myPrivateKeyBase64, peerPublicKeyBase64 string) (string, error) {
-	priv, err := e2ee.DecodeKey(myPrivateKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("invalid private key: %w", err)
-	}
-	pub, err := e2ee.DecodeKey(peerPublicKeyBase64)
-	if err != nil {
-		return "", fmt.Errorf("invalid peer public key: %w", err)
-	}
-	key, err := e2ee.AuthKey(priv, pub)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(key), nil
+	return derivePairwiseKey(myPrivateKeyBase64, peerPublicKeyBase64, e2ee.AuthKey)
 }
 
 // PairingFingerprint returns the symmetric 6x4 hex pairing verification code
@@ -96,18 +84,18 @@ func PairingFingerprint(publicKeyABase64, publicKeyBBase64 string) (string, erro
 // SealPayload encrypts plaintext with XChaCha20-Poly1305 using the base64
 // shared key derived by DeriveSharedKeyBase64.
 func SealPayload(sharedKeyBase64 string, plaintext []byte) ([]byte, error) {
-	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(sharedKeyBase64))
+	key, err := e2ee.DecodeKey(sharedKeyBase64)
 	if err != nil {
-		return nil, fmt.Errorf("decode shared key: %w", err)
+		return nil, fmt.Errorf("invalid shared key: %w", err)
 	}
 	return e2ee.Seal(key, plaintext)
 }
 
 // OpenPayload decrypts and authenticates ciphertext produced by SealPayload.
 func OpenPayload(sharedKeyBase64 string, ciphertext []byte) ([]byte, error) {
-	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(sharedKeyBase64))
+	key, err := e2ee.DecodeKey(sharedKeyBase64)
 	if err != nil {
-		return nil, fmt.Errorf("decode shared key: %w", err)
+		return nil, fmt.Errorf("invalid shared key: %w", err)
 	}
 	return e2ee.Open(key, ciphertext)
 }
@@ -123,10 +111,7 @@ func BuildDirectoryManifestJSON(dirPath string) (string, error) {
 		return "", err
 	}
 	raw, err := json.Marshal(m)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
+	return string(raw), err
 }
 
 // DiffManifestsJSON computes the block-level diff between two JSON manifests
@@ -139,37 +124,32 @@ func DiffManifestsJSON(localManifestJSON, remoteManifestJSON string) (string, er
 	if err := json.Unmarshal([]byte(remoteManifestJSON), &remote); err != nil {
 		return "", fmt.Errorf("parse remote manifest: %w", err)
 	}
-	diff := delta.DiffManifests(local, remote)
-	raw, err := json.Marshal(diff)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
+	raw, err := json.Marshal(delta.DiffManifests(local, remote))
+	return string(raw), err
 }
 
 // EncodeLanPing creates a wire-compatible UDP discovery datagram matching
 // internal/p2p/discovery.
 func EncodeLanPing(nodeID, deviceName, deviceType string, port int) (string, error) {
-	if strings.TrimSpace(nodeID) == "" {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
 		return "", errors.New("nodeID is required")
 	}
 	if port <= 0 || port > 65535 {
 		return "", fmt.Errorf("invalid port %d", port)
 	}
-	if strings.TrimSpace(deviceType) == "" {
+	deviceType = strings.TrimSpace(deviceType)
+	if deviceType == "" {
 		deviceType = "android"
 	}
 	raw, err := json.Marshal(discovery.Ping{
 		Type:       "savevault-ping",
-		NodeID:     strings.TrimSpace(nodeID),
+		NodeID:     nodeID,
 		DeviceName: strings.TrimSpace(deviceName),
-		DeviceType: strings.TrimSpace(deviceType),
+		DeviceType: deviceType,
 		Port:       port,
 	})
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
+	return string(raw), err
 }
 
 // DecodeLanPing validates a UDP discovery datagram (supporting both
@@ -182,12 +162,12 @@ func DecodeLanPing(raw string) (string, error) {
 	if p.Type != "savevault-ping" && p.Type != "opensave-ping" {
 		return "", fmt.Errorf("unsupported ping type %q", p.Type)
 	}
-	if strings.TrimSpace(p.NodeID) == "" || p.Port <= 0 || p.Port > 65535 {
+	p.NodeID = strings.TrimSpace(p.NodeID)
+	p.DeviceName = strings.TrimSpace(p.DeviceName)
+	p.DeviceType = strings.TrimSpace(p.DeviceType)
+	if p.NodeID == "" || p.Port <= 0 || p.Port > 65535 {
 		return "", errors.New("discovery ping missing nodeId or valid port")
 	}
 	out, err := json.Marshal(p)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
+	return string(out), err
 }

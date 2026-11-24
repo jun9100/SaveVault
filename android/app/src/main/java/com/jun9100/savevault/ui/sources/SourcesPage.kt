@@ -3,12 +3,16 @@ package com.jun9100.savevault.ui.sources
 import com.jun9100.savevault.PendingAndroidApp
 import com.jun9100.savevault.GameLibrary
 import com.jun9100.savevault.LibraryView
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
+import com.jun9100.savevault.AllFilesPathPolicy
 import com.jun9100.savevault.StoragePermissionFlow
 import com.jun9100.savevault.StoragePermissionPolicy
 import androidx.compose.foundation.background
@@ -149,29 +153,49 @@ internal fun SourcesPage(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    val openAppDetailsSettings: () -> Unit = {
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+            )
+        } catch (_: ActivityNotFoundException) {
+        }
+    }
+    val storageFlow = StoragePermissionPolicy.flowForSdk(Build.VERSION.SDK_INT)
     val legacyStorageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
+    ) { results ->
         viewModel.refreshAllFilesAccess()
+        val allGranted = results.isNotEmpty() && results.values.all { it }
+        if (!allGranted) {
+            val activity = context as? Activity
+            val permanentlyDenied = activity != null && results.keys.any { perm ->
+                results[perm] != true &&
+                    !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+            }
+            if (permanentlyDenied) openAppDetailsSettings()
+        }
     }
     val onGrantAllFiles: () -> Unit = {
-        when (StoragePermissionPolicy.flowForSdk(Build.VERSION.SDK_INT)) {
+        when (storageFlow) {
             StoragePermissionFlow.LEGACY_RUNTIME_PERMISSIONS -> {
-                val perms = StoragePermissionPolicy.legacyPermissionsForSdk(Build.VERSION.SDK_INT)
-                if (perms.isNotEmpty()) {
-                    legacyStorageLauncher.launch(perms)
-                }
+                legacyStorageLauncher.launch(StoragePermissionPolicy.legacyPermissionsForSdk(Build.VERSION.SDK_INT))
             }
             StoragePermissionFlow.MANAGE_ALL_FILES_SETTINGS -> {
                 val intent = viewModel.allFilesAccessIntent()
-                val opened = intent != null && runCatching { context.startActivity(intent) }.isSuccess
+                val opened = if (intent != null) {
+                    try {
+                        context.startActivity(intent)
+                        true
+                    } catch (_: ActivityNotFoundException) {
+                        false
+                    }
+                } else {
+                    false
+                }
                 if (!opened) {
                     // 少数机型没有「所有文件访问」直达页，退回应用详情页让用户自己进设置。
-                    runCatching {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
-                        )
-                    }
+                    openAppDetailsSettings()
                 }
             }
         }
@@ -179,7 +203,7 @@ internal fun SourcesPage(
     // Landscape: A on a group moves into its rows on the right.
     val scope = rememberCoroutineScope()
     val firstRowFocus = remember { FocusRequester() }
-    val rightFirst = remember { mutableStateOf<FocusRequester?>(null) }
+    val rightFirst = remember { arrayOfNulls<FocusRequester>(1) }
 
     HandheldPageColumns(
         commandsTitle = "来源命令",
@@ -205,7 +229,7 @@ internal fun SourcesPage(
                 state = state,
                 pending = pending,
                 canAddRoot = canAddRoot,
-                canRequestAllFiles = StoragePermissionPolicy.canRequestStorageAccess(Build.VERSION.SDK_INT),
+                usesManageAllFiles = storageFlow == StoragePermissionFlow.MANAGE_ALL_FILES_SETTINGS,
                 onPickFolder = onPickFolder,
                 onAddRootPath = { addingRootPath = true },
                 onGrantAllFiles = onGrantAllFiles,
@@ -229,7 +253,7 @@ internal fun SourcesPage(
                                     selectedGroupName = group.name
                                     scope.launch {
                                         withFrameNanos { }
-                                        val target = if (members.any(SourceRow::checkable)) firstRowFocus else rightFirst.value
+                                        val target = if (members.any(SourceRow::checkable)) firstRowFocus else rightFirst[0]
                                         target?.tryRequestFocus()
                                     }
                                 },
@@ -255,7 +279,7 @@ internal fun SourcesPage(
             }
         },
         right = { firstControl ->
-            rightFirst.value = firstControl
+            rightFirst[0] = firstControl
             if (landscape) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -315,7 +339,7 @@ private fun SourceActionsCard(
     state: SourceUiState,
     pending: Int,
     canAddRoot: Boolean,
-    canRequestAllFiles: Boolean,
+    usesManageAllFiles: Boolean,
     onPickFolder: () -> Unit,
     onAddRootPath: () -> Unit,
     onGrantAllFiles: () -> Unit,
@@ -357,16 +381,20 @@ private fun SourceActionsCard(
                     Text("添加 Root 路径", modifier = Modifier.padding(start = 8.dp))
                 }
             }
-            if (canRequestAllFiles && !state.rootAvailable && !state.allFilesGranted) {
+            if (!state.rootAvailable && !state.allFilesGranted) {
                 OutlinedButton(
                     onClick = whenIdle(state.busy, onGrantAllFiles),
                     modifier = Modifier.fillMaxWidth().settingButtonFocus().busyDimmed(state.busy),
                 ) {
                     Icon(Icons.Outlined.Terminal, contentDescription = null)
                     Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                        Text("开启「所有文件访问」")
+                        Text(if (usesManageAllFiles) "开启「所有文件访问」" else "授予存储访问权限")
                         Text(
-                            "免 Root 读取 Android/data：Eden、Yuzu、Winlator 等模拟器存档",
+                            if (usesManageAllFiles) {
+                                "免 Root 读取 Android/data：Eden、Yuzu、Winlator 等模拟器存档"
+                            } else {
+                                "免 Root 读取共享存储与 Android/data 中的模拟器存档"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -530,7 +558,7 @@ private fun SourceRowFor(
     SourceRowItem(
         row = row,
         tree = tree,
-        access = row.scan?.access ?: plannedAccessStatus(row.option, state.rootChecked, state.rootAvailable),
+        access = row.scan?.access ?: plannedAccessStatus(row.option, state.rootChecked, state.rootAvailable, state.allFilesGranted),
         busy = state.busy,
         onToggle = { enabled -> onStage(state.sourceDraft.toggle(row, enabled)) },
         onForget = tree?.let { { onForgetTree(it.uri) } },
@@ -681,13 +709,20 @@ private fun plannedAccessStatus(
     option: SaveSourceOption,
     rootChecked: Boolean,
     rootAvailable: Boolean,
+    allFilesGranted: Boolean,
 ): SourceAccessStatus = when (option.requiredAccess) {
     SourceAccessCapability.APP -> SourceAccessStatus.appAccessible()
     SourceAccessCapability.SAF -> SourceAccessStatus.pending(SourceAccessCapability.SAF)
-    SourceAccessCapability.ROOT -> if (rootChecked && !rootAvailable) {
-        SourceAccessStatus.unavailable(SourceAccessCapability.ROOT, "Root 未授权")
-    } else {
-        SourceAccessStatus.pending(SourceAccessCapability.ROOT)
+    SourceAccessCapability.ROOT -> {
+        val rootPath = (option.source as? SourceSelection.Root)?.path
+        val coveredByAllFiles = allFilesGranted && rootPath != null &&
+            (rootPath.trimEnd('/') == AllFilesPathPolicy.PRIMARY_ROOT ||
+                rootPath.startsWith("${AllFilesPathPolicy.PRIMARY_ROOT}/"))
+        when {
+            coveredByAllFiles -> SourceAccessStatus.pending(SourceAccessCapability.ALL_FILES)
+            rootChecked && !rootAvailable -> SourceAccessStatus.unavailable(SourceAccessCapability.ROOT, "Root 未授权")
+            else -> SourceAccessStatus.pending(SourceAccessCapability.ROOT)
+        }
     }
     SourceAccessCapability.ALL_FILES -> SourceAccessStatus.pending(SourceAccessCapability.ALL_FILES)
     SourceAccessCapability.UNAVAILABLE -> SourceAccessStatus.pending(SourceAccessCapability.UNAVAILABLE)

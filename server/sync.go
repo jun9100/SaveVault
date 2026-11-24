@@ -371,14 +371,19 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.quotaMu.Lock()
+	if _, statErr := os.Stat(destination); statErr == nil {
+		s.quotaMu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if !s.checkQuota(bytesWritten) {
 		s.quotaMu.Unlock()
 		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 		return
 	}
-	if err := os.Rename(temporaryPath, destination); err != nil {
+	if err := os.Link(temporaryPath, destination); err != nil {
 		s.quotaMu.Unlock()
-		if _, statErr := os.Stat(destination); statErr == nil {
+		if errors.Is(err, os.ErrExist) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -792,19 +797,12 @@ func (s *server) handlePutScopeMetadata(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 		return
 	}
-	var oldDashSize int64
-	if info, err := os.Stat(filepath.Join(s.dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
-		oldDashSize = info.Size()
-	}
 	next := s.dashboard.clone()
 	next.Scopes[scopeID] = updated
 	if err := s.persistDashboard(next); err != nil {
 		s.quotaMu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot persist metadata")
 		return
-	}
-	if info, err := os.Stat(filepath.Join(s.dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
-		s.adjustUsedBytes(info.Size() - oldDashSize)
 	}
 	s.quotaMu.Unlock()
 	s.dashboard = next

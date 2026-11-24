@@ -5,6 +5,7 @@
 package cloud
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -145,19 +147,21 @@ func IsNotConfigured(err error) bool {
 	return strings.Contains(msg, "not enabled") ||
 		strings.Contains(msg, "destination configured") ||
 		strings.Contains(msg, "destination URL configured") ||
-		strings.Contains(msg, "not authenticated")
+		strings.Contains(msg, "not authenticated") ||
+		strings.Contains(msg, "no S3 / R2") ||
+		strings.Contains(msg, "e2ee: passphrase is required") ||
+		strings.Contains(msg, "game-save sync key is required")
 }
 
-// Ready reports whether cfg can send anything: backup is on, and the
-// provider it names has somewhere to send to — a folder or an address, or a
-// sign-in.
-//
-// On is not the same thing. A fresh install has backup on, with the local
-// folder provider and no folder chosen: every snapshot then announced it was
-// "uploading", failed, and said nothing more, and the home screen reported
-// cloud backup as set up. Nothing had been backed up anywhere.
+func supportsCloudE2EE(provider string) bool {
+	return provider != GameSaveProvider && provider != "webhook"
+}
+
 func Ready(cfg store.CloudConfig) bool {
 	if !cfg.Enabled {
+		return false
+	}
+	if cfg.E2EEEnabled && supportsCloudE2EE(cfg.Provider) && strings.TrimSpace(cfg.E2EEPassphrase) == "" {
 		return false
 	}
 	switch cfg.Provider {
@@ -183,6 +187,9 @@ func Ready(cfg store.CloudConfig) bool {
 // notReady is the error for a config that is on but not Ready, worded so
 // IsNotConfigured recognises it.
 func notReady(cfg store.CloudConfig) error {
+	if cfg.E2EEEnabled && supportsCloudE2EE(cfg.Provider) && strings.TrimSpace(cfg.E2EEPassphrase) == "" {
+		return errors.New("e2ee: passphrase is required when client-side encryption is enabled")
+	}
 	switch cfg.Provider {
 	case "google_drive", "dropbox", "onedrive":
 		return fmt.Errorf("cloud sync not authenticated")
@@ -221,11 +228,18 @@ var (
 	onedriveChunkSize       int64 = 10 << 20 // multiple of 320 KiB
 )
 
+var defaultTransferHTTPClient = &http.Client{Timeout: 0}
+
 // transferClient is used for bulk data movement: no overall client
 // timeout (a 60s cap kills large transfers on slow links); each request
 // carries its own generous context deadline instead.
 func (s *Service) transferClient() *http.Client {
-	return &http.Client{Timeout: 0}
+	if s.HTTP != nil {
+		copied := *s.HTTP
+		copied.Timeout = 0
+		return &copied
+	}
+	return defaultTransferHTTPClient
 }
 
 const perRequestTransferTimeout = 30 * time.Minute
@@ -350,10 +364,11 @@ func (s *Service) upload(filePath, fileName string, logged bool) error {
 	if err != nil {
 		return err
 	}
-	// Before anything is said: "uploading" is only true of a copy that has
-	// somewhere to go. (A provider this build does not know is refused
-	// plainly below, not taken for one waiting to be set up.)
-	if _, known := s.providerFor(cfg); known && !Ready(cfg) {
+	p, ok := s.providerFor(cfg)
+	if !ok {
+		return fmt.Errorf("unsupported cloud sync provider: %s", cfg.Provider)
+	}
+	if !Ready(cfg) {
 		return notReady(cfg)
 	}
 
@@ -369,11 +384,6 @@ func (s *Service) upload(filePath, fileName string, logged bool) error {
 	size := info.Size()
 	if logged && s.Log != nil {
 		s.Log("info", fmt.Sprintf("cloud: uploading %s (%.1f MB) via %s", fileName, float64(size)/(1<<20), ProviderLabel(cfg.Provider)))
-	}
-
-	p, ok := s.providerFor(cfg)
-	if !ok {
-		return fmt.Errorf("unsupported cloud sync provider: %s", cfg.Provider)
 	}
 	if err := p.upload(f, size, fileName); err != nil {
 		return err
@@ -502,11 +512,9 @@ func (s *Service) PruneGameBranch(match func(CloudFile) bool, keep int) (int, er
 }
 
 func sortByCreatedDesc(files []CloudFile) {
-	for i := 1; i < len(files); i++ {
-		for j := i; j > 0 && files[j].CreatedTime > files[j-1].CreatedTime; j-- {
-			files[j], files[j-1] = files[j-1], files[j]
-		}
-	}
+	slices.SortFunc(files, func(a, b CloudFile) int {
+		return cmp.Compare(b.CreatedTime, a.CreatedTime)
+	})
 }
 
 var defaultCloudHTTPClient = &http.Client{Timeout: 60 * time.Second}

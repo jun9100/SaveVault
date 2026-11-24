@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"sort"
 	"strings"
 	"time"
@@ -27,12 +26,20 @@ type s3Provider struct {
 	cfg store.CloudConfig
 }
 
-func (p s3Provider) region() string {
-	r := strings.TrimSpace(p.cfg.S3Region)
-	if r == "" {
-		return "auto"
+func (p s3Provider) credentials() (accessKey, secretKey string, err error) {
+	accessKey = strings.TrimSpace(p.cfg.Username)
+	secretKey = strings.TrimSpace(p.cfg.Password)
+	if accessKey == "" || secretKey == "" {
+		return "", "", fmt.Errorf("no S3 / R2 access key configured")
 	}
-	return r
+	return accessKey, secretKey, nil
+}
+
+func (p s3Provider) region() string {
+	if r := strings.TrimSpace(p.cfg.S3Region); r != "" {
+		return r
+	}
+	return "auto"
 }
 
 func (p s3Provider) prefix() string {
@@ -48,10 +55,18 @@ func (p s3Provider) usePathStyle(parsed *url.URL) bool {
 		return true
 	}
 	host := parsed.Hostname()
-	if host == "localhost" || net.ParseIP(host) != nil {
-		return true
+	return host == "localhost" || net.ParseIP(host) != nil
+}
+
+func normalizeSigV4Host(u *url.URL) string {
+	host := strings.ToLower(u.Host)
+	if u.Scheme == "https" && strings.HasSuffix(host, ":443") {
+		return strings.TrimSuffix(host, ":443")
 	}
-	return false
+	if u.Scheme == "http" && strings.HasSuffix(host, ":80") {
+		return strings.TrimSuffix(host, ":80")
+	}
+	return host
 }
 
 func (p s3Provider) endpointURL(objectKey string, query url.Values) (*url.URL, error) {
@@ -82,20 +97,17 @@ func (p s3Provider) endpointURL(objectKey string, query url.Values) (*url.URL, e
 			u.Path = basePath + "/" + key
 		}
 	}
-	if query != nil {
-		u.RawQuery = query.Encode()
-	} else {
-		u.RawQuery = ""
-	}
+	// Ensure wire path & query match SigV4 canonical encoding exactly.
+	u.RawPath = awsEncodePath(u.Path)
+	u.RawQuery = awsCanonicalQuery(query)
 	return &u, nil
 }
 
 func (p s3Provider) upload(f *os.File, size int64, fileName string) error {
-	if strings.TrimSpace(p.cfg.Username) == "" || strings.TrimSpace(p.cfg.Password) == "" {
-		return fmt.Errorf("no S3 / R2 access key configured")
+	accessKey, secretKey, err := p.credentials()
+	if err != nil {
+		return err
 	}
-	// Compute payload SHA-256 up front so strict SigV4 providers (R2/B2/MinIO)
-	// verify integrity on PUT without needing chunked aws-chunked encoding.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
@@ -108,8 +120,7 @@ func (p s3Provider) upload(f *os.File, size int64, fileName string) error {
 		return err
 	}
 
-	key := p.prefix() + fileName
-	u, err := p.endpointURL(key, nil)
+	u, err := p.endpointURL(p.prefix()+fileName, nil)
 	if err != nil {
 		return err
 	}
@@ -119,8 +130,7 @@ func (p s3Provider) upload(f *os.File, size int64, fileName string) error {
 	}
 	req.ContentLength = size
 	req.Header.Set("Content-Type", "application/zip")
-	applyCustomHeaders(req, p.cfg.HeadersJSON)
-	p.signV4(req, payloadHash, time.Now().UTC())
+	p.signV4(req, accessKey, secretKey, payloadHash, time.Now().UTC())
 
 	resp, err := p.s.doTransfer(req)
 	if err != nil {
@@ -134,8 +144,9 @@ func (p s3Provider) upload(f *os.File, size int64, fileName string) error {
 }
 
 func (p s3Provider) list() ([]CloudFile, error) {
-	if strings.TrimSpace(p.cfg.Username) == "" || strings.TrimSpace(p.cfg.Password) == "" {
-		return nil, fmt.Errorf("no S3 / R2 access key configured")
+	accessKey, secretKey, err := p.credentials()
+	if err != nil {
+		return nil, err
 	}
 	prefix := p.prefix()
 	var files []CloudFile
@@ -143,6 +154,7 @@ func (p s3Provider) list() ([]CloudFile, error) {
 	for page := 0; page < maxListPages; page++ {
 		q := url.Values{}
 		q.Set("list-type", "2")
+		q.Set("delimiter", "/")
 		if prefix != "" {
 			q.Set("prefix", prefix)
 		}
@@ -157,8 +169,7 @@ func (p s3Provider) list() ([]CloudFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		applyCustomHeaders(req, p.cfg.HeadersJSON)
-		p.signV4(req, emptySHA256Hex, time.Now().UTC())
+		p.signV4(req, accessKey, secretKey, emptySHA256Hex, time.Now().UTC())
 
 		raw, err := p.s.fetchBytes(req)
 		if err != nil {
@@ -178,11 +189,7 @@ func (p s3Provider) list() ([]CloudFile, error) {
 		}
 		for _, item := range result.Contents {
 			rel := strings.TrimPrefix(item.Key, prefix)
-			if rel == "" || strings.Contains(rel, "/") {
-				continue
-			}
-			name := path.Base(rel)
-			if !strings.HasSuffix(strings.ToLower(name), ".zip") {
+			if rel == "" || strings.Contains(rel, "/") || !strings.HasSuffix(strings.ToLower(rel), ".zip") {
 				continue
 			}
 			created := strings.TrimSpace(item.LastModified)
@@ -191,13 +198,16 @@ func (p s3Provider) list() ([]CloudFile, error) {
 			}
 			files = append(files, CloudFile{
 				ID:          item.Key,
-				Name:        name,
+				Name:        rel,
 				SizeBytes:   item.Size,
 				CreatedTime: created,
 			})
 		}
-		if !result.IsTruncated || result.NextContinuationToken == "" {
+		if !result.IsTruncated {
 			return files, nil
+		}
+		if result.NextContinuationToken == "" || result.NextContinuationToken == token {
+			return nil, fmt.Errorf("S3 list: truncated response missing valid continuation token")
 		}
 		token = result.NextContinuationToken
 	}
@@ -205,8 +215,11 @@ func (p s3Provider) list() ([]CloudFile, error) {
 }
 
 func (p s3Provider) download(fileName, localPath string) error {
-	key := p.prefix() + fileName
-	u, err := p.endpointURL(key, nil)
+	accessKey, secretKey, err := p.credentials()
+	if err != nil {
+		return err
+	}
+	u, err := p.endpointURL(p.prefix()+fileName, nil)
 	if err != nil {
 		return err
 	}
@@ -214,8 +227,7 @@ func (p s3Provider) download(fileName, localPath string) error {
 	if err != nil {
 		return err
 	}
-	applyCustomHeaders(req, p.cfg.HeadersJSON)
-	p.signV4(req, emptySHA256Hex, time.Now().UTC())
+	p.signV4(req, accessKey, secretKey, emptySHA256Hex, time.Now().UTC())
 	if err := p.s.fetchToFile(req, localPath); err != nil {
 		return fmt.Errorf("S3: %w", err)
 	}
@@ -223,6 +235,10 @@ func (p s3Provider) download(fileName, localPath string) error {
 }
 
 func (p s3Provider) remove(f CloudFile) error {
+	accessKey, secretKey, err := p.credentials()
+	if err != nil {
+		return err
+	}
 	key := f.ID
 	if key == "" {
 		key = p.prefix() + f.Name
@@ -235,8 +251,7 @@ func (p s3Provider) remove(f CloudFile) error {
 	if err != nil {
 		return err
 	}
-	applyCustomHeaders(req, p.cfg.HeadersJSON)
-	p.signV4(req, emptySHA256Hex, time.Now().UTC())
+	p.signV4(req, accessKey, secretKey, emptySHA256Hex, time.Now().UTC())
 	if err := p.s.doOK(req); err != nil {
 		return fmt.Errorf("S3 delete: %w", err)
 	}
@@ -246,22 +261,20 @@ func (p s3Provider) remove(f CloudFile) error {
 const emptySHA256Hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 // signV4 signs an HTTP request with AWS Signature Version 4 (AWS4-HMAC-SHA256).
-func (p s3Provider) signV4(req *http.Request, payloadHash string, now time.Time) {
-	accessKey := strings.TrimSpace(p.cfg.Username)
-	secretKey := strings.TrimSpace(p.cfg.Password)
+func (p s3Provider) signV4(req *http.Request, accessKey, secretKey, payloadHash string, now time.Time) {
 	region := p.region()
 	const service = "s3"
 
 	amzDate := now.UTC().Format("20060102T150405Z")
 	dateStamp := now.UTC().Format("20060102")
 
-	host := req.URL.Host
+	host := normalizeSigV4Host(req.URL)
 	req.Host = host
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 
 	canonicalURI := awsEncodePath(req.URL.Path)
-	canonicalQuery := awsCanonicalQuery(req.URL.Query())
+	canonicalQuery := req.URL.RawQuery
 	canonicalHeaders := fmt.Sprintf("host:%s\nx-amz-content-sha256:%s\nx-amz-date:%s\n", host, payloadHash, amzDate)
 	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
 

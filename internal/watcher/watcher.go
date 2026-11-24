@@ -697,10 +697,18 @@ func closeWatcher(fsw *fsnotify.Watcher, closeFS func() error, timeout time.Dura
 
 // run is the per-game event loop: filter -> debounce -> guard -> snapshot.
 func (e *Engine) run(ctx context.Context, gw *gameWatch) {
-	defer close(gw.done)
-
+	var children sync.WaitGroup
 	var debounce *time.Timer
 	var debounceC <-chan time.Time
+	defer func() {
+		if debounce != nil {
+			debounce.Stop()
+		}
+		gw.cancel()
+		children.Wait()
+		close(gw.done)
+	}()
+
 	resetDebounce := func() {
 		var last time.Time
 		if n := gw.lastAuto.Load(); n != 0 {
@@ -721,22 +729,36 @@ func (e *Engine) run(ctx context.Context, gw *gameWatch) {
 		debounce.Reset(delay)
 	}
 
-	go e.registerFolders(ctx, gw)
-	if winreg.WatchSupported() && len(gw.regKeys) > 0 {
+	children.Add(1)
+	go func() {
+		defer children.Done()
+		e.registerFolders(ctx, gw)
+	}()
+	if winreg.Available() && len(gw.regKeys) > 0 {
 		regDir := gw.extra[winreg.LocationName]
-		keys := append([]string(nil), gw.regKeys...)
+		var regCaptureMu sync.Mutex
+		children.Add(1)
 		go func() {
-			_ = winreg.WatchKeys(ctx, keys, func(changedKey string) {
+			defer children.Done()
+			if err := winreg.WatchKeys(ctx, gw.regKeys, func(changedKey string) {
 				if regDir != "" {
-					if _, err := winreg.CaptureToDir(keys, regDir); err != nil {
+					regCaptureMu.Lock()
+					warnings, err := winreg.CaptureToDir(gw.regKeys, regDir)
+					regCaptureMu.Unlock()
+					if err != nil {
 						e.log("warn", fmt.Sprintf("capture registry change %q for %q: %v", changedKey, gw.gameID, err))
+					}
+					for _, w := range warnings {
+						e.log("warn", fmt.Sprintf("registry capture for %q: %s", gw.gameID, w))
 					}
 				}
 				select {
 				case gw.rescan <- struct{}{}:
 				default:
 				}
-			})
+			}); err != nil {
+				e.log("warn", fmt.Sprintf("registry watch for %q stopped: %v", gw.gameID, err))
+			}
 		}()
 	}
 
@@ -812,7 +834,11 @@ func (e *Engine) run(ctx context.Context, gw *gameWatch) {
 			// registerFolders asks for another read once the folders are in
 			// place, which covers anything written between the two.
 			if gw.rewatch.Swap(false) {
-				gw.queueFolder(gw.savePath)
+				if gw.isFile {
+					gw.queueFolder(filepath.Dir(gw.savePath))
+				} else {
+					gw.queueFolder(gw.savePath)
+				}
 				for _, extra := range gw.extra {
 					gw.queueFolder(extra)
 				}
@@ -865,7 +891,7 @@ func (gw *gameWatch) eventRelevant(event fsnotify.Event) bool {
 // auto-snapshot, then snapshot with retries and notify.
 func (e *Engine) handleChange(ctx context.Context, gw *gameWatch) {
 	// Gameplay guard: the game may still be mid-write.
-	for anyFileLocked(gw.savePath) {
+	for AnyFileLocked(gw.savePath) {
 		e.log("info", fmt.Sprintf("save files for %q are in use; waiting (gameplay guard)", gw.gameID))
 		select {
 		case <-ctx.Done():
@@ -925,12 +951,6 @@ func (e *Engine) handleChange(ctx context.Context, gw *gameWatch) {
 	if e.cb.OnChanged != nil {
 		e.cb.OnChanged(gw.gameID)
 	}
-}
-
-// anyFileLocked walks the save location and reports whether any file in it
-// is currently held with an incompatible sharing mode.
-func anyFileLocked(savePath string) bool {
-	return AnyFileLocked(savePath)
 }
 
 // AnyFileLocked reports whether the game still has a save file open in a way

@@ -17,20 +17,14 @@ const (
 	legacyLaunchAgentFile2 = "com.opensave.agent.plist"
 )
 
+var allLaunchAgentFiles = []string{launchAgentFileName, legacyLaunchAgentFile1, legacyLaunchAgentFile2}
+
 func launchAgentsDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(home, "Library", "LaunchAgents"), nil
-}
-
-func autostartPlistPath() (string, error) {
-	dir, err := launchAgentsDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, launchAgentFileName), nil
 }
 
 func xmlEscape(s string) string {
@@ -70,7 +64,9 @@ func SetAutostart(enabled bool) error {
 		return err
 	}
 	for _, legacy := range []string{legacyLaunchAgentFile1, legacyLaunchAgentFile2} {
-		_ = os.Remove(filepath.Join(dir, legacy))
+		if err := os.Remove(filepath.Join(dir, legacy)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove legacy launch agent plist %s: %w", legacy, err)
+		}
 	}
 	plistPath := filepath.Join(dir, launchAgentFileName)
 	if !enabled {
@@ -89,12 +85,17 @@ func SetAutostart(enabled bool) error {
 	return os.WriteFile(plistPath, buildLaunchAgentPlist(exe), 0o644)
 }
 
-// AutostartEnabled reports whether the macOS LaunchAgent plist is installed.
+// AutostartEnabled reports whether the macOS LaunchAgent plist (or a legacy
+// pre-rebrand plist) is installed.
 func AutostartEnabled() bool {
-	path, err := autostartPlistPath()
+	dir, err := launchAgentsDir()
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	for _, name := range allLaunchAgentFiles {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }

@@ -136,9 +136,11 @@ func (s *server) handleChunksMissing(w http.ResponseWriter, r *http.Request) {
 	missing := make([]string, 0, len(body.Hashes))
 	present := make([]string, 0, len(body.Hashes))
 	seen := make(map[string]struct{}, len(body.Hashes))
+	now := s.now().UTC()
 	for _, raw := range body.Hashes {
 		h := strings.ToLower(strings.TrimSpace(raw))
-		if !validObjectID(h) {
+		path, valid := s.chunkPath(h)
+		if !valid {
 			writeError(w, http.StatusBadRequest, "invalid chunk hash")
 			return
 		}
@@ -146,8 +148,8 @@ func (s *server) handleChunksMissing(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[h] = struct{}{}
-		path, _ := s.chunkPath(h)
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			_ = os.Chtimes(path, now, now)
 			present = append(present, h)
 		} else {
 			missing = append(missing, h)
@@ -167,6 +169,8 @@ func (s *server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if info, err := os.Stat(dest); err == nil && info.Mode().IsRegular() {
+		now := s.now().UTC()
+		_ = os.Chtimes(dest, now, now)
 		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxChunkSizeBytes+1))
 		writeJSON(w, http.StatusOK, map[string]any{
 			"hash":   hash,
@@ -195,26 +199,18 @@ func (s *server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 		quotaCapped = true
 	}
 	h := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(tmp, h), http.MaxBytesReader(w, r.Body, readLimit+1))
+	written, copyErr := io.Copy(io.MultiWriter(tmp, h), http.MaxBytesReader(w, r.Body, readLimit))
 	var syncErr error
-	if copyErr == nil && written <= readLimit {
+	if copyErr == nil {
 		syncErr = tmp.Sync()
 	}
 	if closeErr := tmp.Close(); closeErr != nil && copyErr == nil && syncErr == nil {
 		syncErr = closeErr
 	}
-	if written > readLimit {
-		if quotaCapped && written <= maxChunkSizeBytes {
-			writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
-		} else {
-			writeError(w, http.StatusRequestEntityTooLarge, "chunk exceeds configured size limit")
-		}
-		return
-	}
 	if copyErr != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(copyErr, &maxErr) {
-			if quotaCapped && written <= maxChunkSizeBytes {
+			if quotaCapped {
 				writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 			} else {
 				writeError(w, http.StatusRequestEntityTooLarge, "chunk exceeds configured size limit")
@@ -334,7 +330,9 @@ func (s *server) handleAssembleChunks(w http.ResponseWriter, r *http.Request) {
 	chunkPaths := make([]string, 0, len(body.Chunks))
 	chunkHashes := make([]string, 0, len(body.Chunks))
 	var missing []string
+	missingSeen := make(map[string]struct{})
 	var totalEstimated int64
+	quota := s.getQuotaBytes()
 	for _, raw := range body.Chunks {
 		h := strings.ToLower(strings.TrimSpace(raw))
 		path, valid := s.chunkPath(h)
@@ -344,12 +342,19 @@ func (s *server) handleAssembleChunks(w http.ResponseWriter, r *http.Request) {
 		}
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() {
-			missing = append(missing, h)
+			if _, dup := missingSeen[h]; !dup {
+				missingSeen[h] = struct{}{}
+				missing = append(missing, h)
+			}
 			continue
 		}
 		totalEstimated += info.Size()
 		if totalEstimated > s.maxObjectBytes {
 			writeError(w, http.StatusRequestEntityTooLarge, "assembled archive exceeds configured size limit")
+			return
+		}
+		if quota > 0 && s.usedBytes()+totalEstimated > quota {
+			writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 			return
 		}
 		chunkPaths = append(chunkPaths, path)

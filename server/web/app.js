@@ -45,6 +45,7 @@ const store = {
   activityFilter: "all",
   pruneReport: null,
   verifyReport: null,
+  webhooks: null,
   chunkStats: null,
   rebuildReport: null,
   vaultImportReport: null,
@@ -328,7 +329,8 @@ function deviceName(id) {
 }
 
 function cover(scope, size = "") {
-  return coverBlock(scope?.title || "未命名存档", scope?.logo || "", size);
+  const logo = scope?.logo && !/^https?:\/\//i.test(scope.logo) ? vaultQueryParam(scope.logo) : (scope?.logo || "");
+  return coverBlock(scope?.title || "未命名存档", logo, size);
 }
 
 function platformClass(platform) {
@@ -350,9 +352,12 @@ function platformTag(platform) {
 
 class UnauthorizedError extends Error {}
 
+const GLOBAL_ADMIN_PATHS = new Set(["vaults", "users", "sessions/revoke-all"]);
+
 async function api(path, { method = "GET", body, raw = false, headers: extraHeaders = {}, upload, contentType } = {}) {
   const headers = { "X-Game-Save-Admin": "1", ...extraHeaders };
-  if (store.sessionMode === "admin" && store.activeVault && store.activeVault !== "default") {
+  const isGlobal = GLOBAL_ADMIN_PATHS.has(path) || path.startsWith("users/");
+  if (!isGlobal && store.sessionMode === "admin" && store.activeVault && store.activeVault !== "default") {
     headers["X-Game-Save-Vault"] = store.activeVault;
   }
   if (upload !== undefined) headers["Content-Type"] = contentType || "application/octet-stream";
@@ -1957,7 +1962,7 @@ function snapshotRow(item) {
     <div class="snap-actions">
       ${item.head ? "" : `<button class="icon-btn" type="button" data-action="rollback" data-id="${esc(item.id)}" title="设为当前版本" aria-label="设为当前版本">${icon("restore")}</button>`}
       ${item.conflict ? "" : `<button class="icon-btn" type="button" data-action="pin" data-id="${esc(item.id)}" data-pinned="${item.pinned ? 1 : 0}" title="${item.pinned ? "取消固定" : "固定（不会被保留策略清理）"}">${icon("pin")}</button>`}
-      <a class="icon-btn" href="api/scopes/${encodeURIComponent(store.scopeDetail.scope.id)}/snapshots/${encodeURIComponent(item.id)}/download" title="下载加密快照" aria-label="下载加密快照" download>${icon("download")}</a>
+      <a class="icon-btn" href="${esc(vaultQueryParam(`api/scopes/${encodeURIComponent(store.scopeDetail.scope.id)}/snapshots/${encodeURIComponent(item.id)}/download`))}" title="下载加密快照" aria-label="下载加密快照" download>${icon("download")}</a>
       ${item.head ? "" : `<button class="icon-btn danger" type="button" data-action="delete-snapshot" data-id="${esc(item.id)}" title="删除快照" aria-label="删除快照">${icon("trash")}</button>`}
     </div>
   </div>`;
@@ -3334,13 +3339,19 @@ async function loadVaults() {
       storageSet("game-save-active-vault", null);
     }
     syncVaultSwitcherUI();
-  } catch { /* ignore when single-vault or not ready */ }
+  } catch (error) {
+    if (error instanceof UnauthorizedError) throw error;
+    if (error?.status === 404 && store.activeVault !== "default") {
+      store.activeVault = "default";
+      storageSet("game-save-active-vault", null);
+      syncVaultSwitcherUI();
+    }
+  }
 }
 
 function syncVaultSwitcherUI() {
   const box = $("#vault-switcher");
   const select = $("#vault-select");
-  if (!box || !select) return;
   if (store.sessionMode !== "admin" || store.vaults.length <= 1) {
     box.hidden = true;
     return;
@@ -3387,7 +3398,10 @@ async function switchVault(vaultID) {
   store.pruneReport = null;
   store.verifyReport = null;
   syncVaultSwitcherUI();
-  if (currentRoute().name === "users") location.hash = "#/";
+  const route = currentRoute().name;
+  if (route === "users" || route === "scope" || route === "savevaultScope") {
+    history.replaceState(null, "", "#/");
+  }
   await refresh();
 }
 
@@ -3441,7 +3455,7 @@ async function renderSelfOverview() {
   $("#brand-version").textContent = data.server_version || "CLOUD";
   const pct = data.quota_bytes > 0 ? Math.min(100, Math.round((data.used_bytes / data.quota_bytes) * 100)) : 0;
   main.innerHTML = `
-    ${pageHead(`你好，${data.username}`, `独立保险库 ${data.vault_id}${data.note ? ` · ${data.note}` : ""}${data.expires_at ? ` · 到期时间 ${absTime(data.expires_at)}` : ""}`)}
+    ${pageHead(`你好，${data.username}`, `独立保险库 ${esc(data.vault_id)}${data.note ? ` · ${esc(data.note)}` : ""}${data.expires_at ? ` · 到期时间 ${esc(absTime(data.expires_at))}` : ""}`)}
     <div class="kpi-grid">
       <div class="kpi"><span class="kpi-icon">${icon("database")}</span><span class="label">已用空间</span><strong class="value">${esc(formatBytes(data.used_bytes))}</strong><span class="sub">${data.quota_bytes ? `总配额 ${esc(formatBytes(data.quota_bytes))}（${pct}%）` : "不限配额"}</span></div>
       <div class="kpi"><span class="kpi-icon">${icon("archive")}</span><span class="label">同步范围</span><strong class="value">${data.scopes || 0}</strong><span class="sub">SaveVault 原生存档</span></div>
@@ -3528,10 +3542,11 @@ async function renderSelfScope(type, gameId) {
   store.selfScopeDetail = scope;
   const headID = scope.head?.id || "";
   const snapshots = [...(scope.snapshots || [])].sort((a, b) => new Date(b.receivedAt || b.createdAt || 0) - new Date(a.receivedAt || a.createdAt || 0));
-  const title = scope.gameName || scope.gameId;
+  const matchedGame = (store.selfGames || []).find((g) => (g.scopes || []).some((s) => s.type === scope.type && s.gameId === scope.gameId));
+  const title = matchedGame ? gameTitle(matchedGame) : scope.gameId;
   main.innerHTML = `
     <div class="crumbs"><a href="#/self/saves">${icon("back")}返回我的存档</a></div>
-    ${pageHead(title, `${saveVaultTypeLabel(scope.type)} · ${scope.gameId} · 共 ${snapshots.length} 个版本 · ${formatBytes(scope.archiveBytes || 0)}`)}
+    ${pageHead(title, `${esc(saveVaultTypeLabel(scope.type))} · ${esc(scope.gameId)} · 共 ${snapshots.length} 个版本 · ${esc(formatBytes(scope.archiveBytes || 0))}`)}
     <section class="card">
       <div class="card-head"><div><h2>版本时间线</h2><p>可以锁定重要节点防止被清理、将历史版本设为当前版本，或删除不需要的旧版本。</p></div></div>
       <div class="card-body os-timeline">${snapshots.length ? snapshots.map((snap) => {
@@ -3646,6 +3661,7 @@ function currentRoute() {
 
 async function render() {
   if (store.sessionMode === "tenant") return renderSelf();
+  if (!store.overview) return;
   const route = currentRoute();
   document.querySelectorAll("#nav a").forEach((link) => {
     const active = link.dataset.route === route.nav;
@@ -3692,6 +3708,8 @@ async function refresh({ quiet = false } = {}) {
       store.saveVaultRetention = null;
       store.saveVaultTombstones = null;
       store.saveVaultRetentionPreview = null;
+      store.webhooks = null;
+      store.chunkStats = null;
       await render();
     }
   } catch (error) {
@@ -4031,19 +4049,6 @@ async function onAction(event) {
       }
       return;
     }
-    case "reset-user-password": {
-      const password = await promptDialog({
-        title: "重置密码",
-        label: `用户 ${id} 的新密码`,
-        hint: "至少 8 位；保存后旧密码立即失效，已登录的设备仍持有自己的令牌。",
-        maxlength: 128,
-      });
-      if (!password) return;
-      if (await guarded(() => api(`users/${encodeURIComponent(id)}/password`, { method: "POST", body: { password } }), "密码已更新")) {
-        await reloadUsers().then(renderUsersView);
-      }
-      return;
-    }
     case "delete-user": {
       const choice = await deleteUserDialog(id);
       if (!choice) return;
@@ -4273,7 +4278,7 @@ async function onAction(event) {
       if (!dry) {
         const ok = await confirmDialog({
           title: "确认导入并覆盖当前 Vault？", danger: true, confirm: "确认导入",
-          message: `将从 ${file.name}（${formatBytes(file.size)}）校验并恢复文件与元数据到当前 Vault，并重新加载服务端状态。建议先执行“校验预览”。`,
+          message: `将从 ${esc(file.name)}（${esc(formatBytes(file.size))}）校验并恢复文件与元数据到当前 Vault，并重新加载服务端状态。建议先执行“校验预览”。`,
         });
         if (!ok) return;
       }
@@ -4511,10 +4516,12 @@ $("#login-form").addEventListener("submit", async (event) => {
   }
 });
 
+const hasOpenDialog = () => !$("#modal-root").hidden || Boolean(document.querySelector("dialog[open]"));
+
 document.addEventListener("click", onAction);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-  if ($("#app").hidden || !$("#modal-root").hidden) return;
+  if ($("#app").hidden || hasOpenDialog()) return;
   const active = document.activeElement;
   if (active && active.matches("input, textarea, select, [contenteditable]")) return;
   const search = $(".search input", main);
@@ -4532,10 +4539,10 @@ window.addEventListener("hashchange", () => {
   window.scrollTo(0, 0);
 });
 setInterval(() => {
-  if (!document.hidden && !$("#app").hidden && $("#modal-root").hidden) refresh({ quiet: true });
+  if (!document.hidden && !$("#app").hidden && !hasOpenDialog()) refresh({ quiet: true });
 }, 20000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && !$("#app").hidden && $("#modal-root").hidden) refresh({ quiet: true });
+  if (!document.hidden && !$("#app").hidden && !hasOpenDialog()) refresh({ quiet: true });
 });
 
 // Inline handlers are blocked by the CSP, so broken cover images are removed here.

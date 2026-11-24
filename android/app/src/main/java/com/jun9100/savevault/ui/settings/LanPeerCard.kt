@@ -1,5 +1,7 @@
 package com.jun9100.savevault.ui.settings
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.jun9100.savevault.LanPeer
@@ -29,6 +32,10 @@ import com.jun9100.savevault.LanPeerScanner
 import com.jun9100.savevault.R
 import com.jun9100.savevault.SourceUiState
 import com.jun9100.savevault.ui.input.busyDimmed
+import java.io.IOException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -40,8 +47,10 @@ internal fun LanPeerCard(
     state: SourceUiState,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var scanning by remember { mutableStateOf(false) }
+    var probingIds by remember { mutableStateOf(emptySet<String>()) }
     var peers by remember { mutableStateOf<List<LanPeer>>(emptyList()) }
     var statusLine by remember { mutableStateOf<String?>(null) }
     val selfName = state.gameSaveAuth.whoami?.name?.takeIf { it.isNotBlank() } ?: (Build.MODEL ?: "Android")
@@ -68,21 +77,32 @@ internal fun LanPeerCard(
                 onClick = {
                     if (scanning) return@OutlinedButton
                     scanning = true
-                    statusLine = "正在扫描局域网 SaveVault 设备（约 2.6 秒）…"
+                    statusLine = "正在扫描局域网 SaveVault 设备（约 3.8 秒）…"
                     scope.launch {
-                        val discovered = runCatching {
-                            LanPeerScanner.discover(selfNodeId = selfId, selfDeviceName = selfName)
-                        }.getOrDefault(emptyList())
-                        val probed = discovered.map { peer ->
-                            LanPeerScanner.probePeer(peer, fromNodeId = selfId)
+                        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                        val multicastLock = wifi?.createMulticastLock("savevault-lan-discovery")?.apply {
+                            setReferenceCounted(false)
                         }
-                        peers = probed
-                        statusLine = if (probed.isEmpty()) {
-                            "未发现局域网设备；请确认 PC 或 Steam Deck 已启动 SaveVault 且处于同一 Wi-Fi。"
-                        } else {
-                            "发现 ${probed.size} 台局域网设备。"
+                        try {
+                            multicastLock?.acquire()
+                            val discovered = LanPeerScanner.discover(selfNodeId = selfId, selfDeviceName = selfName)
+                            val probed = coroutineScope {
+                                discovered.map { peer ->
+                                    async { LanPeerScanner.probePeer(peer, fromNodeId = selfId) }
+                                }.awaitAll()
+                            }
+                            peers = probed
+                            statusLine = if (probed.isEmpty()) {
+                                "未发现局域网设备；请确认 PC 或 Steam Deck 已启动 SaveVault 且处于同一 Wi-Fi。"
+                            } else {
+                                "发现 ${probed.size} 台局域网设备。"
+                            }
+                        } catch (error: IOException) {
+                            statusLine = "扫描失败：${error.message ?: "无法监听局域网广播"}"
+                        } finally {
+                            if (multicastLock?.isHeld == true) multicastLock.release()
+                            scanning = false
                         }
-                        scanning = false
                     }
                 },
                 enabled = !scanning && !state.busy,
@@ -109,6 +129,7 @@ internal fun LanPeerCard(
             }
 
             peers.forEach { peer ->
+                val isProbing = peer.nodeId in probingIds
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -123,9 +144,14 @@ internal fun LanPeerCard(
                         )
                         val detail = buildString {
                             append("${peer.address}:${peer.port}")
-                            if (peer.appVersion.isNotBlank()) append(" · v${peer.appVersion}")
+                            val version = peer.appVersion.trim().removePrefix("v")
+                            if (version.isNotEmpty()) append(" · v$version")
+                            if (peer.paired == true) append(" · 已配对")
                             when (peer.reachable) {
-                                true -> append(" · 在线 ${peer.latencyMs ?: 1}ms")
+                                true -> {
+                                    append(" · 在线")
+                                    peer.latencyMs?.let { append(" ${it}ms") }
+                                }
                                 false -> append(" · ${peer.probeError ?: "不可达"}")
                                 null -> Unit
                             }
@@ -142,12 +168,18 @@ internal fun LanPeerCard(
                     }
                     OutlinedButton(
                         onClick = {
+                            if (isProbing) return@OutlinedButton
+                            probingIds = probingIds + peer.nodeId
                             scope.launch {
-                                val updated = LanPeerScanner.probePeer(peer, fromNodeId = selfId)
-                                peers = peers.map { if (it.nodeId == updated.nodeId) updated else it }
+                                try {
+                                    val updated = LanPeerScanner.probePeer(peer, fromNodeId = selfId)
+                                    peers = peers.map { if (it.nodeId == updated.nodeId) updated else it }
+                                } finally {
+                                    probingIds = probingIds - peer.nodeId
+                                }
                             }
                         },
-                        enabled = !scanning,
+                        enabled = !scanning && !state.busy && !isProbing,
                         modifier = Modifier.settingButtonFocus(),
                     ) {
                         Text(stringResource(R.string.lan_p2p_reprobe))

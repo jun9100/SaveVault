@@ -277,19 +277,46 @@ func (s *Server) tokenFilePath() string {
 	return filepath.Join(s.Daemon.Paths.HomeDir, "daemon.token")
 }
 
+func writePrivateFileAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".savevault-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
 func (s *Server) writeTokenFile() {
-	if s.localToken == "" || s.Daemon == nil || s.Daemon.Paths.HomeDir == "" {
+	if s.localToken == "" || s.Daemon.Paths.HomeDir == "" {
 		return
 	}
-	if err := os.WriteFile(s.tokenFilePath(), []byte(s.localToken), 0o600); err != nil {
+	if err := writePrivateFileAtomic(s.tokenFilePath(), []byte(s.localToken)); err != nil {
 		s.Daemon.Log.Log("warn", "could not publish daemon auth token: "+err.Error())
 	}
 }
 
 func (s *Server) requireLocalToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.RequireLocalAuth || s.localToken == "" {
+		if !s.RequireLocalAuth {
 			next.ServeHTTP(w, r)
+			return
+		}
+		if s.localToken == "" {
+			writeError(w, http.StatusInternalServerError, "local daemon auth token is not initialized")
 			return
 		}
 		candidate := ""
@@ -415,7 +442,7 @@ func (s *Server) writeAddrFile(addr string) {
 	if _, port, err := net.SplitHostPort(addr); err == nil {
 		addr = "127.0.0.1:" + port
 	}
-	if err := os.WriteFile(s.addrFilePath(), []byte(addr), 0o600); err != nil {
+	if err := writePrivateFileAtomic(s.addrFilePath(), []byte(addr)); err != nil {
 		s.Daemon.Log.Log("warn", "could not publish daemon address: "+err.Error())
 	}
 }

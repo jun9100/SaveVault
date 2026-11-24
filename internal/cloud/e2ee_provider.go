@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
@@ -72,10 +73,11 @@ func (e encryptedProvider) list() ([]CloudFile, error) {
 }
 
 func (e encryptedProvider) download(fileName, localPath string) error {
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o777); err != nil {
+	dir := filepath.Dir(localPath)
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".savevault-e2ee-dl-*")
+	tmp, err := os.CreateTemp(dir, ".savevault-e2ee-dl-*")
 	if err != nil {
 		return err
 	}
@@ -97,8 +99,7 @@ func (e encryptedProvider) download(fileName, localPath string) error {
 		rawFile.Close()
 		return readErr
 	}
-	isEncrypted := n == len(cloudE2EEMagic) && string(magic) == cloudE2EEMagic
-	if !isEncrypted {
+	if n < len(cloudE2EEMagic) || string(magic) != cloudE2EEMagic {
 		// Backward-compatible passthrough for legacy plaintext backups.
 		rawFile.Close()
 		return os.Rename(tmpPath, localPath)
@@ -129,24 +130,24 @@ func deriveCloudE2EEKey(passphrase string, salt []byte) []byte {
 	)
 }
 
-func chunkNonce(baseNonce []byte, chunkIndex uint64) []byte {
-	n := make([]byte, cloudE2EENonceLen)
-	copy(n, baseNonce)
+func fillChunkNonce(dst, baseNonce []byte, chunkIndex uint64) {
+	copy(dst, baseNonce)
 	var idxBytes [8]byte
 	binary.BigEndian.PutUint64(idxBytes[:], chunkIndex)
 	for i := 0; i < 8; i++ {
-		n[cloudE2EENonceLen-8+i] ^= idxBytes[i]
+		dst[cloudE2EENonceLen-8+i] ^= idxBytes[i]
 	}
-	return n
 }
 
-func chunkAAD(chunkIndex uint64, final bool) []byte {
-	var aad [9]byte
-	binary.BigEndian.PutUint64(aad[:8], chunkIndex)
+func fillChunkAAD(dst *[cloudE2EEHeaderLen + 9]byte, hdr *[cloudE2EEHeaderLen]byte, chunkIndex uint64, final bool) []byte {
+	copy(dst[:cloudE2EEHeaderLen], hdr[:])
+	binary.BigEndian.PutUint64(dst[cloudE2EEHeaderLen:cloudE2EEHeaderLen+8], chunkIndex)
 	if final {
-		aad[8] = 1
+		dst[cloudE2EEHeaderLen+8] = 1
+	} else {
+		dst[cloudE2EEHeaderLen+8] = 0
 	}
-	return aad[:]
+	return dst[:]
 }
 
 func encryptCloudStream(dst io.Writer, src io.Reader, passphrase string) error {
@@ -168,21 +169,23 @@ func encryptCloudStream(dst io.Writer, src io.Reader, passphrase string) error {
 	}
 
 	chunkSize := cloudE2EEChunkSize
-	if chunkSize == 0 {
-		chunkSize = 64 * 1024
-	}
 	var hdr [cloudE2EEHeaderLen]byte
 	copy(hdr[0:6], cloudE2EEMagic)
 	copy(hdr[6:22], salt)
 	copy(hdr[22:46], baseNonce)
 	binary.BigEndian.PutUint32(hdr[46:50], chunkSize)
-	if _, err := dst.Write(hdr[:]); err != nil {
+
+	bw := bufio.NewWriterSize(dst, 64*1024)
+	if _, err := bw.Write(hdr[:]); err != nil {
 		return err
 	}
 
 	buf := make([]byte, int(chunkSize)+1)
-	var chunkIndex uint64
+	ctBuf := make([]byte, 0, int(chunkSize)+aead.Overhead())
+	nonce := make([]byte, cloudE2EENonceLen)
+	var aadBuf [cloudE2EEHeaderLen + 9]byte
 	var lenBuf [4]byte
+	var chunkIndex uint64
 
 	// Read chunkSize+1 bytes each step so we always know with certainty whether
 	// the current chunk is the final one (preventing truncation attacks).
@@ -194,25 +197,21 @@ func encryptCloudStream(dst io.Writer, src io.Reader, passphrase string) error {
 		if rerr != nil && !eof {
 			return rerr
 		}
+		plain := buf[:chunkSize]
 		if eof {
-			ct := aead.Seal(nil, chunkNonce(baseNonce, chunkIndex), buf[:total], chunkAAD(chunkIndex, true))
-			binary.BigEndian.PutUint32(lenBuf[:], uint32(len(ct)))
-			if _, err := dst.Write(lenBuf[:]); err != nil {
-				return err
-			}
-			if _, err := dst.Write(ct); err != nil {
-				return err
-			}
-			return nil
+			plain = buf[:total]
 		}
-		// Full chunkSize bytes + 1 lookahead byte read -> not final.
-		ct := aead.Seal(nil, chunkNonce(baseNonce, chunkIndex), buf[:chunkSize], chunkAAD(chunkIndex, false))
+		fillChunkNonce(nonce, baseNonce, chunkIndex)
+		ct := aead.Seal(ctBuf[:0], nonce, plain, fillChunkAAD(&aadBuf, &hdr, chunkIndex, eof))
 		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(ct)))
-		if _, err := dst.Write(lenBuf[:]); err != nil {
+		if _, err := bw.Write(lenBuf[:]); err != nil {
 			return err
 		}
-		if _, err := dst.Write(ct); err != nil {
+		if _, err := bw.Write(ct); err != nil {
 			return err
+		}
+		if eof {
+			return bw.Flush()
 		}
 		buf[0] = buf[chunkSize]
 		pending = 1
@@ -245,45 +244,51 @@ func decryptCloudStream(dst io.Writer, src io.Reader, passphrase string) error {
 	}
 
 	maxCipherChunk := uint64(chunkSize) + uint64(aead.Overhead())
+	ctBuf := make([]byte, maxCipherChunk)
+	plainBuf := make([]byte, 0, chunkSize)
+	nonce := make([]byte, cloudE2EENonceLen)
+	var aadBuf [cloudE2EEHeaderLen + 9]byte
 	var lenBuf [4]byte
 	var chunkIndex uint64
+
+	bw := bufio.NewWriterSize(dst, 64*1024)
 	for {
-		_, err := io.ReadFull(src, lenBuf[:])
-		if err != nil {
+		if _, err := io.ReadFull(src, lenBuf[:]); err != nil {
 			return fmt.Errorf("e2ee: unexpected end of encrypted stream: %w", err)
 		}
 		ctLen := binary.BigEndian.Uint32(lenBuf[:])
 		if uint64(ctLen) < uint64(aead.Overhead()) || uint64(ctLen) > maxCipherChunk {
 			return errors.New("e2ee: invalid encrypted chunk length")
 		}
-		ct := make([]byte, ctLen)
+		ct := ctBuf[:ctLen]
 		if _, err := io.ReadFull(src, ct); err != nil {
 			return fmt.Errorf("e2ee: truncated encrypted chunk: %w", err)
 		}
 
-		// Try non-final AAD first; if that fails, try final AAD (ensures the
-		// stream ends immediately after the authenticated final chunk).
-		nonce := chunkNonce(baseNonce, chunkIndex)
-		plain, openErr := aead.Open(nil, nonce, ct, chunkAAD(chunkIndex, false))
+		fillChunkNonce(nonce, baseNonce, chunkIndex)
+		plain, openErr := aead.Open(plainBuf[:0], nonce, ct, fillChunkAAD(&aadBuf, &hdr, chunkIndex, false))
 		if openErr == nil {
-			if _, err := dst.Write(plain); err != nil {
+			if _, err := bw.Write(plain); err != nil {
 				return err
 			}
 			chunkIndex++
 			continue
 		}
-		plain, finalErr := aead.Open(nil, nonce, ct, chunkAAD(chunkIndex, true))
+		plain, finalErr := aead.Open(plainBuf[:0], nonce, ct, fillChunkAAD(&aadBuf, &hdr, chunkIndex, true))
 		if finalErr != nil {
 			return errors.New("e2ee: decryption failed (wrong passphrase or corrupted archive)")
 		}
-		if _, err := dst.Write(plain); err != nil {
+		if _, err := bw.Write(plain); err != nil {
 			return err
 		}
-		// Reject trailing garbage after the authenticated final chunk.
+		// Reject trailing garbage or underlying read errors after the authenticated final chunk.
 		var extra [1]byte
-		if n, _ := src.Read(extra[:]); n > 0 {
-			return errors.New("e2ee: unexpected trailing bytes after final chunk")
+		if _, err := io.ReadFull(src, extra[:]); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return errors.New("e2ee: unexpected trailing bytes after final chunk")
+			}
+			return fmt.Errorf("e2ee: trailing read error: %w", err)
 		}
-		return nil
+		return bw.Flush()
 	}
 }

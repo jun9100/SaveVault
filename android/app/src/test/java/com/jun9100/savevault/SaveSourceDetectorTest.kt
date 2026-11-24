@@ -560,9 +560,21 @@ class SaveSourceDetectorTest {
             val vita = detected.single { it.kind == "vita3k" && it.titleId == "PCSE00120" }
             assertEquals("vita3k:PCSE00120", vita.gameKey)
             assertEquals("Persona 4 Golden", vita.displayName)
+            assertTrue(detected.none { it.kind == "vita3k" && it.gameKey == null })
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun paramSfoParserStopsAtNulAndRejectsOverflowOffsets() {
+        val withGarbageAfterNul = buildTestParamSfo("Gravity Rush\u0000TRAILING")
+        assertEquals("Gravity Rush", ParamSfoParser.parseTitle(withGarbageAfterNul))
+
+        // Corrupt dataOffset to Int.MAX_VALUE to verify no signed-int overflow.
+        val corrupted = withGarbageAfterNul.copyOf()
+        ByteBuffer.wrap(corrupted).order(ByteOrder.LITTLE_ENDIAN).putInt(20 + 12, Int.MAX_VALUE)
+        assertNull(ParamSfoParser.parseTitle(corrupted))
     }
 
     @Test
@@ -572,7 +584,9 @@ class SaveSourceDetectorTest {
             rootPath = root,
             directoryPaths = listOf(
                 root,
+                "$root/custom-dolphin/Wii",
                 "$root/custom-dolphin/Wii/title/00010000/524d4745/data",
+                "$root/custom-dolphin/GC",
                 "$root/custom-dolphin/GC/USA/Card A",
                 "$root/DraStic/backup",
                 "$root/DraStic/savestates",
@@ -585,6 +599,7 @@ class SaveSourceDetectorTest {
         val gc = report.detected.single { it.gameKey == "gc:USA:card a" }
         assertEquals("dolphin", gc.kind)
         assertEquals("GameCube USA Card A", gc.displayName)
+        assertTrue(report.detected.none { it.kind == "dolphin" && it.gameKey == null })
 
         val drastic = report.detected.filter { it.gameKey == "emulator:drastic" }
         assertEquals(2, drastic.size)

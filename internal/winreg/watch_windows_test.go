@@ -12,8 +12,8 @@ import (
 )
 
 func TestWatchKeysRealTimeNotificationWindows(t *testing.T) {
-	if !WatchSupported() {
-		t.Fatal("expected WatchSupported() == true on Windows")
+	if !Available() {
+		t.Fatal("expected Available() == true on Windows")
 	}
 	sub := fmt.Sprintf(`Software\SaveVaultWatchTest_%d`, time.Now().UnixNano())
 	fullPath := `HKEY_CURRENT_USER\` + sub

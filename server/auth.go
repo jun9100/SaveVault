@@ -4,13 +4,8 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -52,7 +47,7 @@ func (l *loginLimiter) blocked(address string, now time.Time) bool {
 	return entry.count >= loginFailureLimit
 }
 
-func (l *loginLimiter) fail(address string, now time.Time) {
+func (l *loginLimiter) fail(address string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.failures == nil {
@@ -82,6 +77,7 @@ func (l *loginLimiter) fail(address string, now time.Time) {
 	}
 	entry.count++
 	l.failures[address] = entry
+	return entry.count == loginFailureLimit
 }
 
 func (l *loginLimiter) reset(address string) {
@@ -90,39 +86,9 @@ func (l *loginLimiter) reset(address string) {
 	delete(l.failures, address)
 }
 
-func (s *server) sessionSignature(expires int64) string {
-	mac := hmac.New(sha256.New, []byte(s.adminToken))
-	mac.Write([]byte("game-save session v1:" + strconv.FormatInt(expires, 10)))
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func (s *server) newSessionValue(now time.Time) (string, time.Time) {
-	if s.sessions != nil {
-		if value, rec, err := s.sessions.create(sessionRoleAdmin, "", defaultVaultID, now); err == nil {
-			return value, rec.ExpiresAt
-		}
-	}
-	expires := now.Add(sessionLifetime)
-	unix := expires.Unix()
-	return strconv.FormatInt(unix, 10) + "." + s.sessionSignature(unix), expires
-}
-
 func (s *server) validSession(value string, now time.Time) bool {
-	if s.sessions != nil {
-		if _, ok := s.sessions.validate(value, sessionRoleAdmin, now); ok {
-			return true
-		}
-		return false
-	}
-	encodedExpiry, signature, ok := strings.Cut(value, ".")
-	if !ok {
-		return false
-	}
-	expires, err := strconv.ParseInt(encodedExpiry, 10, 64)
-	if err != nil || now.Unix() >= expires {
-		return false
-	}
-	return hmac.Equal([]byte(signature), []byte(s.sessionSignature(expires)))
+	_, ok := s.sessions.validate(value, sessionRoleAdmin, now)
+	return ok
 }
 
 func (s *server) adminTokenMatches(candidate string) bool {
@@ -145,10 +111,7 @@ func (s *server) adminAuthenticatedPeek(r *http.Request) bool {
 }
 
 func (s *server) adminAuthenticatedWithLimit(r *http.Request, recordFailure bool) (bool, bool) {
-	now := time.Now()
-	if s.now != nil {
-		now = s.now()
-	}
+	now := s.now()
 	if cookie, err := r.Cookie(sessionCookie); err == nil && s.validSession(cookie.Value, now) {
 		return true, false
 	}
@@ -161,8 +124,8 @@ func (s *server) adminAuthenticatedWithLimit(r *http.Request, recordFailure bool
 			s.logins.reset(address)
 			return true, false
 		}
-		if recordFailure {
-			s.logins.fail(address, now)
+		if recordFailure && s.logins.fail(address, now) {
+			s.notifyWebhooks(event{Time: now.UTC(), Kind: eventAuthLocked, Detail: "admin basic auth locked for " + address})
 		}
 		return false, false
 	}
@@ -199,10 +162,6 @@ func (s *server) requireAdminWrite(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-func requestIsSecure(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.adminToken == "" {
 		http.NotFound(w, r)
@@ -212,13 +171,9 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "missing "+csrfHeader+" header")
 		return
 	}
-	now := time.Now()
-	if s.now != nil {
-		now = s.now()
-	}
+	now := s.now()
 	address := s.clientIP(r)
 	if s.logins.blocked(address, now) {
-		s.notifyWebhooks(event{Time: now.UTC(), Kind: eventAuthLocked, Detail: "admin login blocked for " + address})
 		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
 		return
 	}
@@ -229,22 +184,28 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.adminTokenMatches(request.Token) {
-		s.logins.fail(address, now)
+		if s.logins.fail(address, now) {
+			s.notifyWebhooks(event{Time: now.UTC(), Kind: eventAuthLocked, Detail: "admin login locked for " + address})
+		}
 		writeError(w, http.StatusUnauthorized, "invalid administrator token")
 		return
 	}
 	s.logins.reset(address)
-	value, expires := s.newSessionValue(now)
+	value, rec, err := s.sessions.create(sessionRoleAdmin, "", defaultVaultID, now)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot allocate session")
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    value,
 		Path:     "/",
-		Expires:  expires,
+		Expires:  rec.ExpiresAt,
 		HttpOnly: true,
 		Secure:   s.trustedProxies.isSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "expires_at": expires.UTC()})
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "expires_at": rec.ExpiresAt.UTC()})
 }
 
 func hasAdminWriteHeader(r *http.Request) bool {
@@ -256,7 +217,7 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "missing "+csrfHeader+" header")
 		return
 	}
-	if cookie, err := r.Cookie(sessionCookie); err == nil && s.sessions != nil {
+	if cookie, err := r.Cookie(sessionCookie); err == nil {
 		s.sessions.revokeCookie(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{

@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-// WatchSupported reports whether real-time registry change notification is
-// supported on the current OS (true on Windows via RegNotifyChangeKeyValue).
-func WatchSupported() bool { return watchSupported() }
-
 // WatchKeys watches the given Windows registry key paths (recursively) and
 // invokes onChange whenever a key, subkey, or value under any of them changes.
 // It blocks until ctx is cancelled, returning nil on clean cancellation.

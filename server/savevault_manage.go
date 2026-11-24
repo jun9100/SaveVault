@@ -421,16 +421,10 @@ func (s *server) manageRemove(path string) error {
 }
 
 func (s *server) manageRemoveAll(path string) error {
-	var err error
 	if s.manageFileOps.RemoveAll != nil {
-		err = s.manageFileOps.RemoveAll(path)
-	} else {
-		err = os.RemoveAll(path)
+		return s.manageFileOps.RemoveAll(path)
 	}
-	if err == nil {
-		s.reconcileUsedBytes()
-	}
-	return err
+	return os.RemoveAll(path)
 }
 
 func (s *server) manageWriteJSON(path string, value any) error {
@@ -716,6 +710,9 @@ func (s *server) handleDeleteSaveVaultScope(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	s.saveVaultMu.Unlock()
+	if nextTombstone.Bytes > 0 {
+		s.adjustUsedBytes(-nextTombstone.Bytes)
+	}
 
 	s.recordSaveVaultManageEvent(eventDeleteScope,
 		fmt.Sprintf("%s/%s %d versions, %d bytes", kind, gameID, nextTombstone.Snapshots, nextTombstone.Bytes),
@@ -807,6 +804,13 @@ func (s *server) handleRestoreSaveVaultScope(w http.ResponseWriter, r *http.Requ
 		moved = append(moved, name)
 	}
 
+	var restoredBytes int64
+	for _, name := range moved {
+		if info, err := os.Stat(filepath.Join(destinationDir, name)); err == nil && info.Mode().IsRegular() {
+			restoredBytes += info.Size()
+		}
+	}
+
 	nextState := s.saveVaultState.clone()
 	nextState.Scopes[key] = restored
 	if err := s.persistSaveVaultState(nextState); err != nil {
@@ -816,6 +820,9 @@ func (s *server) handleRestoreSaveVaultScope(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.saveVaultState = nextState
+	if restoredBytes > 0 {
+		s.adjustUsedBytes(restoredBytes)
+	}
 
 	catalogEntries := make(map[string]saveVaultFileMetadata)
 	_ = readJSONFile(filepath.Join(trashDir, "catalog.json"), &catalogEntries)

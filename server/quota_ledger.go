@@ -4,60 +4,60 @@
 package main
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// initUsedBytesLedger computes the exact initial vault byte usage once at
-// startup so subsequent quota checks run in O(1) via atomic loads instead of
-// walking the entire data directory tree on every upload.
-func (s *server) initUsedBytesLedger() {
-	s.reconcileUsedBytes()
-}
-
-// usedBytes returns the vault's current byte usage in O(1) once initialized.
+// usedBytes returns the vault's current byte usage in O(1).
 func (s *server) usedBytes() int64 {
-	if !s.usedBytesInit.Load() {
-		return s.reconcileUsedBytes()
-	}
-	v := s.usedBytesVal.Load()
-	if v < 0 {
-		return 0
-	}
-	return v
+	return s.usedBytesVal.Load()
 }
 
 // adjustUsedBytes updates the O(1) usage ledger by delta (positive on write,
-// negative on deletion). Clamped at zero so concurrent deletions never go
-// negative.
+// negative on deletion) and fires quota_warning once when committed usage
+// crosses 80% of the configured quota.
 func (s *server) adjustUsedBytes(delta int64) {
-	if delta == 0 || !s.usedBytesInit.Load() {
+	if delta == 0 {
 		return
 	}
+	var prev, next int64
 	for {
-		cur := s.usedBytesVal.Load()
-		next := cur + delta
+		prev = s.usedBytesVal.Load()
+		next = prev + delta
 		if next < 0 {
+			slog.Warn("quota ledger underflow; clamping to zero", "vault", s.vaultID, "prev", prev, "delta", delta)
 			next = 0
 		}
-		if s.usedBytesVal.CompareAndSwap(cur, next) {
-			s.usedBytesUpdatedAt.Store(s.now().UTC().UnixNano())
-			return
+		if s.usedBytesVal.CompareAndSwap(prev, next) {
+			break
+		}
+	}
+	if delta > 0 {
+		if quota := s.getQuotaBytes(); quota > 0 {
+			warnThreshold := quota * 80 / 100
+			if prev < warnThreshold && next >= warnThreshold {
+				s.notifyWebhooks(event{
+					Time:   s.now().UTC(),
+					Kind:   eventQuotaWarning,
+					Detail: fmt.Sprintf("usage reached %d%% (%d / %d bytes)", next*100/quota, next, quota),
+				})
+			}
 		}
 	}
 }
 
-// reconcileUsedBytes scans the vault directory tree and resets the atomic
-// usage ledger to the exact on-disk total. Used at startup, after bulk
-// prune/import operations, and on explicit admin reconciliation.
+// reconcileUsedBytes scans the vault directory tree under s.quotaMu so
+// concurrent uploads cannot have their increments overwritten by a stale scan.
 func (s *server) reconcileUsedBytes() int64 {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
 	actual := vaultDirectoryUsedBytes(s.dataDir)
 	s.usedBytesVal.Store(actual)
-	s.usedBytesInit.Store(true)
 	s.usedBytesReconciles.Add(1)
-	s.usedBytesUpdatedAt.Store(s.now().UTC().UnixNano())
 	return actual
 }
 

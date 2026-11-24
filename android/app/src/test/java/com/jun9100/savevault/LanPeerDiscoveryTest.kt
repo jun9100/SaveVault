@@ -53,7 +53,26 @@ class LanPeerDiscoveryTest {
         assertTrue(LanPingCodec.isPrivateLanAddress("10.0.1.9"))
         assertTrue(LanPingCodec.isPrivateLanAddress("172.16.4.2"))
         assertTrue(LanPingCodec.isPrivateLanAddress("100.64.12.3"))
+        assertTrue(LanPingCodec.isPrivateLanAddress("::1"))
+        assertTrue(LanPingCodec.isPrivateLanAddress("fd12::1"))
+        assertFalse(LanPingCodec.isPrivateLanAddress(""))
+        assertFalse(LanPingCodec.isPrivateLanAddress("   "))
+        assertFalse(LanPingCodec.isPrivateLanAddress("localhost"))
         assertFalse(LanPingCodec.isPrivateLanAddress("8.8.8.8"))
+        assertFalse(LanPingCodec.isPrivateLanAddress("2001:4860:4860::8888"))
+    }
+
+    @Test
+    fun parsePingResponseDecodesMultiChunkUtf8Body() {
+        val part1 = "{\"status\":\"ok\",\"deviceName\":\"主机"
+        val part2 = "A\",\"appVersion\":\"1.6.0\"}"
+        val p1Hex = part1.toByteArray(StandardCharsets.UTF_8).size.toString(16)
+        val p2Hex = part2.toByteArray(StandardCharsets.UTF_8).size.toString(16)
+        val raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n$p1Hex\r\n$part1\r\n$p2Hex\r\n$part2\r\n0\r\n\r\n"
+        val parsed = LanPeerScanner.parsePingResponse(raw)
+        assertEquals("ok", parsed.optString("status"))
+        assertEquals("主机A", parsed.optString("deviceName"))
+        assertEquals("1.6.0", parsed.optString("appVersion"))
     }
 
     @Test

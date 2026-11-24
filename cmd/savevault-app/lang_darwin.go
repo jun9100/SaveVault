@@ -13,7 +13,8 @@ import (
 // to macOS's AppleLanguages preference.
 func systemLanguage() string {
 	for _, k := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
-		if v := os.Getenv(k); v != "" && v != "C" && v != "POSIX" {
+		v := os.Getenv(k)
+		if v != "" && v != "C" && v != "POSIX" && !strings.EqualFold(v, "C.UTF-8") {
 			return v
 		}
 	}

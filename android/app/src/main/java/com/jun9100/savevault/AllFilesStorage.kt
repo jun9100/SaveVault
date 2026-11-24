@@ -518,7 +518,3 @@ internal fun hasAllFilesPermission(context: Context): Boolean =
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
             PackageManager.PERMISSION_GRANTED
     }
-
-/** 仅用于兼容未传入 Context 的检查。 */
-internal fun isExternalStorageManager(): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()

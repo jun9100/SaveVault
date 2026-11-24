@@ -15,7 +15,6 @@ enum class StoragePermissionFlow {
 
 object StoragePermissionPolicy {
     const val ANDROID_R_API = 30
-    const val ANDROID_M_API = 23
 
     fun flowForSdk(sdkInt: Int): StoragePermissionFlow =
         if (sdkInt >= ANDROID_R_API) {
@@ -24,10 +23,8 @@ object StoragePermissionPolicy {
             StoragePermissionFlow.LEGACY_RUNTIME_PERMISSIONS
         }
 
-    fun canRequestStorageAccess(sdkInt: Int): Boolean = sdkInt >= ANDROID_M_API
-
     fun legacyPermissionsForSdk(sdkInt: Int): Array<String> =
-        if (sdkInt in ANDROID_M_API until ANDROID_R_API) {
+        if (sdkInt < ANDROID_R_API) {
             arrayOf(
                 Manifest.permission.READ_EXTERNAL_STORAGE,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,

@@ -377,7 +377,9 @@ func (s *server) recordSaveVaultCoverSuccess(gameKey string, cover saveVaultMeta
 	next.Games[gameKey] = record
 	if err := s.persistSaveVaultMeta(next); err != nil {
 		if created {
-			_ = os.Remove(s.saveVaultMetaCoverPath(cover.SHA256))
+			if os.Remove(s.saveVaultMetaCoverPath(cover.SHA256)) == nil {
+				s.adjustUsedBytes(-int64(len(data)))
+			}
 		}
 		s.metaMu.Unlock()
 		s.coverFetchMetrics.err.Add(1)

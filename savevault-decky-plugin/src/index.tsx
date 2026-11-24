@@ -42,6 +42,8 @@ interface DiscoveredSave {
   savePath: string;
   appId?: string;
   type?: string;
+  saveType?: string;
+  emulator?: string;
   fileCount?: number;
 }
 
@@ -80,6 +82,8 @@ interface SyncPause {
 
 interface DaemonStatus {
   running: boolean;
+  baseUrl?: string;
+  token?: string;
   data?: {
     settings?: { deviceName?: string };
     gameCount?: number;
@@ -126,9 +130,6 @@ const resolveLocationConflict =
 const answerEmptied = callable<[game_id: string, answer: string], Done>("answer_emptied");
 const pauseSync = callable<[minutes: number], Done>("pause_sync");
 const resumeSync = callable<[], Done>("resume_sync");
-
-const daemonBaseUrl = callable<[], string>("get_daemon_base_url");
-const daemonToken = callable<[], string>("get_daemon_token");
 
 /** Live sync state for one game, driven by the daemon's progress events. */
 interface SyncActivity {
@@ -263,20 +264,21 @@ function Content() {
   const [activity, setActivity] = useState<Record<string, SyncActivity>>({});
   const [baseUrl, setBaseUrl] = useState<string>("");
   const [token, setToken] = useState<string>("");
+  const [brokenCovers, setBrokenCovers] = useState<Set<string>>(new Set());
   const clearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const wasRunning = useRef<boolean>(false);
+  const refreshSeq = useRef<number>(0);
 
   const refresh = async () => {
+    const seq = ++refreshSeq.current;
     try {
       const s = await getDaemonStatus();
+      if (seq !== refreshSeq.current) return;
       setStatus(s);
-      if (s.running && !wasRunning.current) {
-        daemonBaseUrl().then(setBaseUrl).catch(() => {});
-        daemonToken().then(setToken).catch(() => {});
-      }
-      wasRunning.current = !!s.running;
       if (s.running) {
-        const [g, offers] = await Promise.all([getGames(), getCloudOffers().catch(() => [])]);
+        if (s.baseUrl) setBaseUrl(s.baseUrl);
+        if (s.token !== undefined) setToken(s.token);
+        const [g, offers] = await Promise.all([getGames(), getCloudOffers()]);
+        if (seq !== refreshSeq.current) return;
         setGames(g);
         setCloudOffers(offers);
       } else {
@@ -289,11 +291,10 @@ function Content() {
   };
 
   useEffect(() => {
-    refresh();
-    daemonBaseUrl().then(setBaseUrl).catch(() => {});
-    daemonToken().then(setToken).catch(() => {});
+    void refresh();
     const timer = setInterval(refresh, 15000);
     return () => {
+      refreshSeq.current++;
       clearInterval(timer);
       for (const t of clearTimers.current.values()) clearTimeout(t);
       clearTimers.current.clear();
@@ -367,7 +368,6 @@ function Content() {
       const res = await startDaemon();
       if (res.success) {
         toaster.toast({ title: "SaveVault", body: "Sync service started" });
-        daemonBaseUrl().then(setBaseUrl).catch(() => {});
       } else {
         toaster.toast({ title: "SaveVault", body: res.error ?? "Couldn't start the sync service" });
       }
@@ -427,7 +427,9 @@ function Content() {
   const onTrackDiscovered = async (item: DiscoveredSave) => {
     setBusy(true);
     try {
-      const saveType = item.type === "emulator" ? "emulator-generic" : "pc";
+      const saveType =
+        item.saveType ||
+        (item.emulator ? `emulator-${item.emulator}` : item.type === "emulator" ? "emulator-generic" : "pc");
       const res = await trackGame(item.name, item.savePath, item.appId ?? "", saveType);
       if (res.success) {
         toaster.toast({ title: item.name, body: "Now tracked by SaveVault" });
@@ -797,15 +799,20 @@ function Content() {
             const cover = coverUrl(baseUrl, token, game);
             return (
               <div key={game.id}>
-                {cover && (
+                {cover && !brokenCovers.has(cover) && (
                   <PanelSectionRow>
                     <img
                       src={cover}
                       alt=""
                       style={{ width: "100%", borderRadius: "4px", display: "block" }}
-                      // Not every game has art; drop the element rather than
-                      // show a broken image.
-                      onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                      onError={() =>
+                        setBrokenCovers((prev) => {
+                          if (prev.has(cover)) return prev;
+                          const next = new Set(prev);
+                          next.add(cover);
+                          return next;
+                        })
+                      }
                     />
                   </PanelSectionRow>
                 )}
@@ -957,7 +964,11 @@ function registerLifecycleHooks(): () => void {
       if (!match.found || !match.game) return;
 
       if (when === "launch" && cloudCheckOnLaunchEnabled()) {
-        await checkCloud().catch(() => {});
+        // Trigger cloud check concurrently so a slow cloud backend never stalls
+        // P2P launch sync for up to 60s.
+        void checkCloud().then((r) => {
+          if (!r.success && r.error) console.warn("[SaveVault] launch cloud check:", r.error);
+        });
       }
       const said = lifecycleSaid(await syncGame(match.game.id), when);
       if (said) toaster.toast({ title: match.game.name, body: said });

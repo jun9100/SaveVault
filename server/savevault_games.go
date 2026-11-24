@@ -121,6 +121,7 @@ type saveVaultGameMember struct {
 	Head           *saveVaultScopeSnapshot `json:"head"`
 	SnapshotCount  int                    `json:"snapshotCount"`
 	ConflictCount  int                    `json:"conflictCount"`
+	ArchiveBytes   int64                  `json:"archiveBytes"`
 	LastReceivedAt time.Time              `json:"lastReceivedAt,omitzero"`
 	Retired        bool                   `json:"retired,omitempty"`
 }
@@ -152,7 +153,8 @@ func (s *server) listSaveVaultGamesForAdminLocked(admin bool) []saveVaultGame {
 		audit := s.saveVaultScopeAuditLocked(kind, gameID, stored)
 		member := saveVaultGameMember{
 			Type: kind, GameID: gameID, Link: link, Head: audit.Head,
-			SnapshotCount: audit.SnapshotCount, ConflictCount: audit.ConflictCount, LastReceivedAt: audit.LastReceivedAt,
+			SnapshotCount: audit.SnapshotCount, ConflictCount: audit.ConflictCount,
+			ArchiveBytes: audit.ArchiveBytes, LastReceivedAt: audit.LastReceivedAt,
 		}
 		if tombstone, ok := s.saveVaultTombstone(kind, gameID); ok && tombstone.State == saveVaultTombstoneRetired {
 			member.Retired = true

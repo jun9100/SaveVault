@@ -80,7 +80,6 @@ object GameCatalog {
         normalized("Vampire Survivors") to Entry("吸血鬼幸存者", "Vampire Survivors", "1794680"),
         normalized("Raging Loop") to Entry("人狼村之谜", "Raging Loop"),
         normalized("ELDEN RING") to Entry("艾尔登法环", "ELDEN RING", "1245620"),
-        normalized("Elden Ring") to Entry("艾尔登法环", "ELDEN RING", "1245620"),
         normalized("Hades") to Entry("哈迪斯", "Hades", "1145360"),
         normalized("Stardew Valley") to Entry("星露谷物语", "Stardew Valley", "413150"),
         normalized("Hollow Knight") to Entry("空洞骑士", "Hollow Knight", "367520"),
@@ -89,17 +88,9 @@ object GameCatalog {
         normalized("Persona 5 Royal") to Entry("女神异闻录5 皇家版", "Persona 5 Royal", "1687950"),
     )
 
-    private val steamEntries = mapOf(
-        "1876890" to Entry("逸剑风云决", "Wandering Sword", "1876890"),
-        "3265700" to Entry("吸血鬼爬虫", "Vampire Crawlers", "3265700"),
-        "1245620" to Entry("艾尔登法环", "ELDEN RING", "1245620"),
-        "1272160" to Entry(
-            "布兰特爵士的生平和苦难",
-            "The Life and Suffering of Sir Brante",
-            "1272160",
-        ),
-        "1794680" to Entry("吸血鬼幸存者", "Vampire Survivors", "1794680"),
-    )
+    private val steamEntries = nameEntries.values
+        .filter { it.steamAppId != null }
+        .associateBy { it.steamAppId!! }
 
     private val androidEntries = mapOf(
         "dev.eden.eden_emulator" to Entry("Eden 模拟器", "Eden"),
@@ -130,16 +121,17 @@ object GameCatalog {
         }
         val appId = extractAppId(save)
         val titleId = save.titleId?.uppercase()
+        val switchTitleId = titleId?.takeIf { switchTitleIdPattern.matches(it) }
         val entry = packageName?.let { androidEntries[it] }
             ?: appId?.let { steamEntries[it] }
             ?: titleId?.let { titleIdEntries[it] }
             ?: rawName?.let { nameEntries[normalized(it)] }
         val steamAppId = appId ?: entry?.steamAppId
 
-        val learnedName = titleId?.let(GameNames::switchTitle)
+        val learnedName = switchTitleId?.let(GameNames::switchTitle)
         // The bundled catalog names a title in Chinese where the eShop does;
         // the emulator's own name (often Japanese or English) stays as the original.
-        val offlineName = titleId?.let(OfflineSwitchTitles::name)
+        val offlineName = switchTitleId?.let(OfflineSwitchTitles::name)
         val originalName = entry?.originalName ?: learnedName ?: humanReadableName(save, rawName) ?: offlineName
         return GamePresentation(
             localizedName = entry?.localizedName ?: offlineName?.takeIf { it != originalName },
@@ -148,8 +140,8 @@ object GameCatalog {
             iconKey = iconKey(save.kind),
             androidPackageName = packageName,
             steamAppId = steamAppId,
-            switchTitleId = titleId?.takeIf { switchTitleIdPattern.matches(it) },
-            switchIconHash = titleId?.let(OfflineSwitchTitles::icon),
+            switchTitleId = switchTitleId,
+            switchIconHash = switchTitleId?.let(OfflineSwitchTitles::icon),
             gameKey = save.gameKey,
             pspGameId = save.gameKey?.takeIf { save.kind == "ppsspp" }?.removePrefix("ppsspp:")
                 ?.takeIf { pspGameIdPattern.matches(it) },
@@ -164,7 +156,7 @@ object GameCatalog {
         val fromKey = save.gameKey
             ?.takeIf { it.startsWith("steam:") }
             ?.removePrefix("steam:")
-            ?.takeIf { it.all(Char::isDigit) }
+            ?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
         if (fromKey != null) return fromKey
         return Regex("(?:AppID\\s+|steam:)(\\d+)", RegexOption.IGNORE_CASE)
             .find(save.displayName.orEmpty())

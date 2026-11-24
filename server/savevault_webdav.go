@@ -256,16 +256,6 @@ func (s *server) handleSaveVaultPut(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 	destination := s.saveVaultFilePath(name)
-	existingInfo, statErr := os.Stat(destination)
-	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-		writeError(w, http.StatusInternalServerError, "cannot inspect destination snapshot")
-		return
-	}
-	var oldSize int64
-	if statErr == nil && existingInfo != nil && existingInfo.Mode().IsRegular() {
-		oldSize = existingInfo.Size()
-	}
-
 	temporary, err := os.CreateTemp(s.saveVaultDirectory(), ".upload-*.part")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "cannot create temporary snapshot")
@@ -279,11 +269,6 @@ func (s *server) handleSaveVaultPut(w http.ResponseWriter, r *http.Request, name
 		}
 	}()
 
-	if err := temporary.Chmod(0o600); err != nil {
-		_ = temporary.Close()
-		writeError(w, http.StatusInternalServerError, "cannot secure temporary snapshot")
-		return
-	}
 	written, copyErr := io.Copy(temporary, http.MaxBytesReader(w, r.Body, s.maxObjectBytes+1))
 	if copyErr == nil && written <= s.maxObjectBytes {
 		copyErr = temporary.Sync()
@@ -299,12 +284,30 @@ func (s *server) handleSaveVaultPut(w http.ResponseWriter, r *http.Request, name
 		}
 		return
 	}
+	s.quotaMu.Lock()
+	existingInfo, statErr := os.Stat(destination)
+	if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		s.quotaMu.Unlock()
+		writeError(w, http.StatusInternalServerError, "cannot inspect destination snapshot")
+		return
+	}
+	var oldSize int64
+	if statErr == nil && existingInfo != nil && existingInfo.Mode().IsRegular() {
+		oldSize = existingInfo.Size()
+	}
+	if delta := written - oldSize; delta > 0 && !s.checkQuota(delta) {
+		s.quotaMu.Unlock()
+		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
 	if err := os.Rename(temporaryPath, destination); err != nil {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot publish snapshot")
 		return
 	}
 	published = true
 	s.adjustUsedBytes(written - oldSize)
+	s.quotaMu.Unlock()
 	if statErr == nil {
 		w.WriteHeader(http.StatusNoContent)
 	} else {
@@ -404,15 +407,22 @@ func (s *server) handleSaveVaultMove(w http.ResponseWriter, r *http.Request, sou
 		return
 	}
 
-	_, targetErr := os.Stat(target)
+	s.quotaMu.Lock()
+	targetInfo, targetErr := os.Stat(target)
 	if targetErr != nil && !errors.Is(targetErr, fs.ErrNotExist) {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot inspect destination snapshot")
 		return
 	}
 	if err := os.Rename(source, target); err != nil {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot publish staged snapshot")
 		return
 	}
+	if targetErr == nil && targetInfo != nil && targetInfo.Mode().IsRegular() {
+		s.adjustUsedBytes(-targetInfo.Size())
+	}
+	s.quotaMu.Unlock()
 	if targetErr == nil {
 		w.WriteHeader(http.StatusNoContent)
 	} else {

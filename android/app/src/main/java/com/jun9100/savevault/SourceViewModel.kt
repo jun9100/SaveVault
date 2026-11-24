@@ -1774,20 +1774,18 @@ class SourceViewModel(
     /** Names a game by hand; a blank name goes back to the detected one. */
     fun renameGame(gameKey: String, name: String) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                runCatching { gameNameStore.rename(gameKey, name) }
-                val config = savedGameSaveConfig()
-                if (config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank()) {
-                    runCatching {
-                        val trimmed = name.trim()
-                        gameSaveClient(config).mergeProfileMetadata(
-                            customTitles = if (trimmed.isNotEmpty()) mapOf(gameKey to trimmed) else emptyMap(),
-                            removeTitles = if (trimmed.isEmpty()) setOf(gameKey) else emptySet(),
-                        )
-                    }
+            withContext(Dispatchers.IO) { gameNameStore.rename(gameKey, name) }
+            updateState { copy(nameRevision = GameNames.revision) }
+            val config = savedGameSaveConfig()
+            if (config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val trimmed = name.trim().take(GameNameStore.MAX_NAME_LENGTH)
+                    gameSaveClient(config).mergeProfileMetadata(
+                        customTitles = if (trimmed.isNotEmpty()) mapOf(gameKey to trimmed) else emptyMap(),
+                        removeTitles = if (trimmed.isEmpty()) setOf(gameKey) else emptySet(),
+                    )
                 }
             }
-            updateState { copy(nameRevision = GameNames.revision) }
         }
     }
 
@@ -1799,21 +1797,31 @@ class SourceViewModel(
             updateState { copy(messages = messages.withError(page, "请先配置 SaveVault 云端")) }
             return
         }
+        val scannedEntries = GameLibrary.sourceGames(state.value.sourceScans)
         viewModelScope.launch {
-            state.value = state.value.started(page, "正在同步云端译名与排除规则")
+            updateState { started(page, "正在同步云端译名与排除规则") }
             val result = withContext(Dispatchers.IO) {
-                ProfileMetadataCoordinator.sync(
-                    localTitles = GameNames.allOverrides(),
-                    localExcluded = autoBackupExclusions.excluded(),
-                    remoteMerge = { titles, excluded ->
-                        gameSaveClient(config).mergeProfileMetadata(
-                            customTitles = titles,
-                            excludedScopes = excluded,
-                        )
-                    },
-                    applyRemoteTitles = { gameNameStore.mergeOverrides(it) },
-                    applyRemoteExcluded = { autoBackupExclusions.setIncluded(it, included = false) },
-                )
+                val localExcluded = autoBackupExclusions.excluded()
+                val portableExcluded = localExcluded.mapTo(linkedSetOf(), ::portableScopeKey)
+                gameSaveClient(config).mergeProfileMetadata(
+                    customTitles = GameNames.allOverrides(),
+                    excludedScopes = portableExcluded,
+                ).map { merged ->
+                    if (merged == null) return@map null
+                    val addedTitles = gameNameStore.mergeOverrides(merged.customTitles)
+                    val matchedLibraryKeys = scannedEntries
+                        .filter { entry ->
+                            entry.game.gameKey in merged.excludedScopes ||
+                                entry.libraryKey in merged.excludedScopes
+                        }
+                        .map(SourceGameEntry::libraryKey)
+                    val nextExcluded = if (matchedLibraryKeys.isNotEmpty()) {
+                        autoBackupExclusions.setIncluded(matchedLibraryKeys, included = false)
+                    } else {
+                        localExcluded
+                    }
+                    Triple(merged, addedTitles, nextExcluded)
+                }
             }
             result.onSuccess { outcome ->
                 if (outcome == null) {
@@ -1822,11 +1830,12 @@ class SourceViewModel(
                     }
                     return@onSuccess
                 }
-                val summary = outcome.summaryText()
+                val (merged, addedTitles, nextExcluded) = outcome
+                val summary = merged.summaryText(addedTitles, merged.excludedScopes.size)
                 updateState {
                     finished(page, action = summary).copy(
                         nameRevision = GameNames.revision,
-                        autoBackupExcluded = outcome.mergedExcludedScopes,
+                        autoBackupExcluded = nextExcluded,
                     )
                 }
                 log(ActivityKind.UPLOAD, ActivityLevel.INFO, summary)
@@ -1835,6 +1844,9 @@ class SourceViewModel(
             }
         }
     }
+
+    /** Strips device-local `sourceId::` prefix so exclusions remain portable across devices. */
+    private fun portableScopeKey(libraryKey: String): String = libraryKey.substringAfter("::", libraryKey)
 
     /** Stages source toggles of the 来源 page; nothing is stored until [applySourceDraft]. */
     fun updateSourceDraft(draft: SourceDraft) {
@@ -2085,13 +2097,12 @@ class SourceViewModel(
         }
         val config = savedGameSaveConfig()
         if (config.serviceUrl.isNotBlank() && config.syncKey.isNotBlank()) {
+            val scopeKey = portableScopeKey(libraryKey)
             viewModelScope.launch(Dispatchers.IO) {
-                runCatching {
-                    gameSaveClient(config).mergeProfileMetadata(
-                        excludedScopes = if (enabled) emptySet() else setOf(libraryKey),
-                        removeExcluded = if (enabled) setOf(libraryKey) else emptySet(),
-                    )
-                }
+                gameSaveClient(config).mergeProfileMetadata(
+                    excludedScopes = if (enabled) emptySet() else setOf(scopeKey),
+                    removeExcluded = if (enabled) setOf(scopeKey) else emptySet(),
+                )
             }
         }
     }

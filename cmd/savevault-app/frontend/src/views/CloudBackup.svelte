@@ -47,7 +47,9 @@
       const s = await api.get('/api/settings');
       settings.set(s);
       const next = s.cloudSync ?? {
-        enabled: false, provider: 'local', url: '', username: '', password: '', headers: '{}', folderId: ''
+        enabled: false, provider: 'local', url: '', username: '', password: '', headers: '', folderId: '',
+        e2eeEnabled: false, e2eePassphrase: '', hasE2EEPassphrase: false,
+        s3Region: 'auto', s3Bucket: '', s3Prefix: '', s3PathStyle: false,
       };
       connected = connectedProviderOf(next);
       savedConfig = structuredClone(next);
@@ -64,13 +66,19 @@
   // save themselves.
   const sansSwitch = (c) => c && { ...c, enabled: undefined };
   $: providerDirty = !!config && !!savedConfig && JSON.stringify(sansSwitch(config)) !== JSON.stringify(sansSwitch(savedConfig));
+  $: e2eeMissingPassphrase = !!config && supportsCloudE2EE(config.provider) && !!config.e2eeEnabled && !config.hasE2EEPassphrase && !String(config.e2eePassphrase || '').trim();
 
   async function save() {
+    if (e2eeMissingPassphrase) {
+      toast(tt('cloud.e2ee.passphrasePlaceholder'), 'error');
+      return;
+    }
     busy.set(true);
     try {
       const updated = await api.post('/api/settings', { cloudSync: config });
       settings.set(updated);
       const next = updated?.cloudSync ?? config;
+      connected = connectedProviderOf(next);
       savedConfig = structuredClone(next);
       config = structuredClone(next);
       refreshKey += 1;
@@ -193,7 +201,7 @@
     {#if providerDirty}
       <div class="actions">
         <span class="unsaved">{$t('cloud.backup.notSavedYet')}</span>
-        <button class="btn primary" disabled={$busy} on:click={save}>{$t('cloud.backup.saveProvider')}</button>
+        <button class="btn primary" disabled={$busy || e2eeMissingPassphrase} on:click={save}>{$t('cloud.backup.saveProvider')}</button>
       </div>
     {/if}
 
@@ -208,14 +216,14 @@
         </span>
       </h4>
       <label class="check">
-        <input type="checkbox" checked={config.enabled} on:change={(e) => setBackupAll(e.currentTarget.checked)} />
+        <input type="checkbox" disabled={$busy} checked={config.enabled} on:change={(e) => setBackupAll(e.currentTarget.checked)} />
         {$t('cloud.backup.backUpEvery')}
       </label>
       <p class="hint">
         {#each segments($t('cloud.backup.backUpEveryHint'), { folder: 'SaveVault' }, ['folder']) as part}{#if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}
       </p>
       <label class="check">
-        <input type="checkbox" checked={autoPull} on:change={(e) => setAutoPull(e.currentTarget.checked)} />
+        <input type="checkbox" disabled={$busy} checked={autoPull} on:change={(e) => setAutoPull(e.currentTarget.checked)} />
         {$t('cloud.backup.autoPull')}
       </label>
       <p class="hint">{$t('cloud.backup.autoPullHint')}</p>

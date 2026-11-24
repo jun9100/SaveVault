@@ -99,7 +99,8 @@ internal fun SettingsPage(
         modifier = modifier,
         dialogOpen = state.gameSaveEditor != null || state.gameSaveTestFailure != null || state.pendingConfigImport != null ||
             state.pairingDraft != null || state.pendingPairing != null || state.wizardStep != null ||
-            state.cloudDevicesDialog != null,
+            state.cloudDevicesDialog != null || state.pendingWriteBack != null || state.pendingRestore != null ||
+            state.batchReportOpen,
         startOnRight = state.previousPage == SaveVaultPage.SYNC,
         left = { firstControl ->
             messages.action?.takeIf { !state.busy }?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
@@ -191,7 +192,7 @@ private fun AutomationCard(state: SourceUiState, viewModel: SourceViewModel, not
             )
             SwitchSettingRow(
                 label = "存档变化立即上传",
-                checked = state.saveWatchEnabled,
+                checked = state.saveWatchEnabled && uploadReady,
                 onCheckedChange = whenIdleWith(state.busy || !uploadReady, viewModel::setSaveWatchEnabled),
                 modifier = Modifier.padding(top = 8.dp).busyDimmed(state.busy || !uploadReady),
                 icon = Icons.Outlined.Refresh,

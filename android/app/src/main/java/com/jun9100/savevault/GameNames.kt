@@ -1,6 +1,7 @@
 package com.jun9100.savevault
 
 import android.content.Context
+import java.io.IOException
 import java.net.URLDecoder
 import org.json.JSONObject
 
@@ -50,8 +51,11 @@ class GameNameStore(context: Context) {
 
     /** Merges learned Switch titles; an existing title is replaced only by a non-blank new one. */
     fun learnSwitchTitles(learned: Map<String, String>) = synchronized(LOCK) {
-        if (learned.isEmpty()) return@synchronized
-        val titles = decode(preferences.getString(TITLES_KEY, null)) + learned.mapKeys { it.key.uppercase() }
+        val clean = learned.entries
+            .mapNotNull { (key, value) -> value.trim().takeIf(String::isNotEmpty)?.let { key.uppercase() to it } }
+            .toMap()
+        if (clean.isEmpty()) return@synchronized
+        val titles = decode(preferences.getString(TITLES_KEY, null)) + clean
         preferences.edit().putString(TITLES_KEY, encode(titles)).commit()
         load()
     }
@@ -107,7 +111,6 @@ class GameNameStore(context: Context) {
 
 /** Pure parsers for the places a Switch title's name can be found on the device. */
 object SwitchTitleNameSources {
-    private val titleIdPattern = Regex("^[0-9A-F]{16}$")
     private val bracketedTitleId = Regex("\\[([0-9A-Fa-f]{16})]")
     private val gamesSet = Regex("<set name=\"Games\">(.*?)</set>", RegexOption.DOT_MATCHES_ALL)
     private val setString = Regex("<string>(.*?)</string>", RegexOption.DOT_MATCHES_ALL)
@@ -154,7 +157,7 @@ object SwitchTitleNameSources {
 
     internal fun programIdToTitleId(programId: String): String? {
         val value = programId.trim().toULongOrNull() ?: return null
-        return value.toString(16).uppercase().padStart(16, '0').takeIf(titleIdPattern::matches)
+        return value.toString(16).uppercase().padStart(16, '0')
     }
 
     /** `content://…/tree/primary%3Aswitch-roms/document/primary%3Aswitch-roms%2FGame.xci` → `/storage/emulated/0/switch-roms`. */
@@ -165,7 +168,7 @@ object SwitchTitleNameSources {
         }.getOrNull() ?: return null
         if (!decoded.startsWith("primary:")) return null
         val relative = decoded.removePrefix("primary:").substringBeforeLast('/', "")
-        if (relative.isBlank() || relative.contains("..")) return null
+        if (relative.isBlank() || relative.split('/').any { it == ".." || it == "." }) return null
         return "/storage/emulated/0/$relative"
     }
 
@@ -223,6 +226,7 @@ object OfflineSwitchTitles {
     data class Title(val name: String, val iconHash: String?)
 
     @Volatile private var titles: Map<String, Title> = emptyMap()
+    private val loadLock = Any()
 
     fun name(titleId: String): String? = titles[titleId.uppercase()]?.name
 
@@ -230,11 +234,16 @@ object OfflineSwitchTitles {
 
     fun load(context: Context) {
         if (titles.isNotEmpty()) return
-        titles = runCatching {
-            // Stored uncompressed: the APK zip compresses it, and the build
-            // would unpack a .gz asset anyway.
-            context.assets.open(ASSET).bufferedReader(Charsets.UTF_8).useLines(::parse)
-        }.getOrDefault(emptyMap())
+        synchronized(loadLock) {
+            if (titles.isNotEmpty()) return
+            titles = try {
+                // Stored uncompressed: the APK zip compresses it, and the build
+                // would unpack a .gz asset anyway.
+                context.assets.open(ASSET).bufferedReader(Charsets.UTF_8).useLines(::parse)
+            } catch (_: IOException) {
+                emptyMap()
+            }
+        }
     }
 
     /** Lines are `TitleID<TAB>name[<TAB>icon hash]`. */

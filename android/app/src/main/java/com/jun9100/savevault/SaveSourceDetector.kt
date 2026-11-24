@@ -1,6 +1,7 @@
 package com.jun9100.savevault
 
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -55,7 +56,6 @@ object SwitchTitleIds {
 
 /** Identifies useful save boundaries only inside a user-authorized workspace. */
 object SaveSourceDetector {
-    private val titleIdPattern = Regex("^[0-9a-fA-F]{16}$")
     private val switchTitleIdPattern = SwitchTitleIds.pattern
     private val appIdPattern = Regex("^\\d{3,}$")
     private val androidPackagePattern = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
@@ -209,7 +209,7 @@ object SaveSourceDetector {
         val rootName = selectedRootName ?: File(rootPath).name
         val relativePaths = paths.map { relativePath(rootPath, it) }
 
-        if (titleIdPattern.matches(rootName)) {
+        if (switchTitleIdPattern.matches(rootName)) {
             found += DetectedSave(
                 kind = "switch-title",
                 relativePath = ".",
@@ -236,7 +236,8 @@ object SaveSourceDetector {
         val deduplicated = found
             .distinctBy { listOf(it.kind, it.relativePath, it.titleId, it.gameKey) }
             .filterNot { save ->
-                save.kind == "gamehub-pc" && isBroadSteamContainer(save, found)
+                (save.kind == "gamehub-pc" && isBroadSteamContainer(save, found)) ||
+                    isBroadEmulatorContainer(save, found)
             }
             .sortedWith(
                 compareBy<DetectedSave> {
@@ -309,7 +310,7 @@ object SaveSourceDetector {
         }
 
         if (directChild in androidPersistentDirectoryNames && packageName !in dedicatedAndroidSavePackages) {
-            val identifiedGame = metadata?.backsUpByDefault == true || AndroidAppConfirmations.isConfirmed(packageName)
+            val identifiedGame = metadata.backsUpByDefault || AndroidAppConfirmations.isConfirmed(packageName)
             found += DetectedSave(
                 kind = if (identifiedGame) "android-game" else "android-app",
                 relativePath = relative,
@@ -318,7 +319,7 @@ object SaveSourceDetector {
                 } else {
                     "Android 应用持久数据目录，尚未确认是游戏存档"
                 },
-                displayName = metadata?.displayName ?: packageName,
+                displayName = metadata.displayName,
                 gameKey = "android:$packageName",
                 candidate = !identifiedGame,
             )
@@ -345,7 +346,7 @@ object SaveSourceDetector {
 
     private fun detectDedicatedAndroidSave(
         packageName: String,
-        metadata: AndroidGameMetadata?,
+        metadata: AndroidGameMetadata,
         relative: String,
         relativeParts: List<String>,
         found: List<DetectedSave>,
@@ -359,11 +360,11 @@ object SaveSourceDetector {
                 kind = "android-game",
                 relative = relative,
                 note = "Bloodborne 的实际游戏存档目录",
-                displayName = metadata?.displayName ?: "Bloodborne",
+                displayName = metadata.displayName,
                 found = found,
             )?.copy(
                 gameKey = "android:$packageName",
-                candidate = metadata?.backsUpByDefault != true,
+                candidate = !metadata.backsUpByDefault,
             )
         }
         return null
@@ -787,6 +788,18 @@ object SaveSourceDetector {
         return isAppIdContainer
     }
 
+    /** Suppresses a generic emulator parent (e.g. `Wii`, `GC`, `savedata`) when per-game child saves exist under it. */
+    private fun isBroadEmulatorContainer(save: DetectedSave, found: List<DetectedSave>): Boolean {
+        if (save.gameKey != null || save.kind !in setOf("dolphin", "vita3k", "citra")) return false
+        val path = save.relativePath.trimEnd('/')
+        return found.any { other ->
+            other !== save &&
+                other.kind == save.kind &&
+                other.gameKey != null &&
+                if (path == ".") other.relativePath != "." else other.relativePath.startsWith("$path/")
+        }
+    }
+
     private fun hasMoreSpecificSave(relative: String, paths: List<String>): Boolean {
         val prefix = relative.trimEnd('/') + "/"
         return paths.any { path ->
@@ -908,7 +921,11 @@ object ParamSfoParser {
 
     fun readTitle(file: File): String? {
         if (!file.isFile || file.length() <= 20L || file.length() > MAX_SFO_BYTES) return null
-        return runCatching { parseTitle(file.readBytes()) }.getOrNull()
+        return try {
+            parseTitle(file.readBytes())
+        } catch (_: IOException) {
+            null
+        }
     }
 
     fun parseTitle(bytes: ByteArray): String? {
@@ -941,10 +958,11 @@ object ParamSfoParser {
             val key = String(bytes, keyStart, keyEnd - keyStart, Charsets.UTF_8)
             if (key != "TITLE" && key != "STITLE") continue
 
+            if (dataOffset < 0 || dataLen <= 0 || dataOffset > bytes.size - dataTableOffset) continue
             val valStart = dataTableOffset + dataOffset
-            if (valStart < dataTableOffset || dataLen <= 0 || valStart + dataLen > bytes.size) continue
+            if (dataLen > bytes.size - valStart) continue
             val value = String(bytes, valStart, dataLen, Charsets.UTF_8)
-                .trimEnd('\u0000')
+                .substringBefore('\u0000')
                 .replace('\n', ' ')
                 .replace(Regex("\\s+"), " ")
                 .trim()

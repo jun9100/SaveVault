@@ -54,7 +54,7 @@ func (s *Service) providerFor(cfg store.CloudConfig) (provider, bool) {
 	default:
 		return nil, false
 	}
-	if cfg.E2EEEnabled && cfg.E2EEPassphrase != "" {
+	if cfg.E2EEEnabled {
 		return encryptedProvider{inner: base, passphrase: cfg.E2EEPassphrase}, true
 	}
 	return base, true

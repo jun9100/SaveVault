@@ -172,6 +172,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	prev := current
 	// Read the raw body once: settings fields decode over the current
 	// values (the JS {...current, ...new} merge semantics); cloudSync is
 	// peeled off and applied to the cloud config separately.
@@ -185,28 +186,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prevSyncCode := ""
-	prevRelayURL := ""
-	prevStartOnBoot := false
-	prevHostRelay := false
-	prevRelayPort := 0
-	prevAutoDelete, prevAutoDeleteDays := false, 0
-	if prev, err := s.Daemon.Store.GetSettings(); err == nil {
-		prevSyncCode, prevRelayURL, prevStartOnBoot = prev.SyncCode, prev.RelayURL, prev.StartOnBoot
-		prevHostRelay, prevRelayPort = prev.HostRelay, prev.RelayPort
-		prevAutoDelete, prevAutoDeleteDays = prev.AutoDeleteBackups, prev.AutoDeleteDays
-	}
-
 	// Refuse a cleartext relay before storing anything (including cloudSync),
 	// so a rejected settings update never partially persists cloud changes.
-	//
-	// Only when the address actually changes. This screen saves every field at
-	// once, so validating unconditionally would mean somebody who already has
-	// a ws:// relay stored — from a build that let them — could no longer edit
-	// their device name, or anything else, until they noticed the relay was
-	// the real complaint. Grandfathering the stored value keeps the rule on
-	// new input, which is where it belongs.
-	if current.RelayURL != prevRelayURL {
+	if current.RelayURL != prev.RelayURL {
 		if err := store.ValidateRelayURL(current.RelayURL); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -216,10 +198,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var withCloud struct {
 		CloudSync *cloudSyncPatch `json:"cloudSync"`
 	}
-	_ = json.Unmarshal(raw, &withCloud)
+	if err := json.Unmarshal(raw, &withCloud); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid cloudSync payload: "+err.Error())
+		return
+	}
 	if patch := withCloud.CloudSync; patch != nil {
-		if err := s.applyCloudPatch(patch); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+		if status, err := s.applyCloudPatch(patch); err != nil {
+			writeError(w, status, err.Error())
 			return
 		}
 	}
@@ -228,26 +213,30 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	updated, _ := s.Daemon.Store.GetSettings()
+	updated, err := s.Daemon.Store.GetSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	// Relay/room changes take effect immediately.
-	if updated.SyncCode != prevSyncCode || updated.RelayURL != prevRelayURL {
+	if updated.SyncCode != prev.SyncCode || updated.RelayURL != prev.RelayURL {
 		s.Daemon.P2P.Wan.Connect()
 	}
 	// Start-on-boot toggling registers/unregisters with the OS.
-	if updated.StartOnBoot != prevStartOnBoot {
+	if updated.StartOnBoot != prev.StartOnBoot {
 		if err := sysintegration.SetAutostart(updated.StartOnBoot); err != nil {
 			s.Daemon.Log.Log("warn", "start-on-boot change failed: "+err.Error())
 		}
 	}
 	// Host-relay toggle / port change starts or stops the in-process relay.
-	if updated.HostRelay != prevHostRelay || updated.RelayPort != prevRelayPort {
+	if updated.HostRelay != prev.HostRelay || updated.RelayPort != prev.RelayPort {
 		s.Daemon.P2P.ApplyRelayHosting(updated.HostRelay, updated.RelayPort)
 	}
 	// Switching age-based retention on, or shortening it, sweeps now rather
 	// than at the next scheduled pass, so the person who just chose it sees
 	// the history change while they are looking at it.
-	if updated.AutoDeleteBackups && (!prevAutoDelete || updated.AutoDeleteDays != prevAutoDeleteDays) {
+	if updated.AutoDeleteBackups && (!prev.AutoDeleteBackups || updated.AutoDeleteDays != prev.AutoDeleteDays) {
 		go s.Daemon.PruneOldSnapshots()
 	}
 
@@ -256,12 +245,13 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 // applyCloudPatch merges a cloudSync write into the cloud config row,
 // preserving stored OAuth tokens (the UI never sends them back).
-func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
+func (s *Server) applyCloudPatch(patch *cloudSyncPatch) (int, error) {
 	cfg, err := s.Daemon.Store.GetCloudConfig()
 	if err != nil {
-		return err
+		return http.StatusInternalServerError, err
 	}
 	previousProvider, previousURL, previousUsername, previousPassword := cfg.Provider, cfg.URL, cfg.Username, cfg.Password
+	previousBucket, previousPrefix, previousRegion := cfg.S3Bucket, cfg.S3Prefix, cfg.S3Region
 	if patch.Enabled != nil {
 		cfg.Enabled = *patch.Enabled
 	}
@@ -338,12 +328,13 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	if cfg.Provider == cloud.GameSaveProvider && strings.TrimSpace(cfg.URL) != "" {
 		normalized, err := cloud.NormalizeGameSaveURL(cfg.URL)
 		if err != nil {
-			return err
+			return http.StatusBadRequest, err
 		}
 		cfg.URL = normalized
 	}
 	switchedToGameSave := cfg.Provider == cloud.GameSaveProvider && previousProvider != cloud.GameSaveProvider
-	credentialsChanged := cfg.URL != previousURL || cfg.Password != previousPassword
+	credentialsChanged := cfg.URL != previousURL || cfg.Password != previousPassword ||
+		(cfg.Provider == "s3" && (cfg.S3Bucket != previousBucket || cfg.S3Prefix != previousPrefix || cfg.S3Region != previousRegion || cfg.Username != previousUsername))
 	// When replacing a game-save address or sync key manually (without setting
 	// a new account username), drop any stale account label from a prior login.
 	if cfg.Provider == cloud.GameSaveProvider && (switchedToGameSave || credentialsChanged) &&
@@ -351,7 +342,7 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 		cfg.Username = ""
 	}
 	if err := s.Daemon.Store.UpdateCloudConfig(cfg); err != nil {
-		return err
+		return http.StatusInternalServerError, err
 	}
 	if cfg.Provider != previousProvider || credentialsChanged {
 		if err := s.Daemon.ResetCloudAccountState(); err != nil && s.Daemon.Log != nil {
@@ -363,13 +354,13 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	// when the address and key happen to match a previous game-save setup.
 	if cfg.Provider == cloud.GameSaveProvider && (switchedToGameSave || credentialsChanged) {
 		if err := s.Daemon.Store.SetGameSaveAuthBlock(""); err != nil {
-			return err
+			return http.StatusInternalServerError, err
 		}
 		if err := s.Daemon.Store.SetGameSaveAuthWarning(store.GameSaveAuthWarningNone); err != nil {
-			return err
+			return http.StatusInternalServerError, err
 		}
 	}
-	return nil
+	return http.StatusOK, nil
 }
 
 func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {

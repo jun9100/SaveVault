@@ -125,16 +125,19 @@ func sanitizeProfileKey(raw string) (string, bool) {
 }
 
 func (s *server) handleGetProfileMetadata(w http.ResponseWriter, r *http.Request) {
+	ifNoneMatch := strings.TrimSpace(r.Header.Get("If-None-Match"))
 	s.profileMu.Lock()
-	snapshot := s.profileMeta.clone()
-	s.profileMu.Unlock()
-
-	etag := fmt.Sprintf(`"rev-%d"`, snapshot.Revision)
-	w.Header().Set("ETag", etag)
-	if match := strings.TrimSpace(r.Header.Get("If-None-Match")); match != "" && match == etag {
+	etag := fmt.Sprintf(`"rev-%d"`, s.profileMeta.Revision)
+	if ifNoneMatch == etag {
+		s.profileMu.Unlock()
+		w.Header().Set("ETag", etag)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
+	snapshot := s.profileMeta.clone()
+	s.profileMu.Unlock()
+
+	w.Header().Set("ETag", etag)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
