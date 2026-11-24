@@ -227,8 +227,8 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 	}
 	readLimit := s.maxObjectBytes
 	quotaCapped := false
-	if s.quotaBytes > 0 && s.quotaBytes < readLimit {
-		readLimit = s.quotaBytes
+	if quota := s.getQuotaBytes(); quota > 0 && quota < readLimit {
+		readLimit = quota
 		quotaCapped = true
 	}
 	hash := sha256.New()

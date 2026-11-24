@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
+import com.jun9100.savevault.CloudSnapshotDeleteRequest
 import com.jun9100.savevault.KeepLocalRequest
 import com.jun9100.savevault.SaveVaultTheme
 import com.jun9100.savevault.RestoreRequest
@@ -23,6 +25,7 @@ import com.jun9100.savevault.SourceGameEntry
 import com.jun9100.savevault.SourceSelection
 import com.jun9100.savevault.StorageMode
 import com.jun9100.savevault.WorkspaceWriteBackRequest
+import com.jun9100.savevault.ui.formatIsoShortTime
 import com.jun9100.savevault.ui.input.consumeHandheldShortcuts
 import com.jun9100.savevault.ui.input.dpadScrollable
 import com.jun9100.savevault.ui.input.handheldFocusRing
@@ -232,6 +235,56 @@ internal fun DiscardSourceChangesDialog(
         },
         dismissButton = {
             // Destructive: focus starts on the safe choice.
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.focusRequester(rememberInitialFocus()).dialogButtonFocus(),
+            ) { Text("取消") }
+        },
+    )
+}
+
+/** Confirmation before permanently deleting one historical cloud snapshot. */
+@Composable
+internal fun CloudSnapshotDeleteConfirmDialog(
+    request: CloudSnapshotDeleteRequest,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val snap = request.snapshot
+    val whenText = formatIsoShortTime(snap.receivedAt.ifBlank { snap.createdAt }).ifBlank { snap.id }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.consumeHandheldShortcuts(),
+        title = { Text("删除云端历史版本？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("游戏：${request.entry.game.presentation.primaryName}")
+                Text(
+                    buildString {
+                        append("版本：$whenText")
+                        if (snap.deviceName.isNotBlank()) append(" · ${snap.deviceName}")
+                        if (snap.conflict) append(" · 冲突副本")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "将从云端永久移除这条历史快照以释放空间；本地备份与云端当前版本不受影响。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                modifier = Modifier.dialogButtonFocus(),
+            ) { Text("确认删除") }
+        },
+        dismissButton = {
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.focusRequester(rememberInitialFocus()).dialogButtonFocus(),

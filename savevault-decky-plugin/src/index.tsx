@@ -102,6 +102,7 @@ const pauseSync = callable<[minutes: number], Done>("pause_sync");
 const resumeSync = callable<[], Done>("resume_sync");
 
 const daemonBaseUrl = callable<[], string>("get_daemon_base_url");
+const daemonToken = callable<[], string>("get_daemon_token");
 
 /** Live sync state for one game, driven by the daemon's progress events. */
 interface SyncActivity {
@@ -141,13 +142,14 @@ function switchTitleId(savePath?: string): string {
 
 /** The cover the daemon serves for a game — by App ID, by name, and for a
  *  Switch game by title id, as the desktop app asks for it. */
-function coverUrl(base: string, game: Game): string {
+function coverUrl(base: string, token: string, game: Game): string {
   if (!base) return "";
   const q = new URLSearchParams();
   if (game.appId) q.set("appId", game.appId);
   if (game.name) q.set("name", game.name);
   const titleId = switchTitleId(game.savePath);
   if (titleId) q.set("titleId", titleId);
+  if (token) q.set("token", token);
   return `${base}/api/cover?${q.toString()}`;
 }
 
@@ -214,6 +216,7 @@ function Content() {
   const [autoSync, setAutoSync] = useState(autoSyncEnabled());
   const [activity, setActivity] = useState<Record<string, SyncActivity>>({});
   const [baseUrl, setBaseUrl] = useState<string>("");
+  const [token, setToken] = useState<string>("");
   const clearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const wasRunning = useRef<boolean>(false);
 
@@ -223,6 +226,7 @@ function Content() {
       setStatus(s);
       if (s.running && !wasRunning.current) {
         daemonBaseUrl().then(setBaseUrl).catch(() => {});
+        daemonToken().then(setToken).catch(() => {});
       }
       wasRunning.current = !!s.running;
       setGames(s.running ? await getGames() : {});
@@ -234,6 +238,7 @@ function Content() {
   useEffect(() => {
     refresh();
     daemonBaseUrl().then(setBaseUrl).catch(() => {});
+    daemonToken().then(setToken).catch(() => {});
     const timer = setInterval(refresh, 15000);
     return () => {
       clearInterval(timer);
@@ -606,7 +611,7 @@ function Content() {
                   : live?.state === "error"
                     ? `Sync failed: ${live.error ?? "unknown error"}`
                     : `Last snapshot ${lastSyncedLabel(game)} · branch ${game.activeBranch}`;
-            const cover = coverUrl(baseUrl, game);
+            const cover = coverUrl(baseUrl, token, game);
             return (
               <div key={game.id}>
                 {cover && (

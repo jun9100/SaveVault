@@ -56,17 +56,35 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <div class="login-heading">
       <span class="login-pill">CLOUD VAULT CONSOLE</span>
       <h1>SaveVault 云端</h1>
-      <p>输入管理员令牌（<code>GAME_SAVE_ADMIN_TOKEN</code>）以管理存档、设备、用户与存储策略。</p>
+      <p id="login-desc">输入管理员令牌（<code>GAME_SAVE_ADMIN_TOKEN</code>）以管理存档、设备、用户与存储策略。</p>
     </div>
-    <label class="field">
-      <span>管理员令牌</span>
-      <div class="input-wrap">
-        <input id="login-token" name="password" type="password" autocomplete="current-password" placeholder="输入管理员令牌…" required autofocus>
-        <button class="icon-btn input-toggle" type="button" id="login-token-toggle" title="显示令牌" aria-label="显示令牌"><svg><use href="#i-eye"/></svg></button>
-      </div>
-    </label>
+    <div class="login-tabs" role="tablist" aria-label="登录方式">
+      <button class="login-tab active" type="button" role="tab" aria-selected="true" data-login-mode="admin">管理员</button>
+      <button class="login-tab" type="button" role="tab" aria-selected="false" data-login-mode="tenant">租户账号</button>
+    </div>
+    <div id="login-admin-fields">
+      <label class="field">
+        <span>管理员令牌</span>
+        <div class="input-wrap">
+          <input id="login-token" name="password" type="password" autocomplete="current-password" placeholder="输入管理员令牌…" required autofocus>
+          <button class="icon-btn input-toggle" type="button" id="login-token-toggle" title="显示令牌" aria-label="显示令牌"><svg><use href="#i-eye"/></svg></button>
+        </div>
+      </label>
+    </div>
+    <div id="login-tenant-fields" hidden>
+      <label class="field">
+        <span>用户名</span>
+        <input id="login-username" name="username" type="text" autocomplete="username" placeholder="输入租户用户名…">
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <div class="input-wrap">
+          <input id="login-user-password" name="userPassword" type="password" autocomplete="current-password" placeholder="输入账号密码…">
+        </div>
+      </label>
+    </div>
     <p class="form-error" id="login-error" role="alert"></p>
-    <button class="btn primary block" type="submit">进入控制台</button>
+    <button class="btn primary block" type="submit" id="login-submit">进入控制台</button>
     <small class="login-foot">会话安全保存 7 天 · 端到端加密存档保护</small>
   </form>
 </div>
@@ -77,6 +95,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <span class="brand-mark"><svg><use href="#i-logo"/></svg></span>
       <span class="brand-text"><strong>SaveVault</strong><small id="brand-version">CLOUD</small></span>
     </a>
+    <div class="vault-switcher" id="vault-switcher" hidden>
+      <label class="vault-switcher-label" for="vault-select">当前保险库</label>
+      <select id="vault-select" aria-label="切换保险库"></select>
+    </div>
     <nav class="nav" id="nav" aria-label="主导航">
       <span class="nav-label">工作台</span>
       <a href="#/" data-route="overview" title="概览" aria-label="概览"><svg><use href="#i-home"/></svg><span>概览</span></a>
@@ -89,6 +111,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
       <span class="nav-label">审计与维护</span>
       <a href="#/activity" data-route="activity" title="活动" aria-label="活动"><svg><use href="#i-activity"/></svg><span>活动</span></a>
       <a href="#/maintenance" data-route="maintenance" title="维护" aria-label="维护"><svg><use href="#i-tools"/></svg><span>维护</span></a>
+    </nav>
+    <nav class="nav" id="tenant-nav" aria-label="租户自助导航" hidden>
+      <span class="nav-label" id="tenant-nav-user">我的空间</span>
+      <a href="#/self" data-self-route="selfOverview" title="概览" aria-label="概览"><svg><use href="#i-home"/></svg><span>我的概览</span></a>
+      <a href="#/self/saves" data-self-route="selfSaves" title="我的存档" aria-label="我的存档"><svg><use href="#i-archive"/></svg><span>我的存档</span></a>
+      <a href="#/self/devices" data-self-route="selfDevices" title="设备与配对" aria-label="设备与配对"><svg><use href="#i-devices"/></svg><span>设备与配对</span></a>
     </nav>
     <div class="sidebar-foot">
       <button class="icon-btn" type="button" data-action="theme" title="切换主题" aria-label="切换主题"><svg><use href="#i-moon"/></svg></button>

@@ -173,6 +173,9 @@ func main() {
 	maintenanceInterval := flag.Duration("maintenance-interval",
 		envDuration("GAME_SAVE_MAINTENANCE_INTERVAL", "EDEN_SYNCD_MAINTENANCE_INTERVAL", 6*time.Hour),
 		"how often retention and object garbage collection run (0 disables)")
+	trustedProxiesRaw := flag.String("trusted-proxies",
+		envString("GAME_SAVE_TRUSTED_PROXIES", "EDEN_SYNCD_TRUSTED_PROXIES", ""),
+		"comma-separated reverse proxy IPs or CIDRs allowed to set X-Forwarded-For / X-Real-IP / X-Forwarded-Proto")
 	logFormat := flag.String("log-format", envString("GAME_SAVE_LOG_FORMAT", "EDEN_SYNCD_LOG_FORMAT", "text"), "log format: text or json")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
@@ -193,10 +196,17 @@ func main() {
 	}
 	slog.SetDefault(slog.New(logHandler))
 
+	trustedProxies, err := parseTrustedProxies(*trustedProxiesRaw)
+	if err != nil {
+		slog.Error("invalid trusted proxies", "error", err)
+		os.Exit(1)
+	}
+
 	vaults, err := newVaultRegistry(*dataDir, *token, *maxObjectMiB*1024*1024, serverOptions{
-		adminToken:       *adminToken,
+		adminToken:        *adminToken,
 		saveVaultUsername: *saveVaultUsername,
 		saveVaultPassword: *saveVaultPassword,
+		trustedProxies:    trustedProxies,
 		settings: serverSettings{Retention: retentionPolicy{
 			KeepSnapshots: *keepSnapshots,
 			KeepDays:      *keepDays,

@@ -750,7 +750,7 @@ func (s *server) handlePairClaim(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	address := remoteHost(r)
+	address := s.clientIP(r)
 	now := s.now()
 	if s.claimLogins.blocked(address, now) || s.claimFailures.blocked(now) {
 		writeErrorCode(w, http.StatusTooManyRequests, "rate_limited", "too many failed pairing attempts")
@@ -887,11 +887,24 @@ func (s *server) handleWhoAmI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sharedTokenMode := s.effectiveSharedTokenMode()
+	used := s.usedBytes()
+	quota := s.getQuotaBytes()
 	if auth.kind != "device" {
 		writeJSON(w, http.StatusOK, struct {
 			Auth            string `json:"auth"`
 			SharedTokenMode string `json:"shared_token_mode"`
-		}{Auth: "shared", SharedTokenMode: sharedTokenMode})
+			VaultID         string `json:"vault_id,omitempty"`
+			Username        string `json:"username,omitempty"`
+			UsedBytes       int64  `json:"used_bytes"`
+			QuotaBytes      int64  `json:"quota_bytes"`
+		}{
+			Auth:            "shared",
+			SharedTokenMode: sharedTokenMode,
+			VaultID:         s.vaultID,
+			Username:        s.ownerUsername,
+			UsedBytes:       used,
+			QuotaBytes:      quota,
+		})
 		return
 	}
 	response := struct {
@@ -900,8 +913,19 @@ func (s *server) handleWhoAmI(w http.ResponseWriter, r *http.Request) {
 		DeviceID        string `json:"device_id"`
 		Name            string `json:"name"`
 		SharedTokenMode string `json:"shared_token_mode"`
+		VaultID         string `json:"vault_id,omitempty"`
+		Username        string `json:"username,omitempty"`
+		UsedBytes       int64  `json:"used_bytes"`
+		QuotaBytes      int64  `json:"quota_bytes"`
 	}{
-		Auth: "device", TokenID: auth.tokenID, DeviceID: auth.deviceID, SharedTokenMode: sharedTokenMode,
+		Auth:            "device",
+		TokenID:         auth.tokenID,
+		DeviceID:        auth.deviceID,
+		SharedTokenMode: sharedTokenMode,
+		VaultID:         s.vaultID,
+		Username:        s.ownerUsername,
+		UsedBytes:       used,
+		QuotaBytes:      quota,
 	}
 	s.tokensMu.Lock()
 	if record, exists := s.deviceTokens.Tokens[auth.tokenID]; exists {

@@ -12,6 +12,10 @@ const timeZone = (() => {
 })();
 
 const store = {
+  sessionMode: "admin",
+  tenantUser: null,
+  activeVault: "default",
+  vaults: [],
   overview: null,
   overviewSaveVaultGames: null,
   scopeDetail: null,
@@ -26,6 +30,12 @@ const store = {
   metaSettings: null,
   deviceTokens: null,
   pairings: null,
+  users: null,
+  selfOverview: null,
+  selfGames: null,
+  selfScopeDetail: null,
+  selfDevices: null,
+  selfPairings: null,
   saveVaultQuery: "",
   saveVaultType: "all",
   savesQuery: "",
@@ -243,8 +253,15 @@ function gameTitle(game, fallback = "") {
   return game?.meta?.name || game?.name || game?.key || fallback;
 }
 
+function vaultQueryParam(url) {
+  if (!url || store.sessionMode !== "admin" || !store.activeVault || store.activeVault === "default") return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}vault=${encodeURIComponent(store.activeVault)}`;
+}
+
 function gameCoverURL(game) {
-  return game?.meta?.cover?.url || "";
+  const url = game?.meta?.cover?.url || "";
+  return url ? vaultQueryParam(url) : "";
 }
 
 function gameKeyPath(gameKey, suffix = "") {
@@ -332,6 +349,9 @@ class UnauthorizedError extends Error {}
 
 async function api(path, { method = "GET", body, raw = false, headers: extraHeaders = {}, upload, contentType } = {}) {
   const headers = { "X-Game-Save-Admin": "1", ...extraHeaders };
+  if (store.sessionMode === "admin" && store.activeVault && store.activeVault !== "default") {
+    headers["X-Game-Save-Vault"] = store.activeVault;
+  }
   if (upload !== undefined) headers["Content-Type"] = contentType || "application/octet-stream";
   else if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(`api/${path}`, {
@@ -346,6 +366,27 @@ async function api(path, { method = "GET", body, raw = false, headers: extraHead
     const error = new Error(translateError(message));
     error.status = response.status;
     error.meta = payload && typeof payload.rev === "number" ? payload : null;
+    error.head = payload && typeof payload.head === "string" ? payload.head : "";
+    throw error;
+  }
+  if (raw || response.status === 204) return response;
+  return response.json();
+}
+
+async function selfApi(path, { method = "GET", body, raw = false, headers: extraHeaders = {} } = {}) {
+  const headers = { "X-Game-Save-Self": "1", ...extraHeaders };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(`../v1/self/${path}`, {
+    method, headers, credentials: "same-origin",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (response.status === 401) throw new UnauthorizedError();
+  if (!response.ok) {
+    let payload = null;
+    try { payload = await response.json(); } catch { /* ignore */ }
+    const message = payload?.error || `请求失败（${response.status}）`;
+    const error = new Error(translateError(message));
+    error.status = response.status;
     error.head = payload && typeof payload.head === "string" ? payload.head : "";
     throw error;
   }
@@ -402,6 +443,13 @@ function translateError(message) {
     "invalid SaveVault snapshot id": "版本 ID 无效",
     "lock note must be at most 120 characters without control characters": "备注最多 120 个字符，不能包含控制字符",
     "invalid SaveVault retention settings": "自动保留设置无效，请检查版本数和天数",
+    "invalid credentials": "用户名或密码不正确",
+    "account disabled": "该账号已被管理员停用",
+    "account expired": "该账号已过期",
+    "current password is incorrect": "当前密码不正确",
+    "cannot delete the current head snapshot": "不能删除当前最新版本",
+    "cannot delete a locked snapshot; unlock it first": "该版本已锁定，请先解锁再删除",
+    "password must be at least 8 characters": "密码至少需要 8 位字符",
   };
   return map[message] || message;
 }
@@ -1382,7 +1430,8 @@ async function renderSaveVault() {
 }
 
 function saveVaultDownloadLink(type, archive) {
-  return `<a class="icon-btn" href="api/savevault/files/${encodeURIComponent(type)}/${encodeURIComponent(archive)}/download" title="下载归档（ZIP）" aria-label="下载归档 ${esc(archive)}" download>${icon("download")}</a>`;
+  const url = vaultQueryParam(`api/savevault/files/${encodeURIComponent(type)}/${encodeURIComponent(archive)}/download`);
+  return `<a class="icon-btn" href="${esc(url)}" title="下载归档（ZIP）" aria-label="下载归档 ${esc(archive)}" download>${icon("download")}</a>`;
 }
 
 function saveVaultArchiveSize(archive, type = "") {
@@ -1429,6 +1478,7 @@ function saveVaultSnapshotRow(snapshot, headID, type) {
         ? `<button class="icon-btn" type="button" data-action="unlock-savevault" data-id="${esc(snapshot.id)}" title="${esc(snapshot.lockNote ? `已锁定：${snapshot.lockNote}` : "已锁定")}，点击解锁" aria-label="解锁版本">${icon("lock")}</button>`
         : `<button class="icon-btn" type="button" data-action="lock-savevault" data-id="${esc(snapshot.id)}" title="锁定这个版本（清理时永远保留）" aria-label="锁定版本">${icon("lock")}</button>`}
       ${current ? "" : `<button class="icon-btn" type="button" data-action="promote-savevault" data-id="${esc(snapshot.id)}" data-head="${esc(headID || "")}" title="设为当前版本" aria-label="设为当前版本">${icon("restore")}</button>`}
+      ${!current && !snapshot.locked ? `<button class="icon-btn" type="button" data-action="delete-savevault-snapshot" data-id="${esc(snapshot.id)}" title="删除该历史版本" aria-label="删除该历史版本">${icon("trash")}</button>` : ""}
       ${saveVaultDownloadLink(type, snapshot.archive)}
     </div>
   </div>`;
@@ -1445,7 +1495,7 @@ function clearSaveVaultCaches() {
 function saveVaultManageCard(scope, retired, gameName) {
   const type = encodeURIComponent(scope.type);
   const gameId = encodeURIComponent(scope.gameId);
-  const exportURL = `api/savevault/scopes/${type}/${gameId}/export`;
+  const exportURL = vaultQueryParam(`api/savevault/scopes/${type}/${gameId}/export`);
   return `<section class="card scope-side-card scope-manage">
     <div class="card-head"><div><h2>管理这个范围</h2><p>下载、合并或删除 · 所有操作都会记入活动</p></div>
       ${retired ? statusChip("neutral", "已合并（只读）") : statusChip("ok", "可写")}</div>
@@ -1554,7 +1604,7 @@ function showSaveVaultDeleteDialog(scope) {
     if (!previous || time > previous.at) devices.set(key, { name, at: time });
   }
   const recentDevices = [...devices.values()].sort((left, right) => right.at - left.at);
-  const exportURL = `api/savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/export`;
+  const exportURL = vaultQueryParam(`api/savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/export`);
   let headID = scope.head?.id || "";
   let removeEscape = null;
   const { root, close } = modal(`
@@ -1991,32 +2041,142 @@ async function reloadUsers() {
   return store.users || [];
 }
 
+function quotaBarHTML(used, quota, large = false) {
+  if (!quota || quota <= 0) return "";
+  const pct = Math.min(100, Math.round(((Number(used) || 0) / quota) * 100));
+  const tone = pct >= 95 ? "danger" : pct >= 80 ? "warn" : "";
+  return `<div class="quota-bar ${large ? "lg" : ""}" title="${pct}% (${esc(formatBytes(used))} / ${esc(formatBytes(quota))})"><div class="quota-fill ${tone}" style="width:${pct}%"></div></div>`;
+}
+
 function userRow(user) {
   const disabled = user.status && user.status !== "active";
   const expires = user.expires_at ? absTime(user.expires_at) : "";
   const expired = user.expires_at ? new Date(user.expires_at) <= new Date() : false;
   const avatarHue = hue(user.username || "user");
+  const used = Number(user.used_bytes) || 0;
+  const quotaText = user.quota_bytes ? `${formatBytes(used)} / ${formatBytes(user.quota_bytes)}` : `${formatBytes(used)} / 不限`;
   return `<div class="token-row user-row ${disabled || expired ? "revoked" : ""}">
     <span class="user-avatar" style="--hue:${avatarHue};--hue-2:${(avatarHue + 38) % 360}" aria-hidden="true">${esc(coverInitials(user.username))}</span>
     <div class="token-main">
       <div class="token-title"><strong>${esc(user.username)}</strong>
-        ${expired ? statusChip("danger", "已到期") : disabled ? statusChip("danger", "已禁用") : statusChip("ok", "有效")}
+        ${expired ? statusChip("danger", "已到期") : disabled ? statusChip("danger", "已停用") : statusChip("ok", "有效")}
         <span class="tag accent">vault ${esc(user.vault_id)}</span></div>
       <div class="token-meta">
         <span title="${esc(user.last_login_at ? absTime(user.last_login_at) : "")}">最近登录：${esc(user.last_login_at ? relTime(user.last_login_at) : "从未登录")}</span>
         <span>创建：${esc(absTime(user.created_at))}</span>
         ${expires ? `<span>到期：${esc(expires)}</span>` : ""}
-        <span>配额：${user.quota_bytes ? esc(formatBytes(user.quota_bytes)) : "不限"}</span>
+        <span>空间：${esc(quotaText)}</span>
       </div>
+      ${quotaBarHTML(used, user.quota_bytes)}
       ${user.note ? `<div class="token-meta"><span>备注：${esc(user.note)}</span></div>` : ""}
       <div class="token-id"><span>登录令牌</span><code title="${esc(user.token)}">${esc(middleEllipsis(user.token, 16, 6))}</code>
         <button class="icon-btn" type="button" data-copy="${esc(user.token)}" title="复制令牌" aria-label="复制令牌">${icon("copy")}</button></div>
     </div>
     <div class="token-actions">
-      <button class="btn sm ghost" type="button" data-action="reset-user-password" data-id="${esc(user.username)}">${icon("edit")}重置密码</button>
+      <button class="btn sm ghost" type="button" data-action="switch-vault" data-id="${esc(user.vault_id)}">${icon("database")}查看保险库</button>
+      <button class="btn sm ghost" type="button" data-action="edit-user" data-id="${esc(user.username)}">${icon("edit")}编辑</button>
       <button class="btn sm ghost danger" type="button" data-action="delete-user" data-id="${esc(user.username)}">${icon("trash")}删除</button>
     </div>
   </div>`;
+}
+
+function editUserDialog(user) {
+  return new Promise((resolve) => {
+    const quotaMiB = user.quota_bytes ? Math.round(user.quota_bytes / (1024 * 1024)) : 0;
+    const expiresDate = user.expires_at ? String(user.expires_at).slice(0, 10) : "";
+    const { root, close } = modal(`
+      <h2>编辑用户 · ${esc(user.username)}</h2>
+      <form class="form">
+        <label class="field"><span>账号状态</span>
+          <select name="status">
+            <option value="active"${user.status !== "disabled" ? " selected" : ""}>有效（允许同步与登录）</option>
+            <option value="disabled"${user.status === "disabled" ? " selected" : ""}>停用（立即拦截所有请求并吊销网页会话）</option>
+          </select>
+        </label>
+        <div class="inline-fields">
+          <label class="field"><span>配额 MiB（0 表示不限）</span>
+            <input type="number" name="quota" min="0" step="64" value="${quotaMiB}">
+          </label>
+          <label class="field"><span>到期时间（YYYY-MM-DD，留空永不过期）</span>
+            <input type="text" name="expires" maxlength="10" value="${esc(expiresDate)}" placeholder="2027-01-01">
+          </label>
+        </div>
+        <label class="field"><span>备注</span>
+          <input type="text" name="note" maxlength="120" value="${esc(user.note || "")}" autocomplete="off">
+        </label>
+        <label class="field"><span>重置密码（留空不修改）</span>
+          <input type="password" name="password" maxlength="128" autocomplete="new-password" placeholder="至少 8 位">
+        </label>
+        <label class="check-field">
+          <input type="checkbox" name="rotateToken">
+          <span>同时轮换该用户的共享同步令牌（旧共享令牌立即失效，设备令牌不受影响）</span>
+        </label>
+        <p class="form-error" role="alert"></p>
+        <div class="modal-actions">
+          <button class="btn" type="button" data-cancel>取消</button>
+          <button class="btn primary" type="submit">保存更改</button>
+        </div>
+      </form>`);
+    const error = root.querySelector(".form-error");
+    root.querySelector("[data-cancel]").onclick = () => { close(); resolve(false); };
+    root.onclick = (event) => { if (event.target === root) { close(); resolve(false); } };
+    root.querySelector("form").onsubmit = async (event) => {
+      event.preventDefault();
+      error.textContent = "";
+      const form = new FormData(event.target);
+      const quotaVal = Number(form.get("quota") || 0);
+      const expiresRaw = String(form.get("expires") || "").trim();
+      let expiresAt = "";
+      if (expiresRaw) {
+        const parsed = new Date(`${expiresRaw}T00:00:00Z`);
+        if (Number.isNaN(parsed.getTime())) { error.textContent = "到期时间格式应为 YYYY-MM-DD"; return; }
+        expiresAt = parsed.toISOString();
+      }
+      const password = String(form.get("password") || "");
+      if (password && password.length < 8) {
+        error.textContent = "密码至少需要 8 位字符";
+        return;
+      }
+      const payload = {
+        status: String(form.get("status") || "active"),
+        note: String(form.get("note") || "").trim(),
+        quotaBytes: Number.isFinite(quotaVal) ? Math.max(0, Math.round(quotaVal * 1024 * 1024)) : 0,
+        expiresAt,
+        rotateToken: form.get("rotateToken") === "on",
+      };
+      if (password) payload.password = password;
+      const updated = await guarded(
+        () => api(`users/${encodeURIComponent(user.username)}`, { method: "PATCH", body: payload }),
+        payload.rotateToken ? "用户已更新并轮换令牌" : "用户已更新",
+      );
+      if (!updated) { error.textContent = "更新失败，请检查输入"; return; }
+      close();
+      resolve(true);
+    };
+  });
+}
+
+function deleteUserDialog(username) {
+  return new Promise((resolve) => {
+    const { root, close } = modal(`
+      <h2>删除用户 ${esc(username)}？</h2>
+      <p>将立即吊销该用户的同步令牌、全部设备令牌与网页会话。</p>
+      <label class="check-field">
+        <input type="checkbox" id="delete-user-purge">
+        <span>同时彻底清除磁盘上的保险库目录与全部历史存档（<b>不可恢复</b>）</span>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" type="button" data-cancel>取消</button>
+        <button class="btn danger solid" type="button" data-confirm>删除用户</button>
+      </div>`);
+    root.querySelector("[data-cancel]").onclick = () => { close(); resolve(null); };
+    root.onclick = (event) => { if (event.target === root) { close(); resolve(null); } };
+    root.querySelector("[data-confirm]").onclick = () => {
+      const purge = Boolean(root.querySelector("#delete-user-purge")?.checked);
+      close();
+      resolve({ purge });
+    };
+  });
 }
 
 function renderUsersView() {
@@ -2927,7 +3087,10 @@ async function renderMaintenance() {
             <dt>单个对象上限</dt><dd>${formatBytes(server.max_object_bytes)}</dd>
             <dt>请求数</dt><dd>${server.requests.toLocaleString("zh-CN")}</dd>
             ${server.disk_total ? `<dt>数据卷</dt><dd>${formatBytes(server.disk_free)} 可用 / ${formatBytes(server.disk_total)}</dd>` : ""}
-          </dl></div>
+          </dl>
+          <div class="form-actions card-actions">
+            <button class="btn sm ghost danger" type="button" data-action="revoke-all-sessions">${icon("logout")}注销全部管理员会话</button>
+          </div></div>
         </section>
         <section class="card">
           <div class="card-head"><h2>从上游缓存封面</h2>${metaSettings.coverFetch
@@ -2985,6 +3148,306 @@ async function renderMaintenance() {
   };
 }
 
+// ---------- multi-tenant vault switcher & tenant self-service portal ----------
+
+async function loadVaults() {
+  if (store.sessionMode !== "admin") return;
+  try {
+    const data = await api("vaults");
+    store.vaults = data?.vaults || [];
+    if (store.activeVault !== "default" && !store.vaults.some((v) => v.id === store.activeVault)) {
+      store.activeVault = "default";
+      storageSet("game-save-active-vault", null);
+    }
+    syncVaultSwitcherUI();
+  } catch { /* ignore when single-vault or not ready */ }
+}
+
+function syncVaultSwitcherUI() {
+  const box = $("#vault-switcher");
+  const select = $("#vault-select");
+  if (!box || !select) return;
+  if (store.sessionMode !== "admin" || store.vaults.length <= 1) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  select.innerHTML = store.vaults.map((v) => {
+    const label = v.is_default
+      ? `默认保险库 (${formatBytes(v.used_bytes)})`
+      : `${v.username || v.id} · ${formatBytes(v.used_bytes)}${v.quota_bytes ? `/${formatBytes(v.quota_bytes)}` : ""}`;
+    return `<option value="${esc(v.id)}"${v.id === store.activeVault ? " selected" : ""}>${esc(label)}</option>`;
+  }).join("");
+}
+
+function syncVaultBanner() {
+  const existing = main.querySelector(".vault-banner");
+  if (existing) existing.remove();
+  if (store.sessionMode !== "admin" || !store.activeVault || store.activeVault === "default") return;
+  const info = store.vaults.find((v) => v.id === store.activeVault);
+  const label = info?.username ? `${info.username}（vault ${info.id}）` : `vault ${store.activeVault}`;
+  const banner = document.createElement("div");
+  banner.className = "vault-banner";
+  banner.innerHTML = `<span>正在查看租户保险库：<strong>${esc(label)}</strong>${info?.quota_bytes ? ` · 已用 ${esc(formatBytes(info.used_bytes))} / ${esc(formatBytes(info.quota_bytes))}` : ""}</span>
+    <button class="btn sm" type="button" data-action="switch-vault" data-id="default">返回默认库</button>`;
+  main.prepend(banner);
+}
+
+async function switchVault(vaultID) {
+  const next = vaultID || "default";
+  if (next === store.activeVault) return;
+  store.activeVault = next;
+  storageSet("game-save-active-vault", next === "default" ? null : next);
+  store.overview = null;
+  store.overviewSaveVaultGames = null;
+  store.scopeDetail = null;
+  store.events = null;
+  store.saveVaultFiles = null;
+  clearSaveVaultCaches();
+  store.deviceTokens = null;
+  store.pairings = null;
+  store.pruneReport = null;
+  store.verifyReport = null;
+  syncVaultSwitcherUI();
+  if (currentRoute().name === "users") location.hash = "#/";
+  await refresh();
+}
+
+function syncShellMode() {
+  const isTenant = store.sessionMode === "tenant";
+  $("#nav").hidden = isTenant;
+  $("#tenant-nav").hidden = !isTenant;
+  const brand = $(".brand");
+  if (brand) brand.setAttribute("href", isTenant ? "#/self" : "#/");
+  const tenantLabel = $("#tenant-nav-user");
+  if (tenantLabel && isTenant) {
+    tenantLabel.textContent = store.tenantUser?.username ? `账号 · ${store.tenantUser.username}` : "我的空间";
+  }
+  syncVaultSwitcherUI();
+}
+
+function selfRoute() {
+  const hash = location.hash.replace(/^#\/?/, "");
+  const parts = hash.split("/").filter(Boolean);
+  if (parts[0] === "self" && parts[1] === "saves" && parts[2] && parts[3]) {
+    return { name: "selfScope", type: safeDecodeURI(parts[2]), gameId: safeDecodeURI(parts[3]), nav: "selfSaves" };
+  }
+  if (parts[0] === "self" && parts[1] === "saves") return { name: "selfSaves", nav: "selfSaves" };
+  if (parts[0] === "self" && parts[1] === "devices") return { name: "selfDevices", nav: "selfDevices" };
+  return { name: "selfOverview", nav: "selfOverview" };
+}
+
+async function renderSelf() {
+  const route = selfRoute();
+  document.querySelectorAll("#tenant-nav a").forEach((link) => {
+    const active = link.dataset.selfRoute === route.nav;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  const titles = { selfOverview: "我的概览", selfSaves: "我的存档", selfScope: "存档详情", selfDevices: "设备与配对" };
+  document.title = `${titles[route.name]} · SaveVault 云端`;
+  switch (route.name) {
+    case "selfSaves": return renderSelfSaves();
+    case "selfScope": return renderSelfScope(route.type, route.gameId);
+    case "selfDevices": return renderSelfDevices();
+    default: return renderSelfOverview();
+  }
+}
+
+async function renderSelfOverview() {
+  if (!store.selfOverview) main.innerHTML = `<div class="skeleton"></div>`;
+  const data = await guarded(() => selfApi("overview"));
+  if (!data || selfRoute().name !== "selfOverview") return;
+  store.selfOverview = data;
+  $("#brand-version").textContent = data.server_version || "CLOUD";
+  const pct = data.quota_bytes > 0 ? Math.min(100, Math.round((data.used_bytes / data.quota_bytes) * 100)) : 0;
+  main.innerHTML = `
+    ${pageHead(`你好，${data.username}`, `独立保险库 ${data.vault_id}${data.note ? ` · ${data.note}` : ""}${data.expires_at ? ` · 到期时间 ${absTime(data.expires_at)}` : ""}`)}
+    <div class="kpi-grid">
+      <div class="kpi"><span class="kpi-icon">${icon("database")}</span><span class="label">已用空间</span><strong class="value">${esc(formatBytes(data.used_bytes))}</strong><span class="sub">${data.quota_bytes ? `总配额 ${esc(formatBytes(data.quota_bytes))}（${pct}%）` : "不限配额"}</span></div>
+      <div class="kpi"><span class="kpi-icon">${icon("archive")}</span><span class="label">同步范围</span><strong class="value">${data.scopes || 0}</strong><span class="sub">SaveVault 原生存档</span></div>
+      <div class="kpi"><span class="kpi-icon">${icon("restore")}</span><span class="label">云端版本</span><strong class="value">${data.snapshots || 0}</strong><span class="sub">历史快照总数</span></div>
+      <div class="kpi"><span class="kpi-icon">${icon("devices")}</span><span class="label">已配对设备</span><strong class="value">${data.active_devices || 0}</strong><span class="sub">有效设备令牌</span></div>
+    </div>
+    <div class="split" style="margin-top:var(--space-4)">
+      <section class="card">
+        <div class="card-head"><div><h2>空间配额</h2><p>${data.quota_bytes ? "达到 100% 后新上传会被拒绝，可删除历史旧版本释放空间。" : "当前账号未限制存储配额。"}</p></div></div>
+        <div class="card-body">
+          <div class="self-quota-row">
+            <strong>${esc(formatBytes(data.used_bytes))}</strong>
+            <span>${data.quota_bytes ? `共 ${esc(formatBytes(data.quota_bytes))} · 剩余 ${esc(formatBytes(Math.max(0, data.quota_bytes - data.used_bytes)))}` : "不限容量"}</span>
+          </div>
+          ${quotaBarHTML(data.used_bytes, data.quota_bytes, true)}
+          <div class="form-actions card-actions">
+            <a class="btn primary" href="#/self/saves">${icon("archive")}管理我的存档</a>
+            <a class="btn" href="#/self/devices">${icon("shield")}配对新设备</a>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h2>修改账号密码</h2><p>修改后其他浏览器会话将立即退出，已配对的客户端令牌不受影响。</p></div></div>
+        <div class="card-body">
+          <form class="form" id="self-password-form">
+            <label class="field"><span>当前密码</span><input type="password" name="currentPassword" required autocomplete="current-password"></label>
+            <label class="field"><span>新密码（至少 8 位）</span><input type="password" name="newPassword" required minlength="8" autocomplete="new-password"></label>
+            <p class="form-error" id="self-password-error" role="alert"></p>
+            <div class="form-actions"><button class="btn primary" type="submit">${icon("lock")}更新密码</button></div>
+          </form>
+        </div>
+      </section>
+    </div>`;
+  const form = $("#self-password-form");
+  if (form) form.onsubmit = async (event) => {
+    event.preventDefault();
+    const err = $("#self-password-error");
+    err.textContent = "";
+    const fd = new FormData(form);
+    const body = { currentPassword: String(fd.get("currentPassword") || ""), newPassword: String(fd.get("newPassword") || "") };
+    if (body.newPassword.length < 8) { err.textContent = "新密码至少需要 8 位字符"; return; }
+    const ok = await guarded(() => selfApi("password", { method: "POST", body }), "密码已更新");
+    if (ok !== undefined) form.reset();
+  };
+}
+
+async function renderSelfSaves() {
+  if (!store.selfGames) main.innerHTML = `<div class="skeleton"></div>`;
+  const data = await guarded(() => selfApi("savevault/games"));
+  if (!data || selfRoute().name !== "selfSaves") return;
+  store.selfGames = data.games || [];
+  const games = store.selfGames;
+  main.innerHTML = `
+    ${pageHead("我的存档", `共 ${games.length} 款游戏 · 点击进入查看时间线、加锁、回滚或清理历史版本。`)}
+    ${games.length ? `<div class="games-grid">${games.map((game) => {
+      const title = gameTitle(game);
+      const scopes = game.scopes || [];
+      const first = scopes[0];
+      const coverUrl = game?.meta?.cover?.sha256 ? `../v1/self/savevault/covers/${encodeURIComponent(game.meta.cover.sha256)}` : "";
+      const snaps = scopes.reduce((sum, s) => sum + (s.snapshotCount || 0), 0);
+      const bytes = scopes.reduce((sum, s) => sum + (s.archiveBytes || 0), 0);
+      const latest = scopes.map((s) => s.lastReceivedAt).filter(Boolean).sort().pop();
+      const href = first ? `#/self/saves/${encodeURIComponent(first.type)}/${encodeURIComponent(first.gameId)}` : "#/self/saves";
+      return `<a class="card game-card" href="${href}">
+        <div class="game-card-top">${coverBlock(title, coverUrl)}
+          <div class="game-card-meta"><strong>${esc(title)}</strong>
+            <div class="game-card-tags"><span class="tag accent">${esc(saveVaultTypeLabel(game.type))}</span>${scopes.length > 1 ? `<span class="tag">${scopes.length} 个位置</span>` : ""}</div>
+          </div></div>
+        <div class="game-card-stats">
+          <div><span>版本</span><b>${snaps}</b></div>
+          <div><span>占用</span><b>${esc(formatBytes(bytes))}</b></div>
+          <div><span>更新</span><b>${latest ? esc(relTime(latest)) : "从未"}</b></div>
+        </div>
+      </a>`;
+    }).join("")}</div>` : emptyState("还没有云端存档", "使用客户端配对或登录本账号并同步游戏存档后，它们会出现在这里。", "archive")}`;
+}
+
+async function renderSelfScope(type, gameId) {
+  main.innerHTML = `<div class="skeleton"></div>`;
+  const scope = await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(type)}/${encodeURIComponent(gameId)}`));
+  if (!scope) return;
+  const r = selfRoute();
+  if (r.name !== "selfScope" || r.type !== type || r.gameId !== gameId) return;
+  store.selfScopeDetail = scope;
+  const headID = scope.head?.id || "";
+  const snapshots = [...(scope.snapshots || [])].sort((a, b) => new Date(b.receivedAt || b.createdAt || 0) - new Date(a.receivedAt || a.createdAt || 0));
+  const title = scope.gameName || scope.gameId;
+  main.innerHTML = `
+    <div class="crumbs"><a href="#/self/saves">${icon("back")}返回我的存档</a></div>
+    ${pageHead(title, `${saveVaultTypeLabel(scope.type)} · ${scope.gameId} · 共 ${snapshots.length} 个版本 · ${formatBytes(scope.archiveBytes || 0)}`)}
+    <section class="card">
+      <div class="card-head"><div><h2>版本时间线</h2><p>可以锁定重要节点防止被清理、将历史版本设为当前版本，或删除不需要的旧版本。</p></div></div>
+      <div class="card-body os-timeline">${snapshots.length ? snapshots.map((snap) => {
+        const current = snap.id === headID && !snap.conflict;
+        const ts = snap.receivedAt || snap.createdAt;
+        const dl = `../v1/self/savevault/files/${encodeURIComponent(scope.type)}/${encodeURIComponent(snap.archive)}/download`;
+        return `<div class="os-snap ${current ? "current" : ""} ${snap.conflict ? "conflict" : ""} ${snap.locked ? "locked" : ""}">
+          <span class="os-snap-node"></span>
+          <div class="os-snap-main">
+            <div class="os-snap-heading">
+              ${snap.conflict ? statusChip("warn", "冲突副本") : current ? statusChip("accent", "当前") : statusChip("neutral", "历史版本")}
+              <strong>${esc(snap.deviceName || snap.device || "客户端")}</strong>
+              <span class="sep">·</span>${relAbsTime(ts)}
+              ${snap.locked ? `<span class="os-lock-note">${icon("lock")}${esc(snap.lockNote || "已锁定")}</span>` : ""}
+            </div>
+            <div class="os-snap-tech"><span>快照 <code>${esc(shortID(snap.id, 26))}</code></span></div>
+          </div>
+          <div class="os-snap-actions">
+            ${snap.locked
+              ? `<button class="icon-btn" type="button" data-action="self-unlock-snap" data-id="${esc(snap.id)}" title="解锁版本">${icon("lock")}</button>`
+              : `<button class="icon-btn" type="button" data-action="self-lock-snap" data-id="${esc(snap.id)}" title="锁定版本">${icon("lock")}</button>`}
+            ${current ? "" : `<button class="icon-btn" type="button" data-action="self-promote-snap" data-id="${esc(snap.id)}" data-head="${esc(headID)}" title="设为当前版本">${icon("restore")}</button>`}
+            ${!current && !snap.locked ? `<button class="icon-btn" type="button" data-action="self-delete-snap" data-id="${esc(snap.id)}" title="删除该历史版本">${icon("trash")}</button>` : ""}
+            <a class="icon-btn" href="${esc(dl)}" download title="下载归档（ZIP）">${icon("download")}</a>
+          </div>
+        </div>`;
+      }).join("") : emptyState("暂无快照", "该范围还没有历史版本。", "archive")}</div>
+    </section>`;
+}
+
+async function renderSelfDevices() {
+  if (!store.selfDevices) main.innerHTML = `<div class="skeleton"></div>`;
+  const [devData, pairData] = await Promise.all([
+    guarded(() => selfApi("devices")),
+    guarded(() => selfApi("pairings")),
+  ]);
+  if (!devData || selfRoute().name !== "selfDevices") return;
+  store.selfDevices = devData;
+  store.selfPairings = pairData?.pairings || [];
+  const tokens = devData.tokens || [];
+  const active = tokens.filter((t) => !t.revoked_at);
+  const revoked = tokens.filter((t) => t.revoked_at);
+  main.innerHTML = `
+    ${pageHead("我的设备与配对", "为新设备生成一次性配对码，或吊销不再使用的旧设备令牌。",
+      `<button class="btn primary" type="button" data-action="self-pair-device">${icon("shield")}配对新设备</button>`)}
+    <div class="stack">
+      <section class="card token-section">
+        <div class="card-head"><div><h2>有效设备令牌</h2><p>吊销后对应设备会立即断开，需要重新配对。</p></div><span class="tag accent">${active.length} 个</span></div>
+        <div class="card-body token-list">${active.length ? active.map((t) => `
+          <div class="token-row">
+            <div class="token-main">
+              <div class="token-title"><strong>${esc(t.display_name || t.name || "未命名设备")}</strong>${statusChip("ok", "有效")}${t.online ? statusChip("ok", "在线") : ""}</div>
+              <div class="token-meta"><span>最近使用：${esc(t.last_used_at ? relTime(t.last_used_at) : "从未使用")}</span><span>创建：${esc(absTime(t.created_at))}</span></div>
+            </div>
+            <div class="token-actions"><button class="btn sm ghost danger" type="button" data-action="self-revoke-device" data-id="${esc(t.id)}">${icon("trash")}吊销</button></div>
+          </div>`).join("") : emptyState("暂无已配对设备", "点击右上角「配对新设备」生成配对二维码。", "devices")}</div>
+      </section>
+      ${revoked.length ? `<section class="card token-section">
+        <div class="card-head"><div><h2>已吊销设备</h2></div><span class="tag">${revoked.length} 个</span></div>
+        <div class="card-body token-list">${revoked.map((t) => `
+          <div class="token-row revoked">
+            <div class="token-main">
+              <div class="token-title"><strong>${esc(t.display_name || t.name || "未命名设备")}</strong>${statusChip("danger", "已吊销")}</div>
+              <div class="token-meta"><span>吊销于：${esc(absTime(t.revoked_at))}</span></div>
+            </div>
+            <div class="token-actions"><button class="btn sm ghost danger" type="button" data-action="self-delete-device" data-id="${esc(t.id)}">${icon("trash")}删除记录</button></div>
+          </div>`).join("")}</div>
+      </section>` : ""}
+    </div>`;
+}
+
+async function showSelfPairDialog() {
+  const name = await promptDialog({ title: "配对新设备", label: "设备名称（可选）", placeholder: "例如：Odin 2 / Steam Deck", maxlength: 80 });
+  if (name === null) return;
+  const created = await guarded(() => selfApi("pairings", { method: "POST", body: { name, ttl_minutes: 10 } }));
+  if (!created) return;
+  const serverURL = normalizePairServer(location.origin) || location.origin;
+  const uri = pairURI(serverURL, created.code);
+  const { root, close } = modal(`
+    <h2>扫描二维码或输入配对码</h2>
+    <p>有效期 10 分钟，仅可使用一次。客户端打开 SaveVault 选择「配对」即可接入你的独立保险库。</p>
+    <div class="pair-code-block">
+      ${pairQRCodeSVG(uri)}
+      <strong class="pair-code-value">${esc(created.code)}</strong>
+      <div class="form-actions">
+        <button class="btn sm" type="button" data-copy="${esc(created.code)}">${icon("copy")}复制配对码</button>
+        <button class="btn sm" type="button" data-copy="${esc(uri)}">${icon("copy")}复制配对链接</button>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn primary" type="button" data-done>完成</button></div>`);
+  root.querySelector("[data-done]").onclick = close;
+  root.onclick = (e) => { if (e.target === root) close(); };
+}
+
 // ---------- routing ----------
 
 function safeDecodeURI(value) {
@@ -3004,6 +3467,7 @@ function currentRoute() {
 }
 
 async function render() {
+  if (store.sessionMode === "tenant") return renderSelf();
   const route = currentRoute();
   document.querySelectorAll("#nav a").forEach((link) => {
     const active = link.dataset.route === route.nav;
@@ -3014,17 +3478,18 @@ async function render() {
   const titles = { overview: "概览", saves: "存档", scope: "存档", savevault: "SaveVault", savevaultScope: "SaveVault 存档", devices: "设备", users: "用户", tokens: "令牌", activity: "活动", maintenance: "维护" };
   document.title = `${titles[route.name]} · SaveVault 云端`;
   switch (route.name) {
-    case "saves": return renderSaves();
-    case "scope": return renderScope(route.id);
-    case "savevault": return renderSaveVault();
-    case "savevaultScope": return renderSaveVaultScope(route.type, route.gameId);
-    case "devices": return renderDevices();
-    case "users": return renderUsers();
-    case "tokens": return renderTokens();
-    case "activity": return renderActivity();
-    case "maintenance": return renderMaintenance();
-    default: return renderOverview();
+    case "saves": await renderSaves(); break;
+    case "scope": await renderScope(route.id); break;
+    case "savevault": await renderSaveVault(); break;
+    case "savevaultScope": await renderSaveVaultScope(route.type, route.gameId); break;
+    case "devices": await renderDevices(); break;
+    case "users": await renderUsers(); break;
+    case "tokens": await renderTokens(); break;
+    case "activity": await renderActivity(); break;
+    case "maintenance": await renderMaintenance(); break;
+    default: await renderOverview(); break;
   }
+  syncVaultBanner();
 }
 
 let refreshing = false;
@@ -3032,7 +3497,12 @@ async function refresh({ quiet = false } = {}) {
   if (refreshing) return;
   refreshing = true;
   try {
-    await loadOverview();
+    if (store.sessionMode === "tenant") {
+      const editing = main.contains(document.activeElement) && document.activeElement.matches("input, select, textarea");
+      if (!(quiet && editing)) await renderSelf();
+      return;
+    }
+    await Promise.all([loadOverview(), loadVaults()]);
     const route = currentRoute();
     // Avoid wiping half-typed form input or active SaveVault caches during background refreshes.
     const editing = main.contains(document.activeElement) && document.activeElement.matches("input, select, textarea");
@@ -3081,9 +3551,98 @@ async function onAction(event) {
     }
     case "logout":
       try {
-        await fetch("api/logout", { method: "POST", headers: { "X-Game-Save-Admin": "1" } });
+        if (store.sessionMode === "tenant") {
+          await fetch("../v1/self/logout", { method: "POST", headers: { "X-Game-Save-Self": "1" }, credentials: "same-origin" });
+        } else {
+          await fetch("api/logout", { method: "POST", headers: { "X-Game-Save-Admin": "1" }, credentials: "same-origin" });
+        }
       } catch { /* clear local UI regardless of network errors */ }
       return showLogin();
+    case "switch-vault":
+      return switchVault(id || "default");
+    case "revoke-all-sessions": {
+      const ok = await confirmDialog({
+        title: "注销全部管理员会话？", danger: true, confirm: "立即注销",
+        message: "所有浏览器上的管理员登录 Cookie 将立即失效（包含当前窗口），需要重新输入管理员令牌登录。",
+      });
+      if (!ok) return;
+      if (await guarded(() => api("sessions/revoke-all", { method: "POST", body: { role: "admin" } }), "已注销全部管理员会话")) {
+        showLogin();
+      }
+      return;
+    }
+    case "delete-savevault-snapshot": {
+      const scope = store.saveVaultScopeDetail;
+      if (!scope) return;
+      const ok = await confirmDialog({
+        title: "删除该历史版本？", danger: true, confirm: "删除",
+        message: `将永久删除快照 <code>${esc(shortID(id, 24))}</code> 及其未被引用的归档文件，无法恢复。`,
+      });
+      if (!ok) return;
+      const res = await guarded(() => api(
+        `savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}`,
+        { method: "DELETE" }), "历史版本已删除");
+      if (res) {
+        clearSaveVaultCaches();
+        await refresh();
+      }
+      return;
+    }
+    case "self-lock-snap": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      const note = await promptDialog({ title: "锁定这个版本", label: "备注（可选）", maxlength: 120, placeholder: "例如：通关前" });
+      if (note === null) return;
+      if (await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`, { method: "PUT", body: { note } }), "已锁定版本")) {
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
+    case "self-unlock-snap": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      if (await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}/lock`, { method: "DELETE" }), "已解锁版本")) {
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
+    case "self-promote-snap": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      const ok = await confirmDialog({ title: "设为当前版本？", confirm: "设为当前版本", message: "其他设备下次同步将以此版本作为最新云端存档；旧版本仍保留在历史中。" });
+      if (!ok) return;
+      if (await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/promote`, { method: "POST", body: { snapshot: id, expectedHead: target.dataset.head || "" } }), "已设为当前版本")) {
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
+    case "self-delete-snap": {
+      const scope = store.selfScopeDetail;
+      if (!scope) return;
+      const ok = await confirmDialog({ title: "删除该历史版本？", danger: true, confirm: "删除", message: "将永久删除该历史快照以释放云端空间，此操作无法撤销。" });
+      if (!ok) return;
+      if (await guarded(() => selfApi(`savevault/scopes/${encodeURIComponent(scope.type)}/${encodeURIComponent(scope.gameId)}/snapshots/${encodeURIComponent(id)}`, { method: "DELETE" }), "历史版本已删除")) {
+        store.selfOverview = null;
+        await renderSelfScope(scope.type, scope.gameId);
+      }
+      return;
+    }
+    case "self-pair-device":
+      return showSelfPairDialog();
+    case "self-revoke-device": {
+      const ok = await confirmDialog({ title: "吊销设备令牌？", danger: true, confirm: "吊销", message: "吊销后该设备会立即断开同步，需重新配对才能接入。" });
+      if (!ok) return;
+      if (await guarded(() => selfApi(`devices/${encodeURIComponent(id)}/revoke`, { method: "POST" }), "设备令牌已吊销")) {
+        await renderSelfDevices();
+      }
+      return;
+    }
+    case "self-delete-device": {
+      if (await guarded(() => selfApi(`devices/${encodeURIComponent(id)}`, { method: "DELETE" }), "记录已删除")) {
+        await renderSelfDevices();
+      }
+      return;
+    }
     case "rollback": {
       const ok = await confirmDialog({
         title: "设为当前版本？",
@@ -3233,7 +3792,19 @@ async function onAction(event) {
       return;
     }
     case "create-user": {
-      if (await createUserDialog()) await reloadUsers().then(renderUsersView);
+      if (await createUserDialog()) {
+        await Promise.all([reloadUsers(), loadVaults()]);
+        renderUsersView();
+      }
+      return;
+    }
+    case "edit-user": {
+      const user = (store.users || []).find((u) => u.username === id);
+      if (!user) return;
+      if (await editUserDialog(user)) {
+        await Promise.all([reloadUsers(), loadVaults()]);
+        renderUsersView();
+      }
       return;
     }
     case "reset-user-password": {
@@ -3250,13 +3821,13 @@ async function onAction(event) {
       return;
     }
     case "delete-user": {
-      const ok = await confirmDialog({
-        title: "删除用户？", danger: true, confirm: "删除",
-        message: `将吊销 <b>${esc(id)}</b> 的登录凭据并把该保险库从内存移除。磁盘上的存档数据会保留，重建同名用户即可恢复。`,
-      });
-      if (!ok) return;
-      if (await guarded(() => api(`users/${encodeURIComponent(id)}`, { method: "DELETE" }), "用户已删除")) {
-        await reloadUsers().then(renderUsersView);
+      const choice = await deleteUserDialog(id);
+      if (!choice) return;
+      const qs = choice.purge ? "?purgeData=true" : "";
+      if (await guarded(() => api(`users/${encodeURIComponent(id)}${qs}`, { method: "DELETE" }),
+        choice.purge ? "用户及磁盘数据已清除" : "用户已删除")) {
+        await Promise.all([reloadUsers(), loadVaults()]);
+        renderUsersView();
       }
       return;
     }
@@ -3446,6 +4017,15 @@ function toggleTheme() {
 
 function showLogin() {
   if (activeModalClose) activeModalClose();
+  store.sessionMode = "admin";
+  store.tenantUser = null;
+  store.activeVault = "default";
+  store.vaults = [];
+  store.selfOverview = null;
+  store.selfGames = null;
+  store.selfScopeDetail = null;
+  store.selfDevices = null;
+  store.selfPairings = null;
   store.overview = null;
   store.overviewSaveVaultGames = null;
   store.scopeDetail = null;
@@ -3490,7 +4070,16 @@ function showLogin() {
   tokenInput.focus();
 }
 
-async function showApp() {
+async function showApp(mode = "admin", tenantUser = null) {
+  store.sessionMode = mode;
+  store.tenantUser = tenantUser;
+  if (mode === "admin") {
+    store.activeVault = storageGet("game-save-active-vault") || "default";
+  } else {
+    store.activeVault = "default";
+    if (!location.hash.startsWith("#/self")) location.hash = "#/self";
+  }
+  syncShellMode();
   $("#login").hidden = true;
   $("#app").hidden = false;
   main.innerHTML = `<div class="skeleton-stack">
@@ -3498,6 +4087,37 @@ async function showApp() {
     <div class="skeleton skeleton-panel"></div>
   </div>`;
   await refresh();
+}
+
+let loginMode = "admin";
+function setLoginMode(mode) {
+  loginMode = mode === "tenant" ? "tenant" : "admin";
+  document.querySelectorAll("[data-login-mode]").forEach((tab) => {
+    const active = tab.dataset.loginMode === loginMode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  const isTenant = loginMode === "tenant";
+  $("#login-admin-fields").hidden = isTenant;
+  $("#login-tenant-fields").hidden = !isTenant;
+  $("#login-token").required = !isTenant;
+  $("#login-username").required = isTenant;
+  $("#login-user-password").required = isTenant;
+  $("#login-desc").innerHTML = isTenant
+    ? "使用租户账号和密码登录，自助查看配额、历史存档、回滚版本与配对设备。"
+    : "输入管理员令牌（<code>GAME_SAVE_ADMIN_TOKEN</code>）以管理存档、设备、用户与存储策略。";
+  $("#login-submit").textContent = isTenant ? "进入我的空间" : "进入控制台";
+  $("#login-error").textContent = "";
+  (isTenant ? $("#login-username") : $("#login-token")).focus();
+}
+
+document.querySelectorAll("[data-login-mode]").forEach((tab) => {
+  tab.addEventListener("click", () => setLoginMode(tab.dataset.loginMode));
+});
+
+const vaultSelect = $("#vault-select");
+if (vaultSelect) {
+  vaultSelect.addEventListener("change", () => switchVault(vaultSelect.value));
 }
 
 const loginTokenToggle = $("#login-token-toggle");
@@ -3520,8 +4140,29 @@ $("#login-form").addEventListener("submit", async (event) => {
   error.textContent = "";
   button.disabled = true;
   try {
+    if (loginMode === "tenant") {
+      const response = await fetch("../v1/self/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Game-Save-Self": "1" },
+        body: JSON.stringify({
+          username: $("#login-username").value.trim(),
+          password: $("#login-user-password").value,
+        }),
+      });
+      if (!response.ok) {
+        let message = "登录失败";
+        try { message = translateError((await response.json()).error); } catch { /* ignore */ }
+        error.textContent = message;
+        return;
+      }
+      const data = await response.json();
+      await showApp("tenant", { username: data.username, vault_id: data.vault_id });
+      return;
+    }
     const response = await fetch("api/login", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json", "X-Game-Save-Admin": "1" },
       body: JSON.stringify({ token: $("#login-token").value }),
     });
@@ -3531,7 +4172,7 @@ $("#login-form").addEventListener("submit", async (event) => {
       error.textContent = message;
       return;
     }
-    await showApp();
+    await showApp("admin");
   } catch {
     error.textContent = "无法连接到服务";
   } finally {
@@ -3575,10 +4216,20 @@ applyTheme(storageGet("game-save-theme"));
 (async () => {
   try {
     const response = await fetch("api/session", { credentials: "same-origin" });
-    const session = await response.json();
-    if (session.authenticated) await showApp();
-    else showLogin();
-  } catch {
-    showLogin();
-  }
+    if (response.ok) {
+      const session = await response.json();
+      if (session.authenticated) { await showApp("admin"); return; }
+    }
+  } catch { /* check tenant session next */ }
+  try {
+    const selfResp = await fetch("../v1/self/session", { credentials: "same-origin" });
+    if (selfResp.ok) {
+      const selfSession = await selfResp.json();
+      if (selfSession.authenticated) {
+        await showApp("tenant", { username: selfSession.username, vault_id: selfSession.vault_id });
+        return;
+      }
+    }
+  } catch { /* fall through to login */ }
+  showLogin();
 })();

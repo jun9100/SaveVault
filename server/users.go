@@ -180,7 +180,7 @@ func (r *vaultRegistry) CreateUser(username, password, note string, quotaBytes i
 	if err := r.persistUsersLocked(next); err != nil {
 		return userRecord{}, err
 	}
-	if _, err := r.vaultWithTokenAndQuota(record.VaultID, record.Token, record.QuotaBytes); err != nil {
+	if _, err := r.vaultWithMeta(record.VaultID, record.Token, record.Username, record.QuotaBytes); err != nil {
 		_ = r.persistUsersLocked(previous)
 		return userRecord{}, err
 	}
@@ -274,13 +274,19 @@ func (r *vaultRegistry) Users() []userRecord {
 // DeleteUser revokes the credential and drops the vault from memory. The data
 // stays on disk: deleting a customer's history is a separate, explicit action.
 func (r *vaultRegistry) DeleteUser(username string) error {
+	return r.DeleteUserWithPurge(username, false)
+}
+
+// DeleteUserWithPurge revokes the user's credentials and web sessions, closes
+// their vault, and when purgeData is true removes the isolated tenant directory.
+func (r *vaultRegistry) DeleteUserWithPurge(username string, purgeData bool) error {
 	r.usersMu.Lock()
 	index, record := r.userLocked(username)
 	if record == nil {
 		r.usersMu.Unlock()
 		return errors.New("user not found")
 	}
-	vaultID, token := record.VaultID, record.Token
+	vaultID, token, actualUsername := record.VaultID, record.Token, record.Username
 	next := r.users
 	next.Users = append([]userRecord{}, r.users.Users...)
 	next.Users = append(next.Users[:index], next.Users[index+1:]...)
@@ -296,12 +302,137 @@ func (r *vaultRegistry) DeleteUser(username string) error {
 	r.mu.Unlock()
 	r.usersMu.Unlock()
 
+	r.sessions.revokeVault(vaultID)
+	r.sessions.revokeUser(actualUsername, "")
 	r.evictHandler(vault)
 	if vault != nil {
 		vault.revokeAllDeviceTokens()
 		vault.Close()
 	}
+	if purgeData && vaultID != "" && vaultID != defaultVaultID && !strings.ContainsAny(vaultID, `/\`) && vaultID != "." && vaultID != ".." {
+		vaultsRoot := filepath.Clean(filepath.Join(r.root, "vaults"))
+		target := filepath.Clean(filepath.Join(vaultsRoot, vaultID))
+		if strings.HasPrefix(target, vaultsRoot+string(filepath.Separator)) {
+			_ = os.RemoveAll(target)
+		}
+	}
 	return nil
+}
+
+type userPatch struct {
+	Note        *string `json:"note"`
+	QuotaBytes  *int64  `json:"quotaBytes"`
+	ExpiresAt   *string `json:"expiresAt"`
+	Status      *string `json:"status"`
+	Password    *string `json:"password"`
+	RotateToken bool    `json:"rotateToken"`
+}
+
+// UpdateUser applies partial lifecycle edits to a tenant user: note, quota,
+// expiry, active/disabled status, password reset, and shared token rotation.
+func (r *vaultRegistry) UpdateUser(username string, patch userPatch) (userRecord, error) {
+	if patch.QuotaBytes != nil && *patch.QuotaBytes < 0 {
+		return userRecord{}, errors.New("quota must not be negative")
+	}
+	var newStatus string
+	if patch.Status != nil {
+		newStatus = strings.TrimSpace(*patch.Status)
+		if newStatus != userStatusActive && newStatus != userStatusDisabled {
+			return userRecord{}, errors.New("status must be active or disabled")
+		}
+	}
+	var newExpires time.Time
+	hasExpires := false
+	if patch.ExpiresAt != nil {
+		hasExpires = true
+		trimmed := strings.TrimSpace(*patch.ExpiresAt)
+		if trimmed != "" {
+			parsed, err := time.Parse(time.RFC3339, trimmed)
+			if err != nil {
+				return userRecord{}, errors.New("expiresAt must be RFC3339")
+			}
+			newExpires = parsed.UTC()
+		}
+	}
+	var newHash string
+	if patch.Password != nil && *patch.Password != "" {
+		if len(*patch.Password) < 8 {
+			return userRecord{}, errors.New("password must be at least 8 characters")
+		}
+		var err error
+		newHash, err = hashPassword(*patch.Password)
+		if err != nil {
+			return userRecord{}, err
+		}
+	}
+	var rotatedToken string
+	if patch.RotateToken {
+		var err error
+		rotatedToken, err = newUserToken()
+		if err != nil {
+			return userRecord{}, err
+		}
+	}
+
+	r.usersMu.Lock()
+	index, record := r.userLocked(username)
+	if record == nil {
+		r.usersMu.Unlock()
+		return userRecord{}, errors.New("user not found")
+	}
+	oldToken := record.Token
+	updated := *record
+	if patch.Note != nil {
+		updated.Note = strings.TrimSpace(*patch.Note)
+	}
+	if patch.QuotaBytes != nil {
+		updated.QuotaBytes = *patch.QuotaBytes
+	}
+	if hasExpires {
+		updated.ExpiresAt = newExpires
+	}
+	if newStatus != "" {
+		updated.Status = newStatus
+	}
+	if newHash != "" {
+		updated.PasswordHash = newHash
+	}
+	if rotatedToken != "" {
+		updated.Token = rotatedToken
+	}
+
+	next := r.users
+	next.Users = append([]userRecord{}, r.users.Users...)
+	next.Users[index] = updated
+	if err := r.persistUsersLocked(next); err != nil {
+		r.usersMu.Unlock()
+		return userRecord{}, err
+	}
+	r.users = next
+
+	r.mu.Lock()
+	vault := r.vaults[updated.VaultID]
+	if rotatedToken != "" {
+		delete(r.byToken, oldToken)
+		r.byToken[rotatedToken] = updated.VaultID
+	}
+	r.mu.Unlock()
+	r.usersMu.Unlock()
+
+	if vault != nil {
+		if patch.QuotaBytes != nil {
+			vault.setQuotaBytes(updated.QuotaBytes)
+		}
+		if rotatedToken != "" {
+			vault.setSharedToken(rotatedToken)
+		}
+	} else if updated.Status == userStatusActive {
+		_, _ = r.vaultWithMeta(updated.VaultID, updated.Token, updated.Username, updated.QuotaBytes)
+	}
+	if newHash != "" || updated.Status == userStatusDisabled {
+		r.sessions.revokeUser(updated.Username, "")
+	}
+	return updated, nil
 }
 
 func (r *vaultRegistry) SetPassword(username, password string) error {
@@ -313,18 +444,22 @@ func (r *vaultRegistry) SetPassword(username, password string) error {
 		return err
 	}
 	r.usersMu.Lock()
-	defer r.usersMu.Unlock()
 	index, record := r.userLocked(username)
 	if record == nil {
+		r.usersMu.Unlock()
 		return errors.New("user not found")
 	}
+	actualUsername := record.Username
 	next := r.users
 	next.Users = append([]userRecord{}, r.users.Users...)
 	next.Users[index].PasswordHash = hash
 	if err := r.persistUsersLocked(next); err != nil {
+		r.usersMu.Unlock()
 		return err
 	}
 	r.users = next
+	r.usersMu.Unlock()
+	r.sessions.revokeUser(actualUsername, "")
 	return nil
 }
 
@@ -337,7 +472,7 @@ func (r *vaultRegistry) restoreUsers() error {
 		if record.Status != userStatusActive {
 			continue
 		}
-		if _, err := r.vaultWithTokenAndQuota(record.VaultID, record.Token, record.QuotaBytes); err != nil {
+		if _, err := r.vaultWithMeta(record.VaultID, record.Token, record.Username, record.QuotaBytes); err != nil {
 			return err
 		}
 	}
@@ -417,7 +552,7 @@ func sanitizeUserRecord(record userRecord) userRecord {
 // token so every other endpoint keeps using ordinary bearer auth.
 func (r *vaultRegistry) handleLogin(w http.ResponseWriter, request *http.Request) {
 	now := time.Now()
-	address := remoteHost(request)
+	address := r.clientIP(request)
 	if r.userLogins.blocked(address, now) {
 		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
 		return
@@ -450,12 +585,21 @@ func (r *vaultRegistry) handleLogin(w http.ResponseWriter, request *http.Request
 	})
 }
 
+type userListItem struct {
+	userRecord
+	UsedBytes int64 `json:"used_bytes"`
+}
+
 func (r *vaultRegistry) handleUserList(w http.ResponseWriter, _ *http.Request) {
 	users := r.Users()
-	for i := range users {
-		users[i] = sanitizeUserRecord(users[i])
+	items := make([]userListItem, 0, len(users))
+	for _, user := range users {
+		items = append(items, userListItem{
+			userRecord: sanitizeUserRecord(user),
+			UsedBytes:  r.vaultUsedBytes(user.VaultID),
+		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	writeJSON(w, http.StatusOK, map[string]any{"users": items})
 }
 
 func (r *vaultRegistry) handleUserCreate(w http.ResponseWriter, request *http.Request) {
@@ -486,8 +630,29 @@ func (r *vaultRegistry) handleUserCreate(w http.ResponseWriter, request *http.Re
 	writeJSON(w, http.StatusCreated, sanitizeUserRecord(record))
 }
 
+func (r *vaultRegistry) handleUserPatch(w http.ResponseWriter, request *http.Request) {
+	var patch userPatch
+	if !decodeAdminJSON(w, request, &patch) {
+		return
+	}
+	record, err := r.UpdateUser(request.PathValue("username"), patch)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "user not found" {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, userListItem{
+		userRecord: sanitizeUserRecord(record),
+		UsedBytes:  r.vaultUsedBytes(record.VaultID),
+	})
+}
+
 func (r *vaultRegistry) handleUserDelete(w http.ResponseWriter, request *http.Request) {
-	if err := r.DeleteUser(request.PathValue("username")); err != nil {
+	purge := strings.EqualFold(request.URL.Query().Get("purgeData"), "true") || request.URL.Query().Get("purgeData") == "1"
+	if err := r.DeleteUserWithPurge(request.PathValue("username"), purge); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}

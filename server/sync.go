@@ -94,7 +94,7 @@ func (s *server) authenticateSync(r *http.Request) (authResult, string, bool) {
 		s.authDeviceRequests.Add(1)
 		return authResult{kind: "device", tokenID: record.ID, deviceID: record.DeviceID}, "", true
 	}
-	if subtle.ConstantTimeCompare([]byte(value), []byte(s.token)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(value), []byte(s.sharedToken())) != 1 {
 		s.authRejectedRequests.Add(1)
 		return authResult{}, "unauthorized", false
 	}
@@ -234,7 +234,7 @@ func (s *server) recordDevice(r *http.Request) {
 		Name:      trimDeviceField(requestClientHeader(r, "X-Eden-Device-Name", "X-SaveVault-Device-Name"), 80),
 		Platform:  trimDeviceField(requestClientHeader(r, "X-Eden-Platform", "X-SaveVault-Platform"), 32),
 		Version:   trimDeviceField(requestClientHeader(r, "X-Eden-Version", "X-SaveVault-Version"), 64),
-		Address:   remoteHost(r),
+		Address:   s.clientIP(r),
 		FirstSeen: now,
 		LastSeen:  now,
 	}
@@ -319,8 +319,8 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 
 	readLimit := s.maxObjectBytes
 	quotaCapped := false
-	if s.quotaBytes > 0 && s.quotaBytes < readLimit {
-		readLimit = s.quotaBytes
+	if quota := s.getQuotaBytes(); quota > 0 && quota < readLimit {
+		readLimit = quota
 		quotaCapped = true
 	}
 

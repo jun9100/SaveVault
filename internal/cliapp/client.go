@@ -58,6 +58,17 @@ func daemonRequestSlow(method, path string, body any) ([]byte, error) {
 	return daemonRequestWith(slowClient, method, path, body)
 }
 
+func daemonLocalToken() string {
+	paths, err := config.Resolve()
+	if err != nil {
+		return ""
+	}
+	if raw, err := os.ReadFile(filepath.Join(paths.HomeDir, "daemon.token")); err == nil {
+		return strings.TrimSpace(string(raw))
+	}
+	return ""
+}
+
 func daemonRequestWith(client *http.Client, method, path string, body any) ([]byte, error) {
 	base, err := daemonBaseURL()
 	if err != nil {
@@ -78,6 +89,9 @@ func daemonRequestWith(client *http.Client, method, path string, body any) ([]by
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if tok := daemonLocalToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -126,7 +140,14 @@ func daemonRunning() bool {
 		return false
 	}
 	quick := &http.Client{Timeout: 2 * time.Second}
-	resp, err := quick.Get(base + "/api/status")
+	req, err := http.NewRequest(http.MethodGet, base+"/api/status", nil)
+	if err != nil {
+		return false
+	}
+	if tok := daemonLocalToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := quick.Do(req)
 	if err != nil {
 		return false
 	}

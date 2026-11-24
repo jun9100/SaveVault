@@ -24,8 +24,10 @@ var migrationsFS embed.FS
 // methods (see settings.go, games.go, branches.go, snapshots.go, peers.go,
 // cloudtokens.go).
 type Store struct {
-	db    *sqlx.DB
-	keyMu sync.Mutex
+	db        *sqlx.DB
+	dbPath    string
+	keyMu     sync.Mutex
+	secretKey []byte
 }
 
 // Open creates (if needed) and opens the SQLite database at path, applying
@@ -51,7 +53,7 @@ func Open(path string) (*Store, error) {
 	// Ignoring unmapped columns makes the schema forward-compatible instead.
 	db = db.Unsafe()
 
-	s := &Store{db: db}
+	s := &Store{db: db, dbPath: path}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err

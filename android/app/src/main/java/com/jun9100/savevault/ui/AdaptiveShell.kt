@@ -84,6 +84,7 @@ import com.jun9100.savevault.ui.batch.BatchPlanDialog
 import com.jun9100.savevault.ui.batch.BatchReportSheet
 import com.jun9100.savevault.ui.batch.BatchStripState
 import com.jun9100.savevault.ui.batch.LocalBatchStrip
+import com.jun9100.savevault.ui.dialogs.CloudSnapshotDeleteConfirmDialog
 import com.jun9100.savevault.ui.dialogs.GameBackupConfirmDialog
 import com.jun9100.savevault.ui.dialogs.KeepLocalConfirmDialog
 import com.jun9100.savevault.ui.dialogs.OtherDeviceRestoreDialog
@@ -100,11 +101,13 @@ import com.jun9100.savevault.ui.input.handheldNavigationActive
 import com.jun9100.savevault.ui.input.watchFocus
 import com.jun9100.savevault.ui.input.whenIdle
 import com.jun9100.savevault.ui.library.GameLibraryPage
+import com.jun9100.savevault.ui.settings.CloudDevicesDialog
 import com.jun9100.savevault.ui.settings.ConfigImportConfirmDialog
 import com.jun9100.savevault.ui.settings.GameSaveEditorDialog
 import com.jun9100.savevault.ui.settings.GameSaveTestFailedDialog
 import com.jun9100.savevault.ui.settings.PairingConfirmDialog
 import com.jun9100.savevault.ui.settings.PairingDialog
+import com.jun9100.savevault.ui.settings.RevokeDeviceConfirmDialog
 import com.jun9100.savevault.ui.settings.SettingsPage
 import com.jun9100.savevault.ui.sources.SourcesPage
 import com.jun9100.savevault.ui.sync.SyncTasksPage
@@ -250,6 +253,33 @@ internal fun SaveVaultScreen(sourceViewModel: SourceViewModel = viewModel()) {
             busy = state.busy,
             onDismiss = sourceViewModel::cancelConfigImport,
             onConfirm = sourceViewModel::confirmConfigImport,
+        )
+    }
+
+    state.cloudDevicesDialog?.let { dialog ->
+        CloudDevicesDialog(
+            dialog = dialog,
+            busy = state.busy,
+            onRefresh = sourceViewModel::refreshCloudDevices,
+            onRequestRevoke = sourceViewModel::requestRevokeCloudDevice,
+            onDismiss = sourceViewModel::closeCloudDevices,
+        )
+        dialog.pendingRevoke?.let { token ->
+            RevokeDeviceConfirmDialog(
+                token = token,
+                isCurrentDevice = dialog.report?.currentTokenId?.let { it.isNotBlank() && token.id == it } == true,
+                busy = state.busy,
+                onDismiss = sourceViewModel::cancelRevokeCloudDevice,
+                onConfirm = sourceViewModel::confirmRevokeCloudDevice,
+            )
+        }
+    }
+
+    state.pendingCloudSnapshotDelete?.let { request ->
+        CloudSnapshotDeleteConfirmDialog(
+            request = request,
+            onDismiss = sourceViewModel::cancelDeleteCloudSnapshot,
+            onConfirm = sourceViewModel::confirmDeleteCloudSnapshot,
         )
     }
 

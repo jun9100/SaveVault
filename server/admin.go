@@ -65,6 +65,7 @@ func (s *server) registerAdmin(mux *http.ServeMux) {
 		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}/export", s.requireAdmin(s.handleExportSaveVaultScope))
 		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handlePutSaveVaultSnapshotLock))
 		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireAdminWrite(s.handleDeleteSaveVaultSnapshotLock))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}", s.requireAdminWrite(s.handleDeleteSaveVaultScopeSnapshot))
 		mux.HandleFunc("GET "+prefix+"/tombstones", s.requireAdmin(s.handleListSaveVaultTombstones))
 		mux.HandleFunc("DELETE "+prefix+"/tombstones/{type}/{game}", s.requireAdminWrite(s.handleClearSaveVaultTombstone))
 		mux.HandleFunc("POST "+prefix+"/rebuild-heads", s.requireAdminWrite(s.handleRebuildSaveVaultHeads))

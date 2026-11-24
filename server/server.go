@@ -34,16 +34,20 @@ const (
 var version = "v1.4.1-dev"
 
 type server struct {
-	dataDir          string
-	token            string
-	adminToken       string
+	dataDir           string
+	vaultID           string
+	ownerUsername     string
+	token             string
+	adminToken        string
 	saveVaultUsername string
 	saveVaultPassword string
 	maxObjectBytes    int64
 	quotaBytes        int64
 	startedAt         time.Time
-	now              func() time.Time
-	bark             *barkNotifier
+	now               func() time.Time
+	bark              *barkNotifier
+	trustedProxies    *trustedProxyList
+	sessions          *sessionStore
 
 	mu        sync.Mutex
 	state     serverState
@@ -110,12 +114,16 @@ type server struct {
 }
 
 type serverOptions struct {
+	vaultID           string
+	ownerUsername     string
 	adminToken        string
 	saveVaultUsername string
 	saveVaultPassword string
 	quotaBytes        int64
 	settings          serverSettings
 	bark              barkConfig
+	trustedProxies    *trustedProxyList
+	sessions          *sessionStore
 	claimLogins       *loginLimiter
 	claimFailures     *globalClaimFailures
 }
@@ -183,17 +191,29 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 	if claimFailures == nil {
 		claimFailures = &globalClaimFailures{}
 	}
+	sessions := options.sessions
+	if sessions == nil {
+		sessions = newSessionStore()
+	}
+	vaultID := options.vaultID
+	if vaultID == "" {
+		vaultID = defaultVaultID
+	}
 	s := &server{
-		dataDir:          dataDir,
-		token:            token,
-		adminToken:       options.adminToken,
+		dataDir:           dataDir,
+		vaultID:           vaultID,
+		ownerUsername:     options.ownerUsername,
+		token:             token,
+		adminToken:        options.adminToken,
 		saveVaultUsername: options.saveVaultUsername,
 		saveVaultPassword: options.saveVaultPassword,
 		maxObjectBytes:    maxObjectBytes,
 		quotaBytes:        options.quotaBytes,
 		startedAt:         time.Now().UTC(),
-		now:              time.Now,
-		bark:             bark,
+		now:               time.Now,
+		bark:              bark,
+		trustedProxies:    options.trustedProxies,
+		sessions:          sessions,
 		state:            serverState{Scopes: make(map[string]scope)},
 		dashboard: dashboardState{
 			Scopes:  make(map[string]scopeMetadata),
@@ -291,6 +311,9 @@ func (s *server) handler() http.Handler {
 	// It ignores any Authorization header because it is not wrapped by requireToken.
 	mux.HandleFunc("POST /v1/pair/claim", s.handlePairClaim)
 	mux.HandleFunc("GET /v1/auth/whoami", s.requireTokenReadOnly(s.handleWhoAmI))
+	mux.HandleFunc("GET /v1/auth/devices", s.requireTokenReadOnly(s.handleClientDeviceList))
+	mux.HandleFunc("POST /v1/auth/devices/{id}/revoke", s.requireToken(s.handleClientRevokeDevice))
+	mux.HandleFunc("DELETE /v1/auth/devices/{id}", s.requireToken(s.handleClientRevokeDevice))
 
 	mux.HandleFunc("PUT /v1/blobs/{id}", s.requireToken(s.handlePutBlob))
 	mux.HandleFunc("GET /v1/blobs/{id}", s.requireToken(s.handleGetBlob))
@@ -319,6 +342,9 @@ func (s *server) handler() http.Handler {
 		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}", s.requireTokenReadOnly(s.handleSaveVaultScope))
 		mux.HandleFunc("GET "+prefix+"/scopes/{type}/{game}/head", s.requireTokenReadOnly(s.handleSaveVaultScopeHead))
 		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}", s.requireToken(s.handlePutSaveVaultScopeSnapshot))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}", s.requireToken(s.handleDeleteSaveVaultScopeSnapshot))
+		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireToken(s.handlePutSaveVaultSnapshotLock))
+		mux.HandleFunc("DELETE "+prefix+"/scopes/{type}/{game}/snapshots/{snapshot}/lock", s.requireToken(s.handleDeleteSaveVaultSnapshotLock))
 		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/conflicts/{snapshot}", s.requireToken(s.handlePutSaveVaultScopeConflict))
 		mux.HandleFunc("PUT "+prefix+"/scopes/{type}/{game}/identity", s.requireToken(s.handlePutSaveVaultScopeIdentity))
 		mux.HandleFunc("GET "+prefix+"/games", s.requireTokenReadOnly(s.handleListSaveVaultGames))
@@ -466,16 +492,42 @@ func validSnapshotID(id string) bool {
 	return validIdentifier(id, 128)
 }
 
-func (s *server) checkQuota(additional int64) bool {
-	if s.quotaBytes <= 0 {
-		return true
-	}
-	if additional < 0 {
-		additional = 0
-	}
+func (s *server) clientIP(r *http.Request) string {
+	return s.trustedProxies.clientIP(r)
+}
+
+func (s *server) sharedToken() string {
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	return s.token
+}
+
+func (s *server) setSharedToken(token string) {
+	s.tokensMu.Lock()
+	s.token = token
+	s.tokensMu.Unlock()
+}
+
+func (s *server) getQuotaBytes() int64 {
+	s.quotaMu.Lock()
+	defer s.quotaMu.Unlock()
+	return s.quotaBytes
+}
+
+func (s *server) setQuotaBytes(quota int64) {
+	s.quotaMu.Lock()
+	s.quotaBytes = quota
+	s.quotaMu.Unlock()
+}
+
+func (s *server) usedBytes() int64 {
+	return vaultDirectoryUsedBytes(s.dataDir)
+}
+
+func vaultDirectoryUsedBytes(dataDir string) int64 {
 	var used int64
 	for _, sub := range []string{"objects", "savevault-native", "savevault", "savevault-meta"} {
-		_ = filepath.Walk(filepath.Join(s.dataDir, sub), func(_ string, info os.FileInfo, err error) error {
+		_ = filepath.Walk(filepath.Join(dataDir, sub), func(_ string, info os.FileInfo, err error) error {
 			if err != nil || info == nil || !info.Mode().IsRegular() {
 				return nil
 			}
@@ -488,10 +540,21 @@ func (s *server) checkQuota(additional int64) bool {
 			return nil
 		})
 	}
-	if info, err := os.Stat(filepath.Join(s.dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
+	if info, err := os.Stat(filepath.Join(dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
 		used += info.Size()
 	}
-	return used+additional <= s.quotaBytes
+	return used
+}
+
+// checkQuota expects the caller to hold s.quotaMu when serializing check + commit.
+func (s *server) checkQuota(additional int64) bool {
+	if s.quotaBytes <= 0 {
+		return true
+	}
+	if additional < 0 {
+		additional = 0
+	}
+	return s.usedBytes()+additional <= s.quotaBytes
 }
 
 func validIdentifier(value string, maximum int) bool {

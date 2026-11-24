@@ -242,6 +242,7 @@ func runDaemon(args []string) int {
 	}
 
 	server := api.New(d)
+	server.RequireLocalAuth = true
 	addr, err := server.Start(port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

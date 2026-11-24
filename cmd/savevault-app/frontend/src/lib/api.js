@@ -4,8 +4,9 @@ import { switchTitleId } from './switchtitle.js';
 import { tt } from './i18n.js';
 
 let baseURL = '';
+let localToken = '';
 
-/** Resolve the daemon address from the Wails-bound Go method. */
+/** Resolve the daemon address and local auth token from the Wails-bound Go method. */
 export async function initApi() {
   // In `wails dev` / browser the binding may be absent — fall back to the
   // default daemon port.
@@ -13,9 +14,11 @@ export async function initApi() {
     const info = await window.go.main.App.DaemonAddr();
     if (info.error) throw new Error(info.error);
     baseURL = `http://${info.addr}`;
+    localToken = info.token || '';
   } catch (e) {
     if (e.message && !String(e.message).includes('undefined')) throw e;
     baseURL = 'http://127.0.0.1:8383';
+    localToken = '';
   }
 
   // Prove the API is reachable from THIS webview before declaring the app
@@ -48,6 +51,9 @@ export async function initApi() {
 
 async function request(method, path, body) {
   const opts = { method, headers: {} };
+  if (localToken) {
+    opts.headers['Authorization'] = `Bearer ${localToken}`;
+  }
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -105,6 +111,7 @@ export function coverURL(appId, portrait = false, name = '', titleId = '') {
   if (titleId) q.set('titleId', titleId);
   if (![...q.keys()].length) return '';
   if (portrait) q.set('portrait', '1');
+  if (localToken) q.set('token', localToken);
   return `${baseURL}/api/cover?${q.toString()}`;
 }
 
@@ -132,7 +139,8 @@ export function connectWS(onMessage, onState) {
 
   const connect = () => {
     if (closed) return;
-    ws = new WebSocket(baseURL.replace('http', 'ws') + '/ws');
+    const wsQuery = localToken ? `?token=${encodeURIComponent(localToken)}` : '';
+    ws = new WebSocket(baseURL.replace('http', 'ws') + '/ws' + wsQuery);
     ws.onopen = () => onState?.(true);
     ws.onmessage = (ev) => {
       try {

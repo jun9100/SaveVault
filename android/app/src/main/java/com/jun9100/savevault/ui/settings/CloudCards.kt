@@ -7,16 +7,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -35,6 +38,7 @@ import com.jun9100.savevault.GameSaveAuthUi
 import com.jun9100.savevault.SaveVaultPage
 import com.jun9100.savevault.SourceUiState
 import com.jun9100.savevault.SourceViewModel
+import com.jun9100.savevault.ui.formatBytes
 import com.jun9100.savevault.ui.input.busyDimmed
 import com.jun9100.savevault.ui.input.handheldFocusRing
 import com.jun9100.savevault.ui.input.whenIdle
@@ -62,6 +66,21 @@ internal object GameSaveAuthText {
         if (ui.blocked.isNotEmpty() || whoami.auth != "shared") return null
         if (!ui.sharedWarning && whoami.sharedTokenMode != "warn") return null
         return "共享同步密钥即将停用，请配对本设备。"
+    }
+
+    /** Vault storage usage line and optional 0..1 progress fraction; null when unreported. */
+    fun quota(ui: GameSaveAuthUi): Pair<String, Float?>? {
+        val whoami = ui.whoami ?: return null
+        if (ui.blocked.isNotEmpty()) return null
+        return when {
+            whoami.quotaBytes > 0L -> {
+                val ratio = (whoami.usedBytes.toFloat() / whoami.quotaBytes.toFloat()).coerceIn(0f, 1f)
+                val pct = ((whoami.usedBytes.toDouble() / whoami.quotaBytes.toDouble()) * 100.0).coerceIn(0.0, 100.0).toInt()
+                "云端空间：${formatBytes(whoami.usedBytes)} / ${formatBytes(whoami.quotaBytes)}（$pct%）" to ratio
+            }
+            whoami.usedBytes > 0L -> "云端已用：${formatBytes(whoami.usedBytes)}（无配额上限）" to null
+            else -> null
+        }
     }
 
     private const val AUTH_DEVICE = "device"
@@ -123,6 +142,38 @@ internal fun GameSaveCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary,
                     )
+                }
+            }
+            GameSaveAuthText.quota(state.gameSaveAuth)?.let { (label, fraction) ->
+                val quotaColor = when {
+                    fraction != null && fraction >= 0.9f -> MaterialTheme.colorScheme.error
+                    fraction != null && fraction >= 0.8f -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = quotaColor,
+                )
+                if (fraction != null) {
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp).height(4.dp),
+                        color = when {
+                            fraction >= 0.9f -> MaterialTheme.colorScheme.error
+                            fraction >= 0.8f -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+            }
+            if (configured) {
+                OutlinedButton(
+                    onClick = whenIdle(state.busy) { viewModel.openCloudDevices() },
+                    modifier = Modifier.fillMaxWidth().settingButtonFocus().busyDimmed(state.busy),
+                ) {
+                    Icon(Icons.Outlined.Devices, contentDescription = null)
+                    Text("已配对设备管理", modifier = Modifier.padding(start = 6.dp))
                 }
             }
             OutlinedButton(

@@ -34,7 +34,17 @@ SYNC_EVENT = "savevault_sync"
 # so this file — not the setting — is the source of truth.
 ADDR_FILE = os.path.join(decky.DECKY_USER_HOME, ".savevault", "daemon.addr")
 LEGACY_ADDR_FILE = os.path.join(decky.DECKY_USER_HOME, ".opensave", "daemon.addr")
+TOKEN_FILE = os.path.join(decky.DECKY_USER_HOME, ".savevault", "daemon.token")
 FALLBACK_URL = "http://127.0.0.1:8383"
+
+
+def _daemon_token() -> str:
+    """Loopback bearer token published by the running SaveVault daemon."""
+    try:
+        with open(TOKEN_FILE, "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
 
 FLATPAK_APP_ID = "io.github.jun9100.SaveVault"
 
@@ -67,11 +77,15 @@ class DaemonRefused(Exception):
 
 
 def _request(path: str, method: str = "GET", body=None, timeout: float = 10.0):
+    headers = {"Content-Type": "application/json"}
+    token = _daemon_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         _daemon_url() + path,
         method=method,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -230,6 +244,10 @@ class Plugin:
     async def get_daemon_base_url(self) -> str:
         """Base URL of the daemon, so the panel can load cover art from it."""
         return _daemon_url()
+
+    async def get_daemon_token(self) -> str:
+        """Loopback auth token for cover image URLs loaded directly by the panel."""
+        return _daemon_token()
 
     async def get_games(self) -> dict:
         try:
@@ -443,9 +461,13 @@ class Plugin:
         backoff = 2
         while True:
             url = _daemon_url().replace("http://", "ws://", 1) + "/ws"
+            headers = {}
+            token = _daemon_token()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(url, heartbeat=30) as ws:
+                    async with session.ws_connect(url, headers=headers, heartbeat=30) as ws:
                         decky.logger.info("watching daemon sync events")
                         backoff = 2  # connected; reset the retry delay
                         async for msg in ws:

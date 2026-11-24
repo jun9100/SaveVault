@@ -13,6 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -140,6 +141,85 @@ class GameSaveClientTest {
             server.close()
         }
     }
+
+    @Test
+    fun whoamiQuotaDevicesRevokeAndSnapshotLockDeleteWorkEndToEnd() {
+        val server = MiniGameSaveServer()
+        server.start()
+        val root = createTempDir(prefix = "savevault-p0-")
+        try {
+            val client = GameSaveClient(
+                GameSaveConfig(enabled = true, serviceUrl = "http://127.0.0.1:${server.port}", syncKey = "sync-key"),
+                GameSaveDeviceIdentity("odin2", "Odin2"),
+            )
+
+            val who = client.whoami().getOrThrow()
+            assertNotNull(who)
+            assertEquals("device", who!!.auth)
+            assertEquals("aa11223344556677", who.tokenId)
+            assertEquals("alice", who.username)
+            assertEquals("u-alice", who.vaultId)
+            assertEquals(512L * 1024L * 1024L, who.usedBytes)
+            assertEquals(2L * 1024L * 1024L * 1024L, who.quotaBytes)
+
+            val devices = client.listDevices().getOrThrow()
+            assertEquals("aa11223344556677", devices.currentTokenId)
+            assertEquals(2, devices.tokens.size)
+            assertEquals("aa11223344556677", devices.tokens.first().id)
+            assertFalse(devices.tokens[1].revoked)
+
+            client.revokeDevice("bb11223344556677").getOrThrow()
+            val afterRevoke = client.listDevices().getOrThrow()
+            assertTrue(afterRevoke.tokens.first { it.id == "bb11223344556677" }.revoked)
+
+            val gameId = "switch-0100000000020000"
+            val snap1ID = "snap_1730000010000--dev-odin2"
+            val snap1Archive = "${gameId}__main__${snap1ID}.zip"
+            val snap1File = File(root, snap1Archive).apply { writeText("v1") }
+            client.upload(snap1File, GameSaveTypes.SWITCH, snap1Archive).getOrThrow()
+            client.putScopeSnapshot(
+                GameSaveTypes.SWITCH,
+                gameId,
+                GameSaveScopeCandidate(snap1ID, snap1Archive, "", Hashing.sha256(snap1File), "2026-10-26T00:00:00Z"),
+                "",
+            ).getOrThrow()
+
+            val snap2ID = "snap_1730000020000--dev-odin2"
+            val snap2Archive = "${gameId}__main__${snap2ID}.zip"
+            val snap2File = File(root, snap2Archive).apply { writeText("v2") }
+            client.upload(snap2File, GameSaveTypes.SWITCH, snap2Archive).getOrThrow()
+            client.putScopeSnapshot(
+                GameSaveTypes.SWITCH,
+                gameId,
+                GameSaveScopeCandidate(snap2ID, snap2Archive, snap1ID, Hashing.sha256(snap2File), "2026-10-26T00:05:00Z"),
+                snap1ID,
+            ).getOrThrow()
+
+            // Lock snap1, verify scope reports locked=true and delete fails with 409 non-retryable.
+            client.setScopeSnapshotLock(GameSaveTypes.SWITCH, gameId, snap1ID, locked = true, note = "boss").getOrThrow()
+            val lockedScope = client.getScope(GameSaveTypes.SWITCH, gameId).getOrThrow()
+            assertTrue(lockedScope.snapshots.first { it.id == snap1ID }.locked)
+
+            val deleteLocked = client.deleteScopeSnapshot(GameSaveTypes.SWITCH, gameId, snap1ID).exceptionOrNull()
+            assertTrue(deleteLocked is GameSaveException)
+            assertEquals(409, (deleteLocked as GameSaveException).httpStatus)
+            assertFalse(deleteLocked.retryable)
+
+            // Deleting current head fails with 409.
+            val deleteHead = client.deleteScopeSnapshot(GameSaveTypes.SWITCH, gameId, snap2ID).exceptionOrNull()
+            assertTrue(deleteHead is GameSaveException)
+            assertEquals(409, (deleteHead as GameSaveException).httpStatus)
+
+            // Unlock snap1 and delete succeeds.
+            client.setScopeSnapshotLock(GameSaveTypes.SWITCH, gameId, snap1ID, locked = false).getOrThrow()
+            client.deleteScopeSnapshot(GameSaveTypes.SWITCH, gameId, snap1ID).getOrThrow()
+            val finalScope = client.getScope(GameSaveTypes.SWITCH, gameId).getOrThrow()
+            assertEquals(listOf(snap2ID), finalScope.snapshots.map(GameSaveScopeSnapshot::id))
+        } finally {
+            root.deleteRecursively()
+            server.close()
+        }
+    }
 }
 
 /** Small HTTP server keeps the native contract test independent of WebDAV or a real NAS. */
@@ -186,6 +266,64 @@ private class MiniGameSaveServer : AutoCloseable {
         }
         authorizedRequests++
         requestHeaders += headers
+        if (method == "GET" && path == "/v1/auth/whoami") {
+            val payload = JSONObject()
+                .put("auth", "device")
+                .put("token_id", "aa11223344556677")
+                .put("device_id", "odin2")
+                .put("name", "Odin2")
+                .put("shared_token_mode", "allow")
+                .put("vault_id", "u-alice")
+                .put("username", "alice")
+                .put("used_bytes", 512L * 1024L * 1024L)
+                .put("quota_bytes", 2L * 1024L * 1024L * 1024L)
+                .toString()
+                .toByteArray()
+            respond(client, 200, payload, "Content-Type: application/json")
+            return
+        }
+        if (method == "GET" && path == "/v1/auth/devices") {
+            val arr = JSONArray()
+            synchronized(deviceTokens) {
+                deviceTokens.values.forEach { tok ->
+                    arr.put(
+                        JSONObject()
+                            .put("id", tok.id)
+                            .put("name", tok.name)
+                            .put("device_id", tok.deviceId)
+                            .put("display_name", tok.displayName)
+                            .put("online", tok.online)
+                            .put("created_at", tok.createdAt)
+                            .put("last_used_at", tok.lastUsedAt)
+                            .apply { if (tok.revokedAt.isNotBlank()) put("revoked_at", tok.revokedAt) },
+                    )
+                }
+            }
+            val payload = JSONObject()
+                .put("tokens", arr)
+                .put("current_token_id", "aa11223344556677")
+                .put("current_device_id", "odin2")
+                .put("shared_token_mode", "allow")
+                .put("used_bytes", 512L * 1024L * 1024L)
+                .put("quota_bytes", 2L * 1024L * 1024L * 1024L)
+                .toString()
+                .toByteArray()
+            respond(client, 200, payload, "Content-Type: application/json")
+            return
+        }
+        if (method == "POST" && path.startsWith("/v1/auth/devices/") && path.endsWith("/revoke")) {
+            val tokenId = path.removePrefix("/v1/auth/devices/").removeSuffix("/revoke")
+            synchronized(deviceTokens) {
+                val existing = deviceTokens[tokenId]
+                if (existing == null) {
+                    respond(client, 404, ByteArray(0))
+                    return
+                }
+                deviceTokens[tokenId] = existing.copy(revokedAt = "2026-10-26T00:10:00Z")
+            }
+            respond(client, 204, ByteArray(0))
+            return
+        }
         if (method == "GET" && path == "/v1/savevault/files") {
             val payload = JSONObject().put("files", JSONArray().apply {
                 files.entries.sortedBy { it.key }.forEach { (key, value) ->
@@ -232,6 +370,38 @@ private class MiniGameSaveServer : AutoCloseable {
         }
     }
 
+    private data class DeviceTokenStub(
+        val id: String,
+        val name: String,
+        val deviceId: String,
+        val displayName: String,
+        val online: Boolean,
+        val createdAt: String,
+        val lastUsedAt: String,
+        val revokedAt: String = "",
+    )
+
+    private val deviceTokens = linkedMapOf(
+        "bb11223344556677" to DeviceTokenStub(
+            id = "bb11223344556677",
+            name = "Steam Deck",
+            deviceId = "deck-1",
+            displayName = "Steam Deck",
+            online = false,
+            createdAt = "2026-10-25T00:00:00Z",
+            lastUsedAt = "2026-10-25T12:00:00Z",
+        ),
+        "aa11223344556677" to DeviceTokenStub(
+            id = "aa11223344556677",
+            name = "Odin2",
+            deviceId = "odin2",
+            displayName = "Odin2",
+            online = true,
+            createdAt = "2026-10-26T00:00:00Z",
+            lastUsedAt = "2026-10-26T00:05:00Z",
+        ),
+    )
+
     private data class ScopeRecord(
         val id: String,
         val archive: String,
@@ -241,6 +411,7 @@ private class MiniGameSaveServer : AutoCloseable {
         val receivedAt: String,
         val conflict: Boolean = false,
         val conflictOf: String = "",
+        val locked: Boolean = false,
     )
 
     private data class ScopeState(
@@ -262,7 +433,7 @@ private class MiniGameSaveServer : AutoCloseable {
             return
         }
         val segments = path.removePrefix("/v1/savevault/scopes/").split('/')
-        if (segments.size !in setOf(2, 4)) {
+        if (segments.size !in setOf(2, 4, 5)) {
             respond(client, 404, ByteArray(0))
             return
         }
@@ -273,6 +444,55 @@ private class MiniGameSaveServer : AutoCloseable {
             val state = scopes.getOrPut(key, ::ScopeState)
             if (segments.size == 2 && method == "GET") {
                 respond(client, 200, scopeJson(type, gameId, state).toString().toByteArray(), "Content-Type: application/json")
+                return
+            }
+            if (segments.size == 5 && segments[2] == "snapshots" && segments[4] == "lock") {
+                val snapId = segments[3]
+                val existing = state.records[snapId]
+                if (existing == null) {
+                    respond(client, 404, ByteArray(0))
+                    return
+                }
+                when (method) {
+                    "PUT" -> {
+                        state.records[snapId] = existing.copy(locked = true)
+                        respond(client, 200, JSONObject().put("locked", true).toString().toByteArray(), "Content-Type: application/json")
+                    }
+                    "DELETE" -> {
+                        state.records[snapId] = existing.copy(locked = false)
+                        respond(client, 204, ByteArray(0))
+                    }
+                    else -> respond(client, 405, ByteArray(0))
+                }
+                return
+            }
+            if (segments.size == 4 && segments[2] == "snapshots" && method == "DELETE") {
+                val snapId = segments[3]
+                val existing = state.records[snapId]
+                if (existing == null) {
+                    respond(client, 404, ByteArray(0))
+                    return
+                }
+                if (state.head == snapId) {
+                    respond(
+                        client,
+                        409,
+                        JSONObject().put("error", "cannot delete the current head snapshot").toString().toByteArray(),
+                        "Content-Type: application/json",
+                    )
+                    return
+                }
+                if (existing.locked) {
+                    respond(
+                        client,
+                        409,
+                        JSONObject().put("error", "cannot delete a locked snapshot; unlock it first").toString().toByteArray(),
+                        "Content-Type: application/json",
+                    )
+                    return
+                }
+                state.records.remove(snapId)
+                respond(client, 200, JSONObject().put("deleted", snapId).toString().toByteArray(), "Content-Type: application/json")
                 return
             }
             if (segments.size != 4 || method != "PUT") {
@@ -350,6 +570,7 @@ private class MiniGameSaveServer : AutoCloseable {
         .put("platform", "savevault-android")
         .put("conflict", record.conflict)
         .put("conflictOf", record.conflictOf)
+        .put("locked", record.locked)
 
     private fun readAsciiLine(input: BufferedInputStream): String? {
         val line = ByteArrayOutputStream()

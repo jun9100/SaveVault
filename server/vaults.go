@@ -82,6 +82,8 @@ type vaultRegistry struct {
 	// rate limits cannot be bypassed by probing non-default tenant vaults.
 	claimLogins   *loginLimiter
 	claimFailures *globalClaimFailures
+	// sessions tracks revocable admin and tenant web sessions across vaults.
+	sessions *sessionStore
 	// byToken routes a client credential to its vault. The shared token of the
 	// default vault is deliberately absent: an unknown credential falls back to
 	// the default vault, which is what a single-tenant deployment expects.
@@ -107,6 +109,7 @@ func newVaultRegistry(root, token string, maxObjectBytes int64, options serverOp
 		loginVerifySem: make(chan struct{}, 4),
 		claimLogins:    &loginLimiter{failures: make(map[string]loginFailures)},
 		claimFailures:  &globalClaimFailures{},
+		sessions:       newSessionStore(),
 		byToken:        map[string]string{},
 	}
 	if _, err := registry.Vault(defaultVaultID); err != nil {
@@ -169,7 +172,25 @@ func (r *vaultRegistry) vaultWithToken(id, token string) (*server, error) {
 	return r.vaultWithTokenAndQuota(id, token, 0)
 }
 
+func (r *vaultRegistry) clientIP(req *http.Request) string {
+	return r.options.trustedProxies.clientIP(req)
+}
+
+func (r *vaultRegistry) vaultUsedBytes(vaultID string) int64 {
+	r.mu.Lock()
+	vault := r.vaults[vaultID]
+	r.mu.Unlock()
+	if vault != nil {
+		return vault.usedBytes()
+	}
+	return vaultDirectoryUsedBytes(filepath.Join(r.root, "vaults", vaultID))
+}
+
 func (r *vaultRegistry) vaultWithTokenAndQuota(id, token string, quotaBytes int64) (*server, error) {
+	return r.vaultWithMeta(id, token, "", quotaBytes)
+}
+
+func (r *vaultRegistry) vaultWithMeta(id, token, ownerUsername string, quotaBytes int64) (*server, error) {
 	if id == "" || strings.ContainsAny(id, `/\`) || id == "." || id == ".." {
 		return nil, fmt.Errorf("invalid vault id %q", id)
 	}
@@ -179,7 +200,10 @@ func (r *vaultRegistry) vaultWithTokenAndQuota(id, token string, quotaBytes int6
 		return existing, nil
 	}
 	options := r.options
+	options.vaultID = id
+	options.ownerUsername = ownerUsername
 	options.quotaBytes = quotaBytes
+	options.sessions = r.sessions
 	options.claimLogins = r.claimLogins
 	options.claimFailures = r.claimFailures
 	vault, err := newServerWithOptions(filepath.Join(r.root, "vaults", id), token, r.maxObjectBytes, options)
@@ -206,7 +230,11 @@ func (r *vaultRegistry) vaultForRequest(request *http.Request) (string, *server,
 	// admin, so an unauthenticated header can never probe or create vaults.
 	// Never fall through to bearer-token routing for /admin/ or /metrics.
 	if strings.HasPrefix(request.URL.Path, "/admin/") || request.URL.Path == "/metrics" {
-		if id := strings.TrimSpace(request.Header.Get("X-Game-Save-Vault")); id != "" && id != defaultVaultID {
+		id := strings.TrimSpace(request.Header.Get("X-Game-Save-Vault"))
+		if id == "" {
+			id = strings.TrimSpace(request.URL.Query().Get("vault"))
+		}
+		if id != "" && id != defaultVaultID {
 			if defaultVault.adminToken != "" && defaultVault.adminAuthenticatedPeek(request) {
 				r.mu.Lock()
 				vault, ok := r.vaults[id]
@@ -334,7 +362,7 @@ func (r *vaultRegistry) handler() http.Handler {
 			// or scanning tenant vaults so blocked clients cannot probe tenants.
 			if defaultVault.adminToken != "" {
 				now := defaultVault.now()
-				if r.claimLogins.blocked(remoteHost(request), now) || r.claimFailures.blocked(now) {
+				if r.claimLogins.blocked(r.clientIP(request), now) || r.claimFailures.blocked(now) {
 					defaultVault.withCommonHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 						writeErrorCode(w, http.StatusTooManyRequests, "rate_limited", "too many failed pairing attempts")
 					})).ServeHTTP(w, request)
@@ -356,6 +384,16 @@ func (r *vaultRegistry) handler() http.Handler {
 			}
 			r.handlerFor(vault).ServeHTTP(w, request)
 			return
+		}
+		if strings.HasPrefix(request.URL.Path, "/v1/self/") || request.URL.Path == "/v1/self" {
+			defaultVault, err := r.Vault(defaultVaultID)
+			if err != nil || defaultVault == nil {
+				http.Error(w, "vault unavailable", http.StatusInternalServerError)
+				return
+			}
+			if r.serveSelfRoutes(w, request, defaultVault) {
+				return
+			}
 		}
 		id, vault, isAdminPath := r.vaultForRequest(request)
 		if vault == nil {
@@ -409,14 +447,20 @@ func (r *vaultRegistry) serveTenantRoutes(w http.ResponseWriter, request *http.R
 		vault.withCommonHeaders(http.HandlerFunc(r.handleLogin)).ServeHTTP(w, request)
 		return true
 	}
-	if !strings.HasPrefix(request.URL.Path, "/admin/api/users") {
+	isUsers := strings.HasPrefix(request.URL.Path, "/admin/api/users")
+	isVaults := request.URL.Path == "/admin/api/vaults"
+	isRevokeSessions := request.URL.Path == "/admin/api/sessions/revoke-all"
+	if !isUsers && !isVaults && !isRevokeSessions {
 		return false
 	}
 	users := http.NewServeMux()
 	users.HandleFunc("GET /admin/api/users", r.handleUserList)
 	users.HandleFunc("POST /admin/api/users", r.handleUserCreate)
+	users.HandleFunc("PATCH /admin/api/users/{username}", r.handleUserPatch)
 	users.HandleFunc("DELETE /admin/api/users/{username}", r.handleUserDelete)
 	users.HandleFunc("POST /admin/api/users/{username}/password", r.handleUserPassword)
+	users.HandleFunc("GET /admin/api/vaults", r.handleVaultList)
+	users.HandleFunc("POST /admin/api/sessions/revoke-all", r.handleRevokeAllSessions)
 
 	write := request.Method != http.MethodGet
 	var h http.HandlerFunc

@@ -48,6 +48,22 @@ func (s *Store) GetCloudConfig() (CloudConfig, error) {
 	if err := s.db.Get(&c, `SELECT * FROM cloud_config WHERE id = 1`); err != nil {
 		return CloudConfig{}, fmt.Errorf("get cloud config: %w", err)
 	}
+	var err error
+	if c.Password, err = s.decryptSecret(c.Password); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud password: %w", err)
+	}
+	if c.HeadersJSON, err = s.decryptSecret(c.HeadersJSON); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud headers: %w", err)
+	}
+	if c.CustomClientSecretsJSON, err = s.decryptSecret(c.CustomClientSecretsJSON); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud client secrets: %w", err)
+	}
+	if c.AccessToken, err = s.decryptSecret(c.AccessToken); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud access token: %w", err)
+	}
+	if c.RefreshToken, err = s.decryptSecret(c.RefreshToken); err != nil {
+		return CloudConfig{}, fmt.Errorf("decrypt cloud refresh token: %w", err)
+	}
 	if c.CustomClientIDsJSON != "" {
 		if err := json.Unmarshal([]byte(c.CustomClientIDsJSON), &c.CustomClientIDs); err != nil {
 			return CloudConfig{}, fmt.Errorf("unmarshal customClientIds: %w", err)
@@ -80,6 +96,23 @@ func (s *Store) UpdateCloudConfig(c CloudConfig) error {
 	c.CustomClientIDsJSON = string(idsJSON)
 	c.CustomClientSecretsJSON = string(secretsJSON)
 
+	stored := c
+	if stored.Password, err = s.encryptSecret(c.Password); err != nil {
+		return fmt.Errorf("encrypt cloud password: %w", err)
+	}
+	if stored.HeadersJSON, err = s.encryptSecret(c.HeadersJSON); err != nil {
+		return fmt.Errorf("encrypt cloud headers: %w", err)
+	}
+	if stored.CustomClientSecretsJSON, err = s.encryptSecret(c.CustomClientSecretsJSON); err != nil {
+		return fmt.Errorf("encrypt cloud client secrets: %w", err)
+	}
+	if stored.AccessToken, err = s.encryptSecret(c.AccessToken); err != nil {
+		return fmt.Errorf("encrypt cloud access token: %w", err)
+	}
+	if stored.RefreshToken, err = s.encryptSecret(c.RefreshToken); err != nil {
+		return fmt.Errorf("encrypt cloud refresh token: %w", err)
+	}
+
 	_, err = s.db.NamedExec(`
 		UPDATE cloud_config SET
 			enabled = :enabled,
@@ -95,7 +128,7 @@ func (s *Store) UpdateCloudConfig(c CloudConfig) error {
 			refresh_token = :refresh_token,
 			expiry_time_ms = :expiry_time_ms,
 			user_email = :user_email
-		WHERE id = 1`, c)
+		WHERE id = 1`, stored)
 	if err != nil {
 		return fmt.Errorf("update cloud config: %w", err)
 	}

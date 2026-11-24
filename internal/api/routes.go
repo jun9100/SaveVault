@@ -144,15 +144,18 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 // cloudSyncPatch mirrors the JS settings.cloudSync sub-object on writes.
 // Pointer fields distinguish "omitted" from zero values.
 type cloudSyncPatch struct {
-	Enabled             *bool             `json:"enabled"`
-	Provider            *string           `json:"provider"`
-	URL                 *string           `json:"url"`
-	Username            *string           `json:"username"`
-	Password            *string           `json:"password"`
-	Headers             *string           `json:"headers"`
-	FolderID            *string           `json:"folderId"`
-	CustomClientIDs     map[string]string `json:"customClientIds"`
-	CustomClientSecrets map[string]string `json:"customClientSecrets"`
+	Enabled                  *bool             `json:"enabled"`
+	Provider                 *string           `json:"provider"`
+	URL                      *string           `json:"url"`
+	Username                 *string           `json:"username"`
+	Password                 *string           `json:"password"`
+	ClearPassword            bool              `json:"clearPassword"`
+	Headers                  *string           `json:"headers"`
+	ClearHeaders             bool              `json:"clearHeaders"`
+	FolderID                 *string           `json:"folderId"`
+	CustomClientIDs          map[string]string `json:"customClientIds"`
+	CustomClientSecrets      map[string]string `json:"customClientSecrets"`
+	ClearCustomClientSecrets map[string]bool   `json:"clearCustomClientSecrets"`
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -264,11 +267,20 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 	if patch.Username != nil {
 		cfg.Username = *patch.Username
 	}
-	if patch.Password != nil {
+	if patch.ClearPassword {
+		cfg.Password = ""
+	} else if patch.Password != nil && *patch.Password != "" {
+		// Because GET /api/settings redacts password to "", submitting a blank
+		// password preserves the stored credential unless clearPassword is set.
 		cfg.Password = *patch.Password
 	}
-	if patch.Headers != nil {
-		cfg.HeadersJSON = *patch.Headers
+	if patch.ClearHeaders {
+		cfg.HeadersJSON = "{}"
+	} else if patch.Headers != nil {
+		trimmed := strings.TrimSpace(*patch.Headers)
+		if trimmed != "" && (trimmed != "{}" || strings.TrimSpace(cfg.HeadersJSON) == "" || strings.TrimSpace(cfg.HeadersJSON) == "{}") {
+			cfg.HeadersJSON = *patch.Headers
+		}
 	}
 	if patch.FolderID != nil {
 		cfg.FolderID = *patch.FolderID
@@ -281,12 +293,19 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 			cfg.CustomClientIDs[k] = v
 		}
 	}
-	if patch.CustomClientSecrets != nil {
+	if patch.CustomClientSecrets != nil || len(patch.ClearCustomClientSecrets) > 0 {
 		if cfg.CustomClientSecrets == nil {
 			cfg.CustomClientSecrets = map[string]string{}
 		}
+		for k, clear := range patch.ClearCustomClientSecrets {
+			if clear {
+				cfg.CustomClientSecrets[k] = ""
+			}
+		}
 		for k, v := range patch.CustomClientSecrets {
-			cfg.CustomClientSecrets[k] = v
+			if v != "" {
+				cfg.CustomClientSecrets[k] = v
+			}
 		}
 	}
 	if cfg.Provider == cloud.GameSaveProvider && strings.TrimSpace(cfg.URL) != "" {

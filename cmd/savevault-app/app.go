@@ -116,6 +116,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.server = api.New(d)
+	a.server.RequireLocalAuth = true
 	addr, err := a.server.Start(settings.Port)
 	if err != nil {
 		// Configured port taken (another instance?) — fall back to an
@@ -287,7 +288,11 @@ func (a *App) DaemonAddr() map[string]string {
 	if a.bootErr != "" {
 		return map[string]string{"error": a.bootErr}
 	}
-	return map[string]string{"addr": a.addr}
+	token := ""
+	if a.server != nil {
+		token = a.server.LocalToken()
+	}
+	return map[string]string{"addr": a.addr, "token": token}
 }
 
 // SelectDirectory opens the native folder picker.

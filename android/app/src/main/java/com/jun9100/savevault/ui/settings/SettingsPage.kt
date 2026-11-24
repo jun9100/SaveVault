@@ -98,7 +98,8 @@ internal fun SettingsPage(
         busy = state.busy,
         modifier = modifier,
         dialogOpen = state.gameSaveEditor != null || state.gameSaveTestFailure != null || state.pendingConfigImport != null ||
-            state.pairingDraft != null || state.pendingPairing != null || state.wizardStep != null,
+            state.pairingDraft != null || state.pendingPairing != null || state.wizardStep != null ||
+            state.cloudDevicesDialog != null,
         startOnRight = state.previousPage == SaveVaultPage.SYNC,
         left = { firstControl ->
             messages.action?.takeIf { !state.busy }?.let { Text(it, color = MaterialTheme.colorScheme.primary) }

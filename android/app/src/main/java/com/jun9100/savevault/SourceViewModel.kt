@@ -140,6 +140,20 @@ data class GameSaveAuthUi(
     val whoamiLoaded: Boolean = false,
 )
 
+/** Transient state for the "已配对设备管理" dialog in 设置. */
+data class CloudDevicesDialogState(
+    val loading: Boolean = false,
+    val report: GameSaveDevicesReport? = null,
+    val error: String? = null,
+    val pendingRevoke: GameSaveDeviceTokenInfo? = null,
+)
+
+/** Transient confirmation request before deleting a single cloud snapshot in 游戏库. */
+data class CloudSnapshotDeleteRequest(
+    val entry: SourceGameEntry,
+    val snapshot: GameSaveScopeSnapshot,
+)
+
 /**
  * Splits the pairing dialog's input into a link or an address plus a code.
  * Pure, so the branch that decides which server is contacted is unit tested.
@@ -222,6 +236,12 @@ data class SourceUiState(
     val cloudPull: CloudPullStatus = CloudPullStatus.Idle,
     /** Cloud versions the server pins per libraryKey, by archive name; transient (C6). */
     val lockedArchives: Map<String, Set<String>> = emptyMap(),
+    /** Native cloud scopes loaded for game detail pages, by libraryKey; transient. */
+    val cloudScopes: Map<String, GameSaveScope> = emptyMap(),
+    /** Paired devices management dialog in 设置; null while closed. */
+    val cloudDevicesDialog: CloudDevicesDialogState? = null,
+    /** Historical cloud snapshot waiting for delete confirmation; transient. */
+    val pendingCloudSnapshotDelete: CloudSnapshotDeleteRequest? = null,
     /** Recorded cloud stops by `{type}/{gameId}` ([ScopeTombstoneStore]); read-only mirror. */
     val scopeTombstones: Map<String, ScopeTombstone> = emptyMap(),
     /** libraryKeys whose tombstone the user put off with "稍后再说"; this session only. */
@@ -1339,6 +1359,9 @@ class SourceViewModel(
                         rememberedCloudVerdicts = emptyMap(),
                         otherDeviceSaves = emptyMap(),
                         lockedArchives = emptyMap(),
+                        cloudScopes = emptyMap(),
+                        cloudDevicesDialog = null,
+                        pendingCloudSnapshotDelete = null,
                         scopeTombstones = emptyMap(),
                         dismissedTombstones = emptySet(),
                         syncDismissed = emptySet(),
@@ -1353,6 +1376,103 @@ class SourceViewModel(
             if (credentialsChanged) refreshGameSaveAuth()
         }.onFailure { error ->
             updateState { finished(SaveVaultPage.SETTINGS, error = "保存 SaveVault 云端配置失败：${error.message}") }
+        }
+    }
+
+    /** Opens "已配对设备管理" in 设置 and fetches the latest device list and vault usage. */
+    fun openCloudDevices() {
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState { copy(messages = messages.withError(SaveVaultPage.SETTINGS, "请先配置 SaveVault 云端")) }
+            return
+        }
+        updateState { copy(cloudDevicesDialog = CloudDevicesDialogState(loading = true)) }
+        refreshCloudDevices()
+    }
+
+    fun closeCloudDevices() = updateState { copy(cloudDevicesDialog = null) }
+
+    fun refreshCloudDevices() {
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState {
+                copy(cloudDevicesDialog = CloudDevicesDialogState(loading = false, error = "请先配置 SaveVault 云端"))
+            }
+            return
+        }
+        updateState {
+            val current = cloudDevicesDialog ?: CloudDevicesDialogState()
+            copy(cloudDevicesDialog = current.copy(loading = true, error = null))
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { gameSaveClient(config).listDevices() }
+            val currentConfig = savedGameSaveConfig()
+            if (currentConfig.serviceUrl != config.serviceUrl || currentConfig.syncKey != config.syncKey) return@launch
+            result.onSuccess { report ->
+                updateState {
+                    val dialog = cloudDevicesDialog ?: return@updateState this
+                    val updatedWhoami = gameSaveAuth.whoami?.copy(
+                        usedBytes = report.usedBytes,
+                        quotaBytes = report.quotaBytes,
+                    )
+                    copy(
+                        cloudDevicesDialog = dialog.copy(loading = false, report = report, error = null),
+                        gameSaveAuth = if (updatedWhoami != null) gameSaveAuth.copy(whoami = updatedWhoami) else gameSaveAuth,
+                    )
+                }
+            }.onFailure { error ->
+                updateState {
+                    val dialog = cloudDevicesDialog ?: return@updateState this
+                    copy(cloudDevicesDialog = dialog.copy(loading = false, error = error.message ?: "无法读取已配对设备"))
+                }
+            }
+        }
+    }
+
+    fun requestRevokeCloudDevice(token: GameSaveDeviceTokenInfo) = updateState {
+        val dialog = cloudDevicesDialog ?: return@updateState this
+        copy(cloudDevicesDialog = dialog.copy(pendingRevoke = token))
+    }
+
+    fun cancelRevokeCloudDevice() = updateState {
+        val dialog = cloudDevicesDialog ?: return@updateState this
+        copy(cloudDevicesDialog = dialog.copy(pendingRevoke = null))
+    }
+
+    fun confirmRevokeCloudDevice() {
+        val dialog = state.value.cloudDevicesDialog ?: return
+        val token = dialog.pendingRevoke ?: return
+        if (state.value.busy) return
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState { copy(cloudDevicesDialog = dialog.copy(pendingRevoke = null, error = "请先配置 SaveVault 云端")) }
+            return
+        }
+        val revokingSelf = token.id == dialog.report?.currentTokenId
+        updateState { copy(cloudDevicesDialog = dialog.copy(pendingRevoke = null, loading = true, error = null)) }
+        viewModelScope.launch {
+            state.value = state.value.started(SaveVaultPage.SETTINGS, "正在吊销设备「${token.label}」")
+            val result = withContext(Dispatchers.IO) { gameSaveClient(config).revokeDevice(token.id) }
+            result.onSuccess {
+                log(ActivityKind.UPLOAD, ActivityLevel.INFO, "已吊销云端设备令牌：${token.label}")
+                if (revokingSelf) {
+                    updateState {
+                        finished(SaveVaultPage.SETTINGS, action = "已吊销当前设备「${token.label}」，请重新登录或配对")
+                            .copy(cloudDevicesDialog = null)
+                    }
+                    refreshGameSaveAuth()
+                } else {
+                    updateState { finished(SaveVaultPage.SETTINGS, action = "已吊销设备「${token.label}」") }
+                    refreshCloudDevices()
+                }
+            }.onFailure { error ->
+                val message = error.message ?: "吊销设备失败"
+                updateState {
+                    finished(SaveVaultPage.SETTINGS, error = message).copy(
+                        cloudDevicesDialog = cloudDevicesDialog?.copy(loading = false, error = message),
+                    )
+                }
+            }
         }
     }
 
@@ -2686,17 +2806,23 @@ class SourceViewModel(
                 runCatching {
                     val client = operations.client(config)
                     val game = client.gameOf(identity.saveType, identity.gameId).getOrThrow()
-                    // Pinned versions are per scope; a service without the route or a stopped scope has none.
-                    val locked = client.getScope(identity.saveType, identity.gameId)
-                        .map { scope -> scope.snapshots.filter { it.locked }.map { it.archive }.toSet() }
-                        .getOrDefault(emptySet())
-                    game to locked
+                    // Native scope holds both history and server-pinned locks; older servers or stopped scopes yield null.
+                    val scope = client.getScope(identity.saveType, identity.gameId).getOrNull()
+                    game to scope
                 }
             }
             val atMillis = System.currentTimeMillis()
             val next = result.fold(
-                onSuccess = { (game, locked) ->
-                    updateState { copy(lockedArchives = lockedArchives + (key to locked)) }
+                onSuccess = { (game, scope) ->
+                    val locked = scope?.let { s ->
+                        (s.snapshots + s.conflicts).filter { it.locked }.map { it.archive }.toSet()
+                    }.orEmpty()
+                    updateState {
+                        copy(
+                            lockedArchives = lockedArchives + (key to locked),
+                            cloudScopes = if (scope != null) cloudScopes + (key to scope) else cloudScopes - key,
+                        )
+                    }
                     OtherDeviceSaves.Loaded(
                         members = game?.othersThan(identity.saveType.id, identity.gameId).orEmpty(),
                         atMillis = atMillis,
@@ -2707,6 +2833,105 @@ class SourceViewModel(
                 },
             )
             updateState { copy(otherDeviceSaves = otherDeviceSaves + (key to next)) }
+        }
+    }
+
+    /** Pins or unpins a single cloud scope snapshot and refreshes the game's cloud scope state. */
+    fun toggleCloudSnapshotLock(entry: SourceGameEntry, snapshot: GameSaveScopeSnapshot) {
+        if (state.value.busy) return
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState { copy(messages = messages.withError(SaveVaultPage.LIBRARY, "请先配置 SaveVault 云端")) }
+            return
+        }
+        val identity = GameCloudNaming.identity(entry.source, entry.sourceId, entry.game)
+        val name = entry.game.presentation.primaryName
+        val targetLocked = !snapshot.locked
+        val actionWord = if (targetLocked) "锁定" else "解锁"
+        viewModelScope.launch {
+            state.value = state.value.started(SaveVaultPage.LIBRARY, "正在$actionWord $name 的云端版本")
+            val result = withContext(Dispatchers.IO) {
+                val client = gameSaveClient(config)
+                client.setScopeSnapshotLock(identity.saveType, identity.gameId, snapshot.id, targetLocked).map {
+                    client.getScope(identity.saveType, identity.gameId).getOrNull()
+                }
+            }
+            result.onSuccess { refreshed ->
+                val key = entry.libraryKey
+                updateState {
+                    val base = finished(SaveVaultPage.LIBRARY, action = "已$actionWord「$name」的云端版本")
+                    if (refreshed != null) {
+                        val locked = (refreshed.snapshots + refreshed.conflicts).filter { it.locked }.map { it.archive }.toSet()
+                        base.copy(
+                            cloudScopes = cloudScopes + (key to refreshed),
+                            lockedArchives = lockedArchives + (key to locked),
+                        )
+                    } else {
+                        base
+                    }
+                }
+                log(ActivityKind.UPLOAD, ActivityLevel.INFO, "已$actionWord「$name」的云端快照", snapshot.id)
+            }.onFailure { error ->
+                updateState {
+                    finished(SaveVaultPage.LIBRARY, error = "${actionWord}云端版本失败：${error.message}")
+                }
+            }
+        }
+    }
+
+    fun requestDeleteCloudSnapshot(entry: SourceGameEntry, snapshot: GameSaveScopeSnapshot) {
+        if (state.value.busy) return
+        updateState { copy(pendingCloudSnapshotDelete = CloudSnapshotDeleteRequest(entry, snapshot)) }
+    }
+
+    fun cancelDeleteCloudSnapshot() = updateState { copy(pendingCloudSnapshotDelete = null) }
+
+    fun confirmDeleteCloudSnapshot() {
+        val request = state.value.pendingCloudSnapshotDelete ?: return
+        if (state.value.busy) return
+        updateState { copy(pendingCloudSnapshotDelete = null) }
+        val config = savedGameSaveConfig()
+        if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
+            updateState { copy(messages = messages.withError(SaveVaultPage.LIBRARY, "请先配置 SaveVault 云端")) }
+            return
+        }
+        val entry = request.entry
+        val snapshot = request.snapshot
+        val identity = GameCloudNaming.identity(entry.source, entry.sourceId, entry.game)
+        val name = entry.game.presentation.primaryName
+        viewModelScope.launch {
+            state.value = state.value.started(SaveVaultPage.LIBRARY, "正在删除 $name 的云端历史版本")
+            val result = withContext(Dispatchers.IO) {
+                val client = gameSaveClient(config)
+                client.deleteScopeSnapshot(identity.saveType, identity.gameId, snapshot.id).map {
+                    client.getScope(identity.saveType, identity.gameId).getOrNull()
+                }
+            }
+            result.onSuccess { refreshed ->
+                val key = entry.libraryKey
+                updateState {
+                    val base = finished(SaveVaultPage.LIBRARY, action = "已删除「$name」的云端历史版本")
+                    val nextRemote = remoteSnapshots.filterNot {
+                        it.type == identity.saveType.id && it.name == snapshot.archive
+                    }
+                    if (refreshed != null) {
+                        val locked = (refreshed.snapshots + refreshed.conflicts).filter { it.locked }.map { it.archive }.toSet()
+                        base.copy(
+                            remoteSnapshots = nextRemote,
+                            cloudScopes = cloudScopes + (key to refreshed),
+                            lockedArchives = lockedArchives + (key to locked),
+                        )
+                    } else {
+                        base.copy(remoteSnapshots = nextRemote)
+                    }
+                }
+                log(ActivityKind.UPLOAD, ActivityLevel.INFO, "已删除「$name」的云端历史快照", snapshot.id)
+                refreshGameSaveAuth()
+            }.onFailure { error ->
+                updateState {
+                    finished(SaveVaultPage.LIBRARY, error = "删除云端快照失败：${error.message}")
+                }
+            }
         }
     }
 

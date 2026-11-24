@@ -97,12 +97,23 @@ func (s *server) sessionSignature(expires int64) string {
 }
 
 func (s *server) newSessionValue(now time.Time) (string, time.Time) {
+	if s.sessions != nil {
+		if value, rec, err := s.sessions.create(sessionRoleAdmin, "", defaultVaultID, now); err == nil {
+			return value, rec.ExpiresAt
+		}
+	}
 	expires := now.Add(sessionLifetime)
 	unix := expires.Unix()
 	return strconv.FormatInt(unix, 10) + "." + s.sessionSignature(unix), expires
 }
 
 func (s *server) validSession(value string, now time.Time) bool {
+	if s.sessions != nil {
+		if _, ok := s.sessions.validate(value, sessionRoleAdmin, now); ok {
+			return true
+		}
+		return false
+	}
 	encodedExpiry, signature, ok := strings.Cut(value, ".")
 	if !ok {
 		return false
@@ -142,7 +153,7 @@ func (s *server) adminAuthenticatedWithLimit(r *http.Request, recordFailure bool
 		return true, false
 	}
 	if _, password, ok := r.BasicAuth(); ok {
-		address := remoteHost(r)
+		address := s.clientIP(r)
 		if s.logins.blocked(address, now) {
 			return false, true
 		}
@@ -202,7 +213,10 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	address := remoteHost(r)
+	if s.now != nil {
+		now = s.now()
+	}
+	address := s.clientIP(r)
 	if s.logins.blocked(address, now) {
 		writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
 		return
@@ -226,7 +240,7 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: true,
-		Secure:   requestIsSecure(r),
+		Secure:   s.trustedProxies.isSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "expires_at": expires.UTC()})
@@ -241,13 +255,16 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "missing "+csrfHeader+" header")
 		return
 	}
+	if cookie, err := r.Cookie(sessionCookie); err == nil && s.sessions != nil {
+		s.sessions.revokeCookie(cookie.Value)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   requestIsSecure(r),
+		Secure:   s.trustedProxies.isSecure(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	w.WriteHeader(http.StatusNoContent)

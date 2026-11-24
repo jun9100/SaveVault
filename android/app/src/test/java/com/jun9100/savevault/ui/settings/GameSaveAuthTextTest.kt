@@ -5,7 +5,9 @@ import com.jun9100.savevault.AUTH_BLOCKED_TOKEN_REVOKED
 import com.jun9100.savevault.GameSaveAuthUi
 import com.jun9100.savevault.GameSaveWhoami
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GameSaveAuthTextTest {
@@ -73,15 +75,47 @@ class GameSaveAuthTextTest {
         assertNull(GameSaveAuthText.warning(GameSaveAuthUi(whoami = whoami("device"))))
     }
 
+    @Test
+    fun quotaFormatsUsageAndRatioAndHidesWhenBlocked() {
+        assertNull(GameSaveAuthText.quota(GameSaveAuthUi()))
+        assertNull(GameSaveAuthText.quota(GameSaveAuthUi(whoami = whoami("device", usedBytes = 0L, quotaBytes = 0L))))
+        assertNull(
+            GameSaveAuthText.quota(
+                GameSaveAuthUi(
+                    blocked = AUTH_BLOCKED_TOKEN_REVOKED,
+                    whoami = whoami("device", usedBytes = 1024L, quotaBytes = 2048L),
+                ),
+            ),
+        )
+
+        val bounded = GameSaveAuthText.quota(
+            GameSaveAuthUi(whoami = whoami("device", usedBytes = 512L * 1024L * 1024L, quotaBytes = 1024L * 1024L * 1024L)),
+        )
+        assertNotNull(bounded)
+        assertTrue(bounded!!.first.contains("50%"))
+        assertEquals(0.5f, bounded.second!!, 0.01f)
+
+        val unlimited = GameSaveAuthText.quota(
+            GameSaveAuthUi(whoami = whoami("device", usedBytes = 2L * 1024L * 1024L, quotaBytes = 0L)),
+        )
+        assertNotNull(unlimited)
+        assertTrue(unlimited!!.first.contains("无配额上限"))
+        assertNull(unlimited.second)
+    }
+
     private fun whoami(
         auth: String,
         name: String = "",
         sharedTokenMode: String = "allow",
+        usedBytes: Long = 0L,
+        quotaBytes: Long = 0L,
     ) = GameSaveWhoami(
         auth = auth,
         tokenId = "",
         deviceId = "",
         name = name,
         sharedTokenMode = sharedTokenMode,
+        usedBytes = usedBytes,
+        quotaBytes = quotaBytes,
     )
 }

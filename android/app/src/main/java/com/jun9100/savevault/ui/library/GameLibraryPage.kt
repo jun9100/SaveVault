@@ -83,6 +83,7 @@ import com.jun9100.savevault.GameCloudNaming
 import com.jun9100.savevault.GameLibrary
 import com.jun9100.savevault.GamePresentation
 import com.jun9100.savevault.GameSaveCloudGameMember
+import com.jun9100.savevault.GameSaveScopeSnapshot
 import com.jun9100.savevault.GameStatusResolver
 import com.jun9100.savevault.GameSyncStatus
 import com.jun9100.savevault.LibraryEmptyState
@@ -158,6 +159,8 @@ internal class LibraryActions(
     val onBackupGame: (SourceGameEntry) -> Unit = {},
     val onRestoreLocal: (SourceGameEntry, SnapshotRecord) -> Unit = { _, _ -> },
     val onRestoreRemote: (SourceGameEntry, RemoteSnapshot) -> Unit = { _, _ -> },
+    val onToggleCloudSnapshotLock: (SourceGameEntry, GameSaveScopeSnapshot) -> Unit = { _, _ -> },
+    val onDeleteCloudSnapshot: (SourceGameEntry, GameSaveScopeSnapshot) -> Unit = { _, _ -> },
     /** Read the other devices' cloud saves for one game. */
     val onLoadOtherDevices: (SourceGameEntry) -> Unit = {},
     /** Open the mapping dialog for one other device's save location. */
@@ -246,6 +249,8 @@ internal fun GameLibraryPage(
             onBackupGame = viewModel::requestGameBackup,
             onRestoreLocal = viewModel::requestLocalGameRestore,
             onRestoreRemote = viewModel::requestRemoteGameRestore,
+            onToggleCloudSnapshotLock = viewModel::toggleCloudSnapshotLock,
+            onDeleteCloudSnapshot = viewModel::requestDeleteCloudSnapshot,
             onLoadOtherDevices = { entry -> viewModel.loadOtherDeviceSaves(entry) },
             onRestoreOtherDevice = viewModel::requestOtherDeviceRestore,
             onLocalSuccessorName = viewModel::localSuccessorName,
@@ -1104,6 +1109,9 @@ private fun GameDetailFor(
         onLoadOtherDevices = { actions.onLoadOtherDevices(entry) },
         onRestoreOtherDevice = { member -> actions.onRestoreOtherDevice(entry, member) },
         lockedArchives = state.lockedArchives[entry.libraryKey].orEmpty(),
+        cloudScope = state.cloudScopes[entry.libraryKey],
+        onToggleCloudSnapshotLock = { snapshot -> actions.onToggleCloudSnapshotLock(entry, snapshot) },
+        onDeleteCloudSnapshot = { snapshot -> actions.onDeleteCloudSnapshot(entry, snapshot) },
         tombstone = tombstone,
         tombstoneDismissed = entry.libraryKey in state.dismissedTombstones,
         localSuccessorName = tombstone?.let { actions.onLocalSuccessorName(it) },

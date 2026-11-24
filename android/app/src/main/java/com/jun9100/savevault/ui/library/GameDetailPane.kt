@@ -15,7 +15,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.Button
@@ -37,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import com.jun9100.savevault.CoverRepository
 import com.jun9100.savevault.GamePresentation
 import com.jun9100.savevault.GameSaveCloudGameMember
+import com.jun9100.savevault.GameSaveScope
+import com.jun9100.savevault.GameSaveScopeSnapshot
 import com.jun9100.savevault.GameSyncStatus
 import com.jun9100.savevault.OtherDeviceSaves
 import com.jun9100.savevault.RemoteSnapshot
@@ -58,6 +63,7 @@ import com.jun9100.savevault.SnapshotRecord
 import com.jun9100.savevault.SourceGameEntry
 import com.jun9100.savevault.ui.GAME_DETAIL_TAG
 import com.jun9100.savevault.ui.formatBytes
+import com.jun9100.savevault.ui.formatIsoShortTime
 import com.jun9100.savevault.ui.formatTime
 import com.jun9100.savevault.ui.input.busyDimmed
 import com.jun9100.savevault.ui.input.handheldFocusRing
@@ -114,6 +120,10 @@ internal fun GameDetailPane(
     onRestoreOtherDevice: (GameSaveCloudGameMember) -> Unit = {},
     /** Archive names the cloud pins, so the version list can mark them. */
     lockedArchives: Set<String> = emptySet(),
+    /** Native cloud scope for this game (snapshots, head, locks); null when unavailable. */
+    cloudScope: GameSaveScope? = null,
+    onToggleCloudSnapshotLock: (GameSaveScopeSnapshot) -> Unit = {},
+    onDeleteCloudSnapshot: (GameSaveScopeSnapshot) -> Unit = {},
     /** The cloud's recorded stop for this game's scope (C6); null shows no card. */
     tombstone: ScopeTombstone? = null,
     /** The user put the card off with "稍后再说" for this run. */
@@ -268,6 +278,9 @@ internal fun GameDetailPane(
                 Switch(checked = included, onCheckedChange = null)
             }
         }
+        val cloudVersionCount = cloudScope?.let {
+            (it.snapshots + it.conflicts).distinctBy(GameSaveScopeSnapshot::id).size
+        } ?: remoteHistory.size
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
             DetailTab.entries.forEachIndexed { index, item ->
                 SegmentedButton(
@@ -278,7 +291,7 @@ internal fun GameDetailPane(
                     label = {
                         Text(
                             when (item) {
-                                DetailTab.VERSIONS -> "${item.label} (${localHistory.size + remoteHistory.size})"
+                                DetailTab.VERSIONS -> "${item.label} (${localHistory.size + cloudVersionCount})"
                                 DetailTab.LOCATIONS -> "${item.label} (${game.locationCount})"
                             },
                             maxLines = 1,
@@ -291,6 +304,7 @@ internal fun GameDetailPane(
             DetailTab.VERSIONS -> VersionsTab(
                 localHistory = localHistory,
                 remoteHistory = remoteHistory,
+                cloudScope = cloudScope,
                 busy = busy,
                 gameSaveEnabled = gameSaveEnabled,
                 lockedArchives = lockedArchives,
@@ -299,6 +313,8 @@ internal fun GameDetailPane(
                 onRestoreOtherDevice = onRestoreOtherDevice,
                 onRestoreLocal = onRestoreLocal,
                 onRestoreRemote = onRestoreRemote,
+                onToggleCloudSnapshotLock = onToggleCloudSnapshotLock,
+                onDeleteCloudSnapshot = onDeleteCloudSnapshot,
             )
             DetailTab.LOCATIONS -> LocationsTab(entry)
         }
@@ -309,6 +325,7 @@ internal fun GameDetailPane(
 private fun VersionsTab(
     localHistory: List<SnapshotRecord>,
     remoteHistory: List<RemoteSnapshot>,
+    cloudScope: GameSaveScope?,
     busy: Boolean,
     gameSaveEnabled: Boolean,
     lockedArchives: Set<String>,
@@ -317,8 +334,19 @@ private fun VersionsTab(
     onRestoreOtherDevice: (GameSaveCloudGameMember) -> Unit,
     onRestoreLocal: (SnapshotRecord) -> Unit,
     onRestoreRemote: (RemoteSnapshot) -> Unit,
+    onToggleCloudSnapshotLock: (GameSaveScopeSnapshot) -> Unit,
+    onDeleteCloudSnapshot: (GameSaveScopeSnapshot) -> Unit,
 ) {
-    if (localHistory.isEmpty() && remoteHistory.isEmpty()) {
+    val scopeSnapshots = remember(cloudScope) {
+        cloudScope?.let { scope ->
+            (scope.snapshots + scope.conflicts)
+                .distinctBy(GameSaveScopeSnapshot::id)
+                .sortedByDescending { it.receivedAt.ifBlank { it.createdAt } }
+        }.orEmpty()
+    }
+    val remoteSizes = remember(remoteHistory) { remoteHistory.associate { it.name to it.sizeBytes } }
+    val hasCloudVersions = scopeSnapshots.isNotEmpty() || remoteHistory.isNotEmpty()
+    if (localHistory.isEmpty() && !hasCloudVersions) {
         Text(
             "还没有这款游戏的存档版本。",
             modifier = Modifier.padding(top = 12.dp),
@@ -337,7 +365,32 @@ private fun VersionsTab(
             )
         }
     }
-    if (remoteHistory.isNotEmpty()) {
+    if (cloudScope != null && scopeSnapshots.isNotEmpty()) {
+        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+        Text("云端版本", style = MaterialTheme.typography.labelLarge)
+        scopeSnapshots.take(MAX_GAME_HISTORY_ROWS).forEach { snapshot ->
+            val isHead = snapshot.id == cloudScope.head?.id
+            val sizeBytes = remoteSizes[snapshot.archive] ?: -1L
+            CloudScopeSnapshotRow(
+                snapshot = snapshot,
+                isHead = isHead,
+                sizeBytes = sizeBytes,
+                enabled = !busy,
+                onRestore = {
+                    onRestoreRemote(
+                        RemoteSnapshot(
+                            type = cloudScope.type,
+                            name = snapshot.archive,
+                            sizeBytes = sizeBytes,
+                            modified = snapshot.receivedAt.ifBlank { snapshot.createdAt },
+                        ),
+                    )
+                },
+                onToggleLock = { onToggleCloudSnapshotLock(snapshot) },
+                onDelete = { onDeleteCloudSnapshot(snapshot) },
+            )
+        }
+    } else if (remoteHistory.isNotEmpty()) {
         HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
         Text("云端版本", style = MaterialTheme.typography.labelLarge)
         remoteHistory.take(MAX_GAME_HISTORY_ROWS).forEach { snapshot ->
@@ -350,7 +403,7 @@ private fun VersionsTab(
             )
         }
     }
-    if (gameSaveEnabled && remoteHistory.isEmpty()) {
+    if (gameSaveEnabled && !hasCloudVersions) {
         Text(
             "云端记录为空时，可在“设置 › 高级”中列举云端版本。",
             modifier = Modifier.padding(top = 8.dp),
@@ -562,6 +615,94 @@ private fun LocationsTab(entry: SourceGameEntry) {
             modifier = Modifier.padding(top = 5.dp),
             style = MaterialTheme.typography.labelSmall,
         )
+    }
+}
+
+@Composable
+private fun CloudScopeSnapshotRow(
+    snapshot: GameSaveScopeSnapshot,
+    isHead: Boolean,
+    sizeBytes: Long,
+    enabled: Boolean,
+    onRestore: () -> Unit,
+    onToggleLock: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val whenLabel = formatIsoShortTime(snapshot.receivedAt.ifBlank { snapshot.createdAt }).ifBlank { snapshot.id }
+    val title = buildString {
+        append(whenLabel)
+        if (snapshot.deviceName.isNotBlank()) append(" · ${snapshot.deviceName}")
+    }
+    val detail = buildList {
+        if (isHead) add("当前版本")
+        if (snapshot.conflict) add("冲突副本")
+        if (snapshot.locked) add("已锁定")
+        if (sizeBytes >= 0L) add(formatBytes(sizeBytes))
+        if (isEmpty()) add("历史版本")
+    }.joinToString(" · ")
+    val canDelete = !isHead && !snapshot.locked
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (snapshot.locked) {
+                    Icon(
+                        Icons.Outlined.Lock,
+                        contentDescription = "已锁定",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Text(
+                    title,
+                    modifier = Modifier.padding(start = if (snapshot.locked) 4.dp else 0.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    snapshot.conflict -> MaterialTheme.colorScheme.tertiary
+                    isHead -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(
+            onClick = whenIdle(!enabled, onToggleLock),
+            modifier = Modifier.handheldFocusRing(CircleShape).busyDimmed(!enabled),
+        ) {
+            Icon(
+                if (snapshot.locked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                contentDescription = if (snapshot.locked) "解锁此云端版本" else "锁定此云端版本",
+                tint = if (snapshot.locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (canDelete) {
+            IconButton(
+                onClick = whenIdle(!enabled, onDelete),
+                modifier = Modifier.handheldFocusRing(CircleShape).busyDimmed(!enabled),
+            ) {
+                Icon(
+                    Icons.Outlined.DeleteOutline,
+                    contentDescription = "删除此历史版本",
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        IconButton(
+            onClick = whenIdle(!enabled, onRestore),
+            modifier = Modifier.handheldFocusRing(CircleShape).busyDimmed(!enabled),
+        ) {
+            Icon(Icons.Outlined.SettingsBackupRestore, contentDescription = "恢复此版本")
+        }
     }
 }
 

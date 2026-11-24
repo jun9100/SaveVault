@@ -32,7 +32,7 @@
   let ownAppSecret = config.customClientSecrets?.[provider] ?? '';
   let showOwnApp = needsOwnApp(provider) && !ownAppID;
 
-  async function save() {
+  async function save(clearSecret = false) {
     // Changing the id invalidates any tokens already held: they were issued to
     // the old app and no refresh will be accepted. Disconnecting is the honest
     // outcome — leaving them in place would show "Connected" over credentials
@@ -42,12 +42,16 @@
 
     busy.set(true);
     try {
+      const cloudPatch = {
+        customClientIds: { [provider]: ownAppID.trim() },
+        customClientSecrets: { [provider]: ownAppSecret.trim() }
+      };
+      if (clearSecret || !ownAppID.trim()) {
+        cloudPatch.clearCustomClientSecrets = { [provider]: true };
+      }
       settings.set(
         await api.post('/api/settings', {
-          cloudSync: {
-            customClientIds: { [provider]: ownAppID.trim() },
-            customClientSecrets: { [provider]: ownAppSecret.trim() }
-          }
+          cloudSync: cloudPatch
         })
       );
       if (changed && wasConnected) {
@@ -104,16 +108,22 @@
       </div>
       <div class="field">
         <label for="cb-clientsecret">{$t('cloud.ownApp.clientSecret')} <span class="quiet">{$t('cloud.ownApp.clientSecretHint')}</span></label>
-        <input id="cb-clientsecret" type="password" bind:value={ownAppSecret} spellcheck="false" />
+        <input
+          id="cb-clientsecret"
+          type="password"
+          bind:value={ownAppSecret}
+          spellcheck="false"
+          placeholder={config.hasCustomClientSecrets?.[provider] ? '••••••••' : ''}
+        />
       </div>
       <div class="path-row">
-        <button class="btn primary" disabled={$busy} on:click={save}>{$t('cloud.ownApp.saveCredentials')}</button>
+        <button class="btn primary" disabled={$busy} on:click={() => save(false)}>{$t('cloud.ownApp.saveCredentials')}</button>
         {#if ownAppID}
           <button
             class="btn small"
             disabled={$busy}
             title={$t('cloud.ownApp.useBuiltInTitle')}
-            on:click={() => { ownAppID = ''; ownAppSecret = ''; save(); }}
+            on:click={() => { ownAppID = ''; ownAppSecret = ''; save(true); }}
           >
             {$t('cloud.ownApp.useBuiltIn')}
           </button>

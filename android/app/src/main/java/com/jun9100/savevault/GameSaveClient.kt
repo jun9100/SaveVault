@@ -106,6 +106,35 @@ data class GameSaveWhoami(
     val deviceId: String,
     val name: String,
     val sharedTokenMode: String,
+    val vaultId: String = "",
+    val username: String = "",
+    val usedBytes: Long = 0L,
+    val quotaBytes: Long = 0L,
+)
+
+/** One paired device token reported by `GET /v1/auth/devices`. */
+data class GameSaveDeviceTokenInfo(
+    val id: String,
+    val name: String,
+    val deviceId: String,
+    val displayName: String,
+    val online: Boolean,
+    val createdAt: String,
+    val lastUsedAt: String,
+    val revokedAt: String,
+) {
+    val revoked: Boolean get() = revokedAt.isNotBlank()
+    val label: String get() = displayName.ifBlank { name }.ifBlank { deviceId }.ifBlank { id }
+}
+
+/** Paired devices and storage quota for the authenticated vault. */
+data class GameSaveDevicesReport(
+    val tokens: List<GameSaveDeviceTokenInfo>,
+    val currentTokenId: String,
+    val currentDeviceId: String,
+    val sharedTokenMode: String,
+    val usedBytes: Long,
+    val quotaBytes: Long,
 )
 
 /** A token returned by `POST /v1/pair/claim`; it can never be fetched again. */
@@ -239,7 +268,73 @@ class GameSaveClient(
                 deviceId = json.optString("device_id").trim(),
                 name = json.optString("name").trim(),
                 sharedTokenMode = json.optString("shared_token_mode").trim(),
+                vaultId = json.optString("vault_id").trim(),
+                username = json.optString("username").trim(),
+                usedBytes = json.optLong("used_bytes", 0L).coerceAtLeast(0L),
+                quotaBytes = json.optLong("quota_bytes", 0L).coerceAtLeast(0L),
             )
+        }
+    }.mapFailure()
+
+    /** Lists paired devices and vault storage usage for the authenticated credential. */
+    fun listDevices(): Result<GameSaveDevicesReport> = runCatching {
+        execute(request("$serviceUrl/v1/auth/devices")).use { response ->
+            if (response.code == 404) {
+                throw GameSaveException("当前 SaveVault 云端尚不支持设备管理，请升级服务端", retryable = false, httpStatus = 404)
+            }
+            requireSuccess(response, "读取已配对设备列表")
+            val json = JSONObject(readBoundedString(response, MAX_JSON_BODY_BYTES))
+            val currentTokenId = json.optString("current_token_id").trim()
+            val array = json.optJSONArray("tokens")
+            val tokens = buildList {
+                if (array != null) {
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        val id = item.optString("id").trim()
+                        if (id.isBlank()) continue
+                        add(
+                            GameSaveDeviceTokenInfo(
+                                id = id,
+                                name = item.optString("name").trim(),
+                                deviceId = item.optString("device_id").trim(),
+                                displayName = item.optString("display_name").trim(),
+                                online = item.optBoolean("online"),
+                                createdAt = item.optString("created_at").trim(),
+                                lastUsedAt = item.optString("last_used_at").trim(),
+                                revokedAt = item.optString("revoked_at").trim(),
+                            ),
+                        )
+                    }
+                }
+            }.sortedWith(
+                compareBy<GameSaveDeviceTokenInfo> { it.revoked }
+                    .thenByDescending { it.id == currentTokenId }
+                    .thenByDescending { it.online }
+                    .thenByDescending { it.createdAt },
+            )
+            GameSaveDevicesReport(
+                tokens = tokens,
+                currentTokenId = currentTokenId,
+                currentDeviceId = json.optString("current_device_id").trim(),
+                sharedTokenMode = json.optString("shared_token_mode").trim(),
+                usedBytes = json.optLong("used_bytes", 0L).coerceAtLeast(0L),
+                quotaBytes = json.optLong("quota_bytes", 0L).coerceAtLeast(0L),
+            )
+        }
+    }.mapFailure()
+
+    /** Revokes a paired device token in the authenticated vault. */
+    fun revokeDevice(tokenId: String): Result<Unit> = runCatching {
+        val id = tokenId.trim()
+        require(DEVICE_TOKEN_ID_PATTERN.matches(id)) { "设备令牌标识无效" }
+        val req = request("$serviceUrl/v1/auth/devices/${encodePathSegment(id)}/revoke")
+            .post("{}".toRequestBody(JSON_MEDIA_TYPE))
+            .header("Content-Type", "application/json")
+        execute(req).use { response ->
+            if (response.code == 404) {
+                throw GameSaveException("未找到该设备令牌或服务端版本过旧", retryable = false, httpStatus = 404)
+            }
+            requireSuccess(response, "吊销设备令牌")
         }
     }.mapFailure()
 
@@ -435,6 +530,62 @@ class GameSaveClient(
             if (response.code == 404) return@runCatching false
             requireSuccess(response, "上报 SaveVault 云端游戏信息")
             true
+        }
+    }.mapFailure()
+
+    /** Pins or unpins a cloud snapshot so pruning rules and accidental deletion leave it alone. */
+    fun setScopeSnapshotLock(
+        type: GameSaveType,
+        gameId: String,
+        snapshotId: String,
+        locked: Boolean,
+        note: String = "",
+    ): Result<Unit> = runCatching {
+        validateScope(type, gameId)
+        require(isSafeScopeSnapshotId(snapshotId)) { "云端快照标识无效" }
+        val url = scopeEndpoint(type.id, gameId) + "/snapshots/${encodePathSegment(snapshotId)}/lock"
+        val req = if (locked) {
+            val payload = JSONObject().apply {
+                if (note.isNotBlank()) put("note", note.trim())
+            }.toString().toRequestBody(JSON_MEDIA_TYPE)
+            request(url).put(payload).header("Content-Type", "application/json")
+        } else {
+            request(url).delete()
+        }
+        execute(req, scopeType = type.id).use { response ->
+            if (response.code == 404) {
+                throw GameSaveException("云端快照不存在或服务端版本过旧", retryable = false, httpStatus = 404)
+            }
+            requireSuccess(response, if (locked) "锁定云端快照" else "解锁云端快照")
+        }
+    }.mapFailure()
+
+    /** Deletes a single non-head, unlocked historical snapshot from a native scope. */
+    fun deleteScopeSnapshot(
+        type: GameSaveType,
+        gameId: String,
+        snapshotId: String,
+    ): Result<Unit> = runCatching {
+        validateScope(type, gameId)
+        require(isSafeScopeSnapshotId(snapshotId)) { "云端快照标识无效" }
+        val url = scopeEndpoint(type.id, gameId) + "/snapshots/${encodePathSegment(snapshotId)}"
+        execute(request(url).delete(), scopeType = type.id).use { response ->
+            if (response.code == 404) {
+                throw GameSaveException("云端快照不存在或服务端版本过旧", retryable = false, httpStatus = 404)
+            }
+            if (response.code == 409) {
+                val errText = runCatching {
+                    JSONObject(readBoundedString(response, MAX_AUTH_JSON_BODY_BYTES)).optString("error").trim()
+                }.getOrDefault("")
+                val message = when {
+                    errText.contains("head", ignoreCase = true) -> "云端当前版本不能直接删除"
+                    errText.contains("locked", ignoreCase = true) -> "已锁定的快照不能删除，请先解锁"
+                    errText.isNotBlank() -> "无法删除云端快照：$errText"
+                    else -> "当前版本或已锁定快照无法删除"
+                }
+                throw GameSaveException(message, retryable = false, httpStatus = 409)
+            }
+            requireSuccess(response, "删除云端历史快照")
         }
     }.mapFailure()
 
@@ -642,6 +793,7 @@ class GameSaveClient(
         private val ZIP_MEDIA_TYPE = "application/zip".toMediaType()
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val SHA256_PATTERN = Regex("^[a-f0-9]{64}$")
+        private val DEVICE_TOKEN_ID_PATTERN = Regex("^[a-f0-9]{1,64}$", RegexOption.IGNORE_CASE)
         private val SCOPE_GAME_ID_PATTERN = Regex("^[a-z0-9][a-z0-9_.-]{0,127}$", RegexOption.IGNORE_CASE)
         private val SCOPE_SNAPSHOT_ID_PATTERN = Regex("^[a-z0-9][a-z0-9_.-]{0,191}$", RegexOption.IGNORE_CASE)
         private const val BUFFER_SIZE = 1024 * 1024

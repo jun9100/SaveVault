@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,10 @@ type Server struct {
 	// instance marks every response from this process (instanceHeader), so
 	// Start can tell whether 127.0.0.1 at its port is really answered by it.
 	instance string
+	// localToken authenticates loopback clients (Wails UI, CLI, Decky plugin)
+	// when RequireLocalAuth is enabled. Published to daemon.token (0600).
+	localToken       string
+	RequireLocalAuth bool
 	// transfers remembers what moved between this device and others; fed
 	// by the same progress reports the dashboard gets. See wireSyncProgress.
 	transfers *transfers.Log
@@ -50,7 +55,13 @@ type Server struct {
 
 // New assembles the router and hub around a daemon.
 func New(d *daemon.Daemon) *Server {
-	s := &Server{Daemon: d, Hub: NewHub(), transfers: transfers.New(), instance: newInstanceID()}
+	s := &Server{
+		Daemon:     d,
+		Hub:        NewHub(),
+		transfers:  transfers.New(),
+		instance:   newInstanceID(),
+		localToken: newLocalToken(),
+	}
 	s.Hub.InitPayload = s.initPayload
 
 	// Live-forward activity log entries to connected dashboards.
@@ -209,9 +220,10 @@ func (s *Server) Start(port int) (string, error) {
 	// webview with "Failed to fetch".
 	r.Use(corsLocalhost)
 
-	// Dashboard/CLI surface: localhost only.
+	// Dashboard/CLI surface: localhost only (+ Bearer token when RequireLocalAuth is set).
 	r.Group(func(r chi.Router) {
 		r.Use(localhostOnly)
+		r.Use(s.requireLocalToken)
 		s.routes(r)
 	})
 
@@ -247,8 +259,55 @@ func (s *Server) Start(port int) (string, error) {
 		return "", err
 	}
 	s.writeAddrFile(ln.Addr().String())
+	s.writeTokenFile()
 	s.recordBoundPort(ln.Addr().String())
 	return ln.Addr().String(), nil
+}
+
+// LocalToken returns the per-process loopback bearer token published to daemon.token.
+func (s *Server) LocalToken() string { return s.localToken }
+
+func newLocalToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (s *Server) tokenFilePath() string {
+	return filepath.Join(s.Daemon.Paths.HomeDir, "daemon.token")
+}
+
+func (s *Server) writeTokenFile() {
+	if s.localToken == "" || s.Daemon == nil || s.Daemon.Paths.HomeDir == "" {
+		return
+	}
+	if err := os.WriteFile(s.tokenFilePath(), []byte(s.localToken), 0o600); err != nil {
+		s.Daemon.Log.Log("warn", "could not publish daemon auth token: "+err.Error())
+	}
+}
+
+func (s *Server) requireLocalToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.RequireLocalAuth || s.localToken == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		candidate := ""
+		if auth := strings.TrimSpace(r.Header.Get("Authorization")); len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
+			candidate = strings.TrimSpace(auth[7:])
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.Header.Get("X-SaveVault-Token"))
+		}
+		if candidate == "" {
+			candidate = strings.TrimSpace(r.URL.Query().Get("token"))
+		}
+		if len(candidate) != len(s.localToken) || subtle.ConstantTimeCompare([]byte(candidate), []byte(s.localToken)) != 1 {
+			writeError(w, http.StatusUnauthorized, "local daemon authentication required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ErrLoopbackTaken is Start's answer when another program is what answers on
@@ -363,9 +422,10 @@ func (s *Server) writeAddrFile(addr string) {
 
 // Stop shuts the HTTP server down gracefully.
 func (s *Server) Stop() {
-	// Remove the published address first: a stale file points clients at a
-	// port nothing is listening on.
+	// Remove the published address and token first: stale files point clients at
+	// a dead port or an old session token.
 	_ = os.Remove(s.addrFilePath())
+	_ = os.Remove(s.tokenFilePath())
 	if s.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -422,7 +482,7 @@ func corsLocalhost(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-SaveVault-Token")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -503,19 +563,34 @@ func (s *Server) settingsWire() map[string]any {
 
 	cloud, err := s.Daemon.Store.GetCloudConfig()
 	if err == nil {
+		// Never ship raw cloud secrets (WebDAV/SaveVault password or sync key,
+		// custom auth headers, OAuth client secrets) over GET /api/settings or
+		// WebSocket init. Boolean flags tell the UI when a secret is already
+		// stored; blank writes preserve existing secrets in applyCloudPatch.
+		hasCustomSecrets := map[string]bool{}
+		redactedSecrets := map[string]string{}
+		for k, v := range cloud.CustomClientSecrets {
+			hasCustomSecrets[k] = strings.TrimSpace(v) != ""
+			redactedSecrets[k] = ""
+		}
+		trimmedHeaders := strings.TrimSpace(cloud.HeadersJSON)
+		hasHeaders := trimmedHeaders != "" && trimmedHeaders != "{}"
 		// "ready" is on and with somewhere to send to (cloud.Ready). The UI
 		// says cloud backup is set up only when it is true.
 		out["cloudSync"] = map[string]any{
-			"enabled":             cloud.Enabled,
-			"ready":               cloudsvc.Ready(cloud),
-			"provider":            cloud.Provider,
-			"url":                 cloud.URL,
-			"username":            cloud.Username,
-			"password":            cloud.Password,
-			"headers":             cloud.HeadersJSON,
-			"folderId":            cloud.FolderID,
-			"customClientIds":     cloud.CustomClientIDs,
-			"customClientSecrets": cloud.CustomClientSecrets,
+			"enabled":                cloud.Enabled,
+			"ready":                  cloudsvc.Ready(cloud),
+			"provider":               cloud.Provider,
+			"url":                    cloud.URL,
+			"username":               cloud.Username,
+			"password":               "",
+			"hasPassword":            cloud.Password != "",
+			"headers":                "",
+			"hasHeaders":             hasHeaders,
+			"folderId":               cloud.FolderID,
+			"customClientIds":        cloud.CustomClientIDs,
+			"customClientSecrets":    redactedSecrets,
+			"hasCustomClientSecrets": hasCustomSecrets,
 			"tokens": map[string]any{
 				"accessToken":  "", // never shipped to the UI
 				"refreshToken": "",

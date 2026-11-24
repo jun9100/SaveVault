@@ -31,7 +31,7 @@ func (s *server) saveVaultEnabled() bool {
 func (s *server) requireSaveVaultAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		now := s.now()
-		address := remoteHost(r)
+		address := s.clientIP(r)
 		if s.webdavLogins.blocked(address, now) {
 			writeError(w, http.StatusTooManyRequests, "too many failed attempts, try again later")
 			return

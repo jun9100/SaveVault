@@ -1224,8 +1224,10 @@ func (s *server) handlePutSaveVaultSnapshotLock(w http.ResponseWriter, r *http.R
 	var request struct {
 		Note string `json:"note"`
 	}
-	if !decodeAdminJSON(w, r, &request) {
-		return
+	if r.Body != nil && r.ContentLength != 0 {
+		if !decodeAdminJSON(w, r, &request) {
+			return
+		}
 	}
 	note := strings.TrimSpace(request.Note)
 	if !validSaveVaultLockNote(note) {
