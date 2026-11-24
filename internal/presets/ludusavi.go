@@ -111,13 +111,16 @@ func (sc *Scanner) scanLudusavi(seen map[string]bool) []DiscoveredSave {
 	// prefix so Windows-path templates resolve inside the Wine prefix.
 	var blocked map[string]bool
 	var protonIdx map[string][]string
-	if sc.goos() == "windows" {
+	switch sc.goos() {
+	case "windows":
 		wv := windowsPathVars()
 		if wv == nil {
 			return nil
 		}
 		blocked = blockedRoots(wv)
-	} else {
+	case "darwin":
+		blocked = darwinBlockedRoots(sc.linuxHome())
+	default:
 		blocked = linuxBlockedRoots(sc.linuxHome())
 		protonIdx = sc.protonPrefixIndex()
 	}
@@ -471,9 +474,8 @@ func (sc *Scanner) protonPrefixIndex() map[string][]string {
 			if !e.IsDir() || !isAppID(e.Name()) {
 				continue
 			}
-			steamUser := filepath.Join(compat, e.Name(), "pfx", "drive_c", "users", "steamuser")
-			if dirExists(steamUser) {
-				idx[e.Name()] = append(idx[e.Name()], steamUser)
+			for _, u := range prefixUserDirs(filepath.Join(compat, e.Name(), "pfx")) {
+				idx[e.Name()] = append(idx[e.Name()], u)
 			}
 		}
 	}
@@ -505,6 +507,31 @@ func linuxBlockedRoots(home string) map[string]bool {
 	add(filepath.Join(home, "Saved Games"))
 	add(filepath.Join(home, "Desktop"))
 	add(filepath.Join(home, "Downloads"))
+	return blocked
+}
+
+// darwinBlockedRoots are directories too broad to ever offer as a save
+// location on macOS (notably ~/Library/Preferences, which individual .plist
+// Ludusavi rules would otherwise widen to).
+func darwinBlockedRoots(home string) map[string]bool {
+	blocked := linuxBlockedRoots(home)
+	add := func(p string) {
+		if p != "" {
+			blocked[strings.ToLower(filepath.Clean(p))] = true
+		}
+	}
+	lib := filepath.Join(home, "Library")
+	add(lib)
+	for _, sub := range []string{
+		"Preferences",
+		"Application Support",
+		"Containers",
+		"Group Containers",
+		"Caches",
+		"Saved Application State",
+	} {
+		add(filepath.Join(lib, sub))
+	}
 	return blocked
 }
 

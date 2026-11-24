@@ -182,12 +182,16 @@ func (a *App) startTray() {
 			}(item)
 		}
 
+		stopCh := make(chan struct{})
+		a.trayStop = stopCh
 		go func() {
 			ticker := time.NewTicker(trayRefreshEvery)
 			defer ticker.Stop()
 			refresh()
 			for {
 				select {
+				case <-stopCh:
+					return
 				case <-ticker.C:
 					refresh()
 				case <-prompt:
@@ -227,7 +231,16 @@ func (a *App) startTray() {
 				}
 			}
 		}()
-	}, func() { trayReady.Store(false) })
+	}, func() {
+		trayReady.Store(false)
+		if a.trayStop != nil {
+			select {
+			case <-a.trayStop:
+			default:
+				close(a.trayStop)
+			}
+		}
+	})
 }
 
 // trayFacts gathers what the tray's status line is made from.
@@ -298,7 +311,7 @@ func (a *App) showIfTrayNeverAppears() {
 // materialized (Linux DE without a StatusNotifier host), fall through to a
 // normal quit — a hidden window with no tray would be unreachable.
 func (a *App) beforeClose(ctx context.Context) bool {
-	if a.reallyQuit {
+	if a.reallyQuit.Load() {
 		return false // allow shutdown
 	}
 	if !trayReady.Load() {

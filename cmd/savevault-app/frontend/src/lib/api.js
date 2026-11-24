@@ -128,8 +128,10 @@ export function isDaemonURL(url) {
 export function connectWS(onMessage, onState) {
   let ws = null;
   let closed = false;
+  let reconnectTimer = null;
 
   const connect = () => {
+    if (closed) return;
     ws = new WebSocket(baseURL.replace('http', 'ws') + '/ws');
     ws.onopen = () => onState?.(true);
     ws.onmessage = (ev) => {
@@ -139,13 +141,14 @@ export function connectWS(onMessage, onState) {
     };
     ws.onclose = () => {
       onState?.(false);
-      if (!closed) setTimeout(connect, 2000);
+      if (!closed) reconnectTimer = setTimeout(connect, 2000);
     };
   };
   connect();
 
   return () => {
     closed = true;
+    clearTimeout(reconnectTimer);
     ws?.close();
   };
 }

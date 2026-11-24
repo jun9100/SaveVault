@@ -113,12 +113,25 @@ func hashFileWhole(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+const (
+	minPeerBlockSize    = 4 << 10   // 4 KiB
+	maxPeerBlockSize    = 4 << 20   // 4 MiB
+	maxBlocksPerRequest = 256       // bounds per-request memory on /blocks
+	maxPatchFileBytes   = 4 << 30   // 4 GiB per patched save file
+)
+
 // ReadBlocks returns the requested block indices from a file, chunked at
 // blockSize. Serves the P2P /blocks route: peers request only the indices
 // that differ.
 func ReadBlocks(filePath string, blockIndices []int, blockSize int) ([]BlockSource, error) {
 	if blockSize <= 0 {
 		blockSize = defaultBlockSize
+	}
+	if blockSize < minPeerBlockSize || blockSize > maxPeerBlockSize {
+		return nil, fmt.Errorf("invalid block size %d", blockSize)
+	}
+	if len(blockIndices) > maxBlocksPerRequest {
+		return nil, fmt.Errorf("too many blocks requested (%d > %d)", len(blockIndices), maxBlocksPerRequest)
 	}
 	f, err := fsx.OpenShared(filePath)
 	if err != nil {
@@ -132,7 +145,15 @@ func ReadBlocks(filePath string, blockIndices []int, blockSize int) ([]BlockSour
 	}
 
 	var out []BlockSource
+	seen := make(map[int]struct{}, len(blockIndices))
 	for _, idx := range blockIndices {
+		if idx < 0 {
+			return nil, fmt.Errorf("negative block index %d", idx)
+		}
+		if _, dup := seen[idx]; dup {
+			continue
+		}
+		seen[idx] = struct{}{}
 		offset := int64(idx) * int64(blockSize)
 		if offset >= info.Size() {
 			continue

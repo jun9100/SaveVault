@@ -274,6 +274,11 @@ guided_setup() {
 '
 }
 
+if [ "$DRY" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
+	die "run this as root: sudo $0
+Or see what it would do first, as yourself:  $0 --dry-run"
+fi
+
 # Configuration on the command line means the caller has already decided.
 CONFIGURED=0
 if [ -n "$DOMAIN" ] || [ -n "$GOOGLE_SECRET_FILE" ] || [ -n "$STEAMGRIDDB_KEY_FILE" ] || [ -n "$VERSION" ]; then
@@ -281,11 +286,6 @@ if [ -n "$DOMAIN" ] || [ -n "$GOOGLE_SECRET_FILE" ] || [ -n "$STEAMGRIDDB_KEY_FI
 fi
 if [ "$UNINSTALL" -eq 0 ] && { [ "$GUIDED" -eq 1 ] || { [ "$CONFIGURED" -eq 0 ] && [ -t 0 ]; }; }; then
 	guided_setup
-fi
-
-if [ "$DRY" -eq 0 ] && [ "$(id -u)" -ne 0 ]; then
-	die "run this as root: sudo $0 $*
-Or see what it would do first, as yourself:  $0 --dry-run"
 fi
 
 if ! command -v systemctl >/dev/null 2>&1; then
@@ -380,7 +380,7 @@ if [ "$SKIP_VERIFY" -eq 0 ]; then
 Refusing to install. Try again, and if it persists say so on the issue tracker."
 			say "Checksum verified"
 		else
-			warn "$ASSET is not listed in SHA256SUMS; continuing unverified"
+			die "$ASSET is not listed in SHA256SUMS; refusing to install unverified (pass --skip-verify to override)"
 		fi
 	else
 		warn "no SHA256SUMS published for $VERSION; continuing unverified"
@@ -633,7 +633,8 @@ Install it yourself, then add:
 	fi
 
 	# Appended, not overwritten: this machine may already be serving something.
-	if ! grep -q "^$DOMAIN" /etc/caddy/Caddyfile 2>/dev/null; then
+	ESCAPED_DOMAIN="$(printf '%s' "$DOMAIN" | sed 's/[.[*^$()+?{|\\]/\\&/g')"
+	if ! grep -qE "^${ESCAPED_DOMAIN}([[:space:]]|\{|$)" /etc/caddy/Caddyfile 2>/dev/null; then
 		if [ "$DRY" -eq 1 ]; then
 			printf '   \033[2mwould append to /etc/caddy/Caddyfile:\033[0m %s { reverse_proxy localhost:%s }\n' \
 				"$DOMAIN" "$PORT"
@@ -647,18 +648,22 @@ Install it yourself, then add:
 fi
 
 # ── Firewall ─────────────────────────────────────────────────────────
-# Only the port the outside actually needs: with a proxy in front the relay
-# port stays local.
-OPEN_PORT="$PORT"
-[ -n "$DOMAIN" ] && OPEN_PORT="443"
+# Only the port(s) the outside actually needs: with Caddy TLS in front, both
+# 80/tcp (ACME HTTP-01 + redirect) and 443/tcp are required.
+OPEN_PORTS="$PORT"
+[ -n "$DOMAIN" ] && OPEN_PORTS="80 443"
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-	run ufw allow "$OPEN_PORT/tcp" && say "Opened $OPEN_PORT/tcp in ufw"
+	for p in $OPEN_PORTS; do
+		run ufw allow "$p/tcp" && say "Opened $p/tcp in ufw"
+	done
 elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-	run firewall-cmd --permanent --add-port="$OPEN_PORT/tcp"
+	for p in $OPEN_PORTS; do
+		run firewall-cmd --permanent --add-port="$p/tcp"
+	done
 	run firewall-cmd --reload
-	say "Opened $OPEN_PORT/tcp in firewalld"
+	say "Opened $OPEN_PORTS/tcp in firewalld"
 else
-	warn "No active ufw/firewalld found. If your provider has its own firewall, open $OPEN_PORT/tcp there."
+	warn "No active ufw/firewalld found. If your provider has its own firewall, open port(s) $OPEN_PORTS/tcp there."
 fi
 
 # ── What to do next ──────────────────────────────────────────────────

@@ -852,9 +852,18 @@ func (d *Daemon) pullFromCloud(game store.Game, fileName, deviceName string) err
 	return nil
 }
 
+// BeginCloudPull suppresses snapshot restore hooks while a manual cloud
+// restore applies a remote archive, preventing a racing upload/head clear.
+func (d *Daemon) BeginCloudPull(gameID string) func() {
+	return d.beginCloudPull(gameID)
+}
+
 // ResetCloudAccountState clears all local per-account cloud sync state when
 // switching cloud accounts, servers, or providers, or disconnecting.
 func (d *Daemon) ResetCloudAccountState() error {
+	if d.Cloud != nil {
+		d.Cloud.ClearDriveFolderCache()
+	}
 	d.cloudRd.heads.Lock()
 	err := d.Store.ResetCloudSyncState()
 	d.cloudRd.heads.Unlock()
@@ -864,6 +873,9 @@ func (d *Daemon) ResetCloudAccountState() error {
 	d.cloudRd.cacheMu.Lock()
 	d.cloudRd.cache = nil
 	d.cloudRd.cacheMu.Unlock()
+	if d.OnCloudOffers != nil {
+		d.OnCloudOffers(nil)
+	}
 	return err
 }
 

@@ -78,6 +78,10 @@ type vaultRegistry struct {
 	// concurrent PBKDF2 work so unauthenticated requests cannot saturate CPU.
 	userLogins     loginLimiter
 	loginVerifySem chan struct{}
+	// claimLogins and claimFailures are shared across all vaults so pairing
+	// rate limits cannot be bypassed by probing non-default tenant vaults.
+	claimLogins   *loginLimiter
+	claimFailures *globalClaimFailures
 	// byToken routes a client credential to its vault. The shared token of the
 	// default vault is deliberately absent: an unknown credential falls back to
 	// the default vault, which is what a single-tenant deployment expects.
@@ -101,6 +105,8 @@ func newVaultRegistry(root, token string, maxObjectBytes int64, options serverOp
 		handlers:       map[*server]http.Handler{},
 		userLogins:     loginLimiter{failures: make(map[string]loginFailures)},
 		loginVerifySem: make(chan struct{}, 4),
+		claimLogins:    &loginLimiter{failures: make(map[string]loginFailures)},
+		claimFailures:  &globalClaimFailures{},
 		byToken:        map[string]string{},
 	}
 	if _, err := registry.Vault(defaultVaultID); err != nil {
@@ -174,6 +180,8 @@ func (r *vaultRegistry) vaultWithTokenAndQuota(id, token string, quotaBytes int6
 	}
 	options := r.options
 	options.quotaBytes = quotaBytes
+	options.claimLogins = r.claimLogins
+	options.claimFailures = r.claimFailures
 	vault, err := newServerWithOptions(filepath.Join(r.root, "vaults", id), token, r.maxObjectBytes, options)
 	if err != nil {
 		return nil, fmt.Errorf("create vault %q: %w", id, err)
@@ -317,6 +325,22 @@ func (r *vaultRegistry) vaultForPairingClaim(request *http.Request) (string, *se
 func (r *vaultRegistry) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodPost && request.URL.Path == "/v1/pair/claim" {
+			defaultVault, err := r.Vault(defaultVaultID)
+			if err != nil || defaultVault == nil {
+				http.Error(w, "vault unavailable", http.StatusInternalServerError)
+				return
+			}
+			// Check the shared pairing rate limiter BEFORE inspecting the code
+			// or scanning tenant vaults so blocked clients cannot probe tenants.
+			if defaultVault.adminToken != "" {
+				now := defaultVault.now()
+				if r.claimLogins.blocked(remoteHost(request), now) || r.claimFailures.blocked(now) {
+					defaultVault.withCommonHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						writeErrorCode(w, http.StatusTooManyRequests, "rate_limited", "too many failed pairing attempts")
+					})).ServeHTTP(w, request)
+					return
+				}
+			}
 			id, vault := r.vaultForPairingClaim(request)
 			if vault == nil {
 				http.Error(w, "vault unavailable", http.StatusInternalServerError)

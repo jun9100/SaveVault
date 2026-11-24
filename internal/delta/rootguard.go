@@ -1,6 +1,7 @@
 package delta
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -13,20 +14,22 @@ import (
 // and every sync died on C:\Users\<name>\AppData\Local\Application Data.
 //
 // Returns "" for paths that are fine to sync.
-func DangerousSyncRoot(path string) string {
-	p := strings.ToLower(strings.TrimSpace(path))
+func DangerousSyncRoot(raw string) string {
+	p := strings.ToLower(strings.TrimSpace(raw))
 	if p == "" {
 		return "the save path is empty"
 	}
-	// Normalize to backslash-separated with no trailing separator so the
-	// checks below are separator- and case-insensitive.
-	p = strings.ReplaceAll(p, "/", `\`)
-	p = strings.TrimRight(p, `\`)
-
-	if isWindowsStyle(p) {
-		return dangerousWindowsRoot(p)
+	// Normalize slashes and collapse ".." / repeated separators so uncleaned
+	// paths like "/home//alice" or "C:\Users\alice\foo\.." cannot bypass checks.
+	slashed := strings.ReplaceAll(p, `\`, "/")
+	if isWindowsStyle(slashed) {
+		drive := slashed[:2]
+		rest := path.Clean("/" + slashed[2:])
+		win := drive + strings.ReplaceAll(rest, "/", `\`)
+		win = strings.TrimRight(win, `\`)
+		return dangerousWindowsRoot(win)
 	}
-	return dangerousUnixRoot(strings.ReplaceAll(strings.ToLower(strings.TrimSpace(path)), `\`, "/"))
+	return dangerousUnixRoot(path.Clean(slashed))
 }
 
 var driveRe = regexp.MustCompile(`^[a-z]:$`)
@@ -118,6 +121,14 @@ func dangerousUnixRoot(p string) string {
 			case "documents", "desktop", "downloads":
 				if len(segs) == 3 {
 					return "it is a whole " + segs[2] + " folder"
+				}
+			case "library":
+				if len(segs) == 3 {
+					return "it is the whole Library folder"
+				}
+				switch segs[3] {
+				case "preferences", "application support", "containers", "group containers", "caches", "saved application state":
+					return "it is a whole macOS Library/" + segs[3] + " folder"
 				}
 			}
 		}

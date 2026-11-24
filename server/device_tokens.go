@@ -948,3 +948,29 @@ func (s *server) deviceTokenCounts() (active, revoked int) {
 	}
 	return active, revoked
 }
+
+// revokeAllDeviceTokens revokes every active device token and clears pending
+// pairing codes for a vault (e.g. when its owning tenant user is deleted).
+func (s *server) revokeAllDeviceTokens() {
+	now := s.now().UTC()
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	s.pairings = make(map[string]pairing)
+	next := s.deviceTokens.clone()
+	changed := false
+	for id, record := range next.Tokens {
+		if record.RevokedAt.IsZero() {
+			record.RevokedAt = now
+			next.Tokens[id] = record
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	if err := s.persistDeviceTokens(next); err != nil {
+		slog.Warn("revoke tenant device tokens", "error", err)
+		return
+	}
+	s.deviceTokens = next
+}

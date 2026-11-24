@@ -27,17 +27,22 @@
   let result = null;
   let error = '';
   let loading = false;
+  let compareSeq = 0;
   $: compare(from, to);
   async function compare(a, b) {
+    const seq = ++compareSeq;
     loading = true;
     error = '';
     try {
-      result = await api.get(`/api/games/${game.id}/snapshot/${a}/compare/${b}`);
+      const res = await api.get(`/api/games/${game.id}/snapshot/${a}/compare/${b}`);
+      if (seq !== compareSeq) return;
+      result = res;
     } catch (e) {
+      if (seq !== compareSeq) return;
       error = e.message;
       result = null;
     } finally {
-      loading = false;
+      if (seq === compareSeq) loading = false;
     }
   }
 

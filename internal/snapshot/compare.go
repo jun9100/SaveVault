@@ -93,10 +93,10 @@ func archiveContents(path string) (map[[2]string]archived, error) {
 	}
 	out := map[[2]string]archived{}
 	for _, f := range entries {
-		location, isRoot := rootOfEntry(f.Name)
+		prefix, location, isRoot := splitRootEntry(f.Name)
 		rel := f.Name
 		if isRoot {
-			rel = strings.TrimPrefix(f.Name, RootPrefix+location+"/")
+			rel = strings.TrimPrefix(f.Name, prefix+location+"/")
 		}
 		if rel == "" || strings.HasSuffix(rel, "/") {
 			continue

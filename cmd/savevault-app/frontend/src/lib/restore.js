@@ -12,6 +12,8 @@ export const restoreRequest = writable(null);
 
 /** Opens the restore dialog for a snapshot; resolves true to go ahead. */
 export function askRestore(game, snap) {
+  const prior = get(restoreRequest);
+  if (prior?.resolve) prior.resolve(false);
   return new Promise((resolve) => restoreRequest.set({ game, snap, resolve }));
 }
 

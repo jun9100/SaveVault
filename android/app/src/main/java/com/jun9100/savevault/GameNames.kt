@@ -136,7 +136,9 @@ object SwitchTitleNameSources {
     /** `content://…/tree/primary%3Aswitch-roms/document/primary%3Aswitch-roms%2FGame.xci` → `/storage/emulated/0/switch-roms`. */
     internal fun treeUriToPath(uri: String): String? {
         val document = uri.substringAfter("/document/", "").takeIf(String::isNotBlank) ?: return null
-        val decoded = runCatching { URLDecoder.decode(document, Charsets.UTF_8.name()) }.getOrNull() ?: return null
+        val decoded = runCatching {
+            URLDecoder.decode(document.replace("+", "%2B"), Charsets.UTF_8.name())
+        }.getOrNull() ?: return null
         if (!decoded.startsWith("primary:")) return null
         val relative = decoded.removePrefix("primary:").substringBeforeLast('/', "")
         if (relative.isBlank() || relative.contains("..")) return null

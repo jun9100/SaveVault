@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
 
     /** `savevault://pair` (system camera, browser) goes to the host confirmation before any request. */
     private fun openPairingLink(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_VIEW || intent.data?.scheme != "savevault") return
+        if (intent?.action != Intent.ACTION_VIEW || !intent.data?.scheme.equals("savevault", ignoreCase = true)) return
         intent.dataString?.let(sourceViewModel::openPairingLink)
         // A rotation or process recreation reuses the activity intent; do not ask again.
         intent.data = null

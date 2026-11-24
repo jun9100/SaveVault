@@ -567,7 +567,11 @@ func (s *Server) handleCloudRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A cloud copy may be another device's: this device's excluded files
-	// stay its own (Manager.RestoreKeeping).
+	// stay its own (Manager.RestoreKeeping). Suppress the ordinary restore
+	// callback while this cloud pull applies so NoteCloudRestore sets the
+	// authoritative head without a racing publishHead goroutine.
+	finishPull := s.Daemon.BeginCloudPull(gameID)
+	defer finishPull()
 	if _, err := s.Daemon.Snapshots.RestoreKeeping(gameID, snapID, ignore.Parse(game.SyncIgnore)); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("downloaded but restore failed: %v", err))
 		return

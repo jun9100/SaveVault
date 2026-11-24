@@ -70,10 +70,12 @@
   }
 
   async function syncAll() {
-    for (const g of $gameList) {
-      api.post(`/api/games/${g.id}/sync`).catch(() => {});
+    try {
+      await api.post('/api/games/sync-all');
+      toast($t('home.syncAllToast'));
+    } catch (e) {
+      toast(trError(e.message), 'error');
     }
-    toast($t('home.syncAllToast'));
   }
 
   // Where each game's save stands — the summary and the cards read the same

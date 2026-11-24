@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
 	"github.com/jun9100/savevault/internal/store"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // Syncing a game's extra save locations.
@@ -244,6 +246,12 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 		if err := e.pullFiles(ctx, peer, gameID, game, sr.root, local, rootResp, decision.FilesToPull); err != nil {
 			applied()
 			return err
+		}
+		if sr.root.Name == winreg.LocationName {
+			allowedKeys, _ := e.Store.GameRegistryKeys(game.ID)
+			for _, w := range snapshot.RestoreRegistryCaptureAllowed(game.Name, sr.root.Path, allowedKeys) {
+				e.Log("warn", w)
+			}
 		}
 	}
 	applied()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jun9100/savevault/internal/e2ee"
 	"github.com/jun9100/savevault/internal/p2p/syncengine"
 )
 
@@ -117,7 +118,19 @@ func (t *wanTransport) TriggerPeerPull(peer syncengine.Peer, gameID string) {
 // It travels as a bare send rather than through Request, which is exactly how
 // it kept its plaintext while every routed payload was being sealed around it.
 func (t *wanTransport) ReportSyncEvent(peer syncengine.Peer, gameID, eventType string, data map[string]any) {
-	raw, err := json.Marshal(data)
+	payload := make(map[string]any, len(data)+1)
+	for k, v := range data {
+		payload[k] = v
+	}
+	if nonce, nErr := e2ee.NewNonce(); nErr == nil {
+		payload["_meta"] = map[string]any{
+			"gameId":    gameID,
+			"eventType": eventType,
+			"ts":        time.Now().UnixMilli(),
+			"nonce":     nonce,
+		}
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}

@@ -54,8 +54,10 @@ type server struct {
 	tokensMu      sync.Mutex
 	deviceTokens  deviceTokenState
 	pairings      map[string]pairing
-	claimLogins   loginLimiter
-	claimFailures globalClaimFailures
+	claimLogins   *loginLimiter
+	claimFailures *globalClaimFailures
+
+	quotaMu sync.Mutex
 
 	saveVaultMu      sync.Mutex
 	saveVaultCatalog saveVaultCatalog
@@ -114,6 +116,8 @@ type serverOptions struct {
 	quotaBytes        int64
 	settings          serverSettings
 	bark              barkConfig
+	claimLogins       *loginLimiter
+	claimFailures     *globalClaimFailures
 }
 
 func newServer(dataDir, token string, maxObjectBytes int64, adminTokens ...string) (*server, error) {
@@ -171,6 +175,14 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 
 	coverFetchClient, coverFetchTransport := newCoverFetchClient()
 	coverFetchCtx, coverFetchCancel := context.WithCancel(context.Background())
+	claimLogins := options.claimLogins
+	if claimLogins == nil {
+		claimLogins = &loginLimiter{failures: make(map[string]loginFailures)}
+	}
+	claimFailures := options.claimFailures
+	if claimFailures == nil {
+		claimFailures = &globalClaimFailures{}
+	}
 	s := &server{
 		dataDir:          dataDir,
 		token:            token,
@@ -189,7 +201,8 @@ func newServerWithOptions(dataDir, token string, maxObjectBytes int64, options s
 		},
 		deviceTokens:    defaultDeviceTokenState(),
 		pairings:        make(map[string]pairing),
-		claimLogins:     loginLimiter{failures: make(map[string]loginFailures)},
+		claimLogins:     claimLogins,
+		claimFailures:   claimFailures,
 		saveVaultCatalog: saveVaultCatalog{Files: make(map[string]saveVaultFileMetadata)},
 		saveVaultState:   saveVaultNativeState{Scopes: make(map[string]saveVaultScopeState)},
 		saveVaultManage:  defaultSaveVaultManageState(),
@@ -466,9 +479,17 @@ func (s *server) checkQuota(additional int64) bool {
 			if err != nil || info == nil || !info.Mode().IsRegular() {
 				return nil
 			}
+			// Ignore staged temporary upload files (.upload-*, .part, etc.) so
+			// in-flight writes are not double-counted against additional.
+			if strings.HasPrefix(info.Name(), ".") {
+				return nil
+			}
 			used += info.Size()
 			return nil
 		})
+	}
+	if info, err := os.Stat(filepath.Join(s.dataDir, "dashboard.json")); err == nil && info.Mode().IsRegular() {
+		used += info.Size()
 	}
 	return used+additional <= s.quotaBytes
 }

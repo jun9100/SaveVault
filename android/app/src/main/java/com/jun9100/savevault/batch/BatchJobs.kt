@@ -123,7 +123,7 @@ internal class BatchExecution(
     /** Queues the background retry of the failed uploads the cloud may accept later; nothing else. */
     fun schedulePendingUploads(context: Context) {
         if (uploadFailures.isEmpty()) return
-        PendingUploadScheduler.schedule(context, PendingUploadPolicy.keysToRetry(config, uploadFailures))
+        PendingUploadScheduler.schedule(context, PendingUploadPolicy.keysToRetry(ops.loadConfig(), uploadFailures))
     }
 
     suspend fun run(entry: SourceGameEntry): BatchStepResult = when (operation) {

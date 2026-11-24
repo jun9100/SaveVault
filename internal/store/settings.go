@@ -274,6 +274,22 @@ func (s *Store) rewriteHomePrefix(oldHome, newHome string) error {
 		}
 	}
 
+	type rootRow struct {
+		GameID string `db:"game_id"`
+		Name   string `db:"name"`
+		Path   string `db:"path"`
+	}
+	var roots []rootRow
+	if err := tx.Select(&roots, `SELECT game_id, name, path FROM game_roots WHERE path LIKE ? OR path LIKE ?`, oldHome+"/%", oldHome+`\%`); err == nil {
+		for _, row := range roots {
+			if updated, ok := rewrite(row.Path); ok {
+				if _, err := tx.Exec(`UPDATE game_roots SET path = ? WHERE game_id = ? AND name = ?`, updated, row.GameID, row.Name); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	return tx.Commit()
 }
 

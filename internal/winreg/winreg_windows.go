@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -73,6 +74,7 @@ func captureUnder(root registry.Key, sub, fullPath string) (Key, bool, error) {
 	if err != nil {
 		return Key{}, false, err
 	}
+	sort.Strings(names)
 	for _, name := range names {
 		v, err := readValue(h, name)
 		if err != nil {
@@ -87,6 +89,7 @@ func captureUnder(root registry.Key, sub, fullPath string) (Key, bool, error) {
 	if err != nil {
 		return out, true, nil // values captured; subkeys unreadable
 	}
+	sort.Strings(subNames)
 	for _, s := range subNames {
 		child, found, err := captureUnder(root, sub+`\`+s, fullPath+`\`+s)
 		if err != nil || !found {

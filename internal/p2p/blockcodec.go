@@ -99,20 +99,22 @@ func gzipBytes(raw []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// gunzipBytes decompresses into a buffer sized from the manifest, and refuses
-// to keep going past it — a peer must not be able to make this side allocate
-// without bound by claiming a small block and sending a huge stream.
+// maxDecodedBlockBytes caps any single decompressed block so an untrusted peer
+// cannot force huge allocations by claiming an arbitrary b.Length in JSON.
+const maxDecodedBlockBytes = 4 << 20 // 4 MiB
+
+// gunzipBytes decompresses into a bounded buffer and refuses to keep going
+// past expected or maxDecodedBlockBytes.
 func gunzipBytes(packed []byte, expected int) ([]byte, error) {
+	if expected < 0 || expected > maxDecodedBlockBytes {
+		return nil, fmt.Errorf("invalid block length %d", expected)
+	}
 	zr, err := gzip.NewReader(bytes.NewReader(packed))
 	if err != nil {
 		return nil, err
 	}
 	defer zr.Close()
 
-	if expected < 0 {
-		return nil, fmt.Errorf("negative block length %d", expected)
-	}
-	out := make([]byte, 0, expected)
 	raw, err := io.ReadAll(io.LimitReader(zr, int64(expected)+1))
 	if err != nil {
 		return nil, err
@@ -120,5 +122,5 @@ func gunzipBytes(packed []byte, expected int) ([]byte, error) {
 	if len(raw) > expected {
 		return nil, fmt.Errorf("block expands to more than its declared %d bytes", expected)
 	}
-	return append(out, raw...), nil
+	return raw, nil
 }

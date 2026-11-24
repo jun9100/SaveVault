@@ -5,6 +5,7 @@ package com.jun9100.savevault
 
 import android.content.Context
 import androidx.work.WorkManager
+import com.jun9100.savevault.batch.BatchCenter
 import com.jun9100.savevault.batch.BatchWorker
 import java.io.File
 
@@ -38,6 +39,7 @@ internal object GameSaveAccountState {
             workManager.cancelUniqueWork(PendingUploadScheduler.WORK_NAME)
             workManager.cancelUniqueWork(BatchWorker.UNIQUE_WORK_NAME)
         }
+        BatchCenter.clearAll()
         val repository = runCatching { SnapshotRepository.forApp(app) }.getOrNull()
         runCatching { repository?.clearUploadedFlags() }
         runCatching { File(app.cacheDir, "game-save-head-cache").deleteRecursively() }

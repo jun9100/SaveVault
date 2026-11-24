@@ -382,17 +382,19 @@ object SaveSourceDetector {
         found: MutableList<DetectedSave>,
     ) {
         val lowerParts = relativeParts.map { it.lowercase() }
+        val fullLower = fullParts.map { it.lowercase() }
         val last = lowerParts.lastOrNull().orEmpty()
-        val lowerPath = fullParts.joinToString("/").lowercase()
+        val lowerPath = fullLower.joinToString("/")
         val isSwitchSaveRoot = fullParts.windowed(2).any { pair ->
             pair[0].equals("user", ignoreCase = true) && pair[1].equals("save", ignoreCase = true)
         }
         if (isSwitchSaveRoot) return
-        val isPpssppPath = lowerPath.contains("ppsspp") || fullParts.any { it.equals("psp", ignoreCase = true) }
+        val isPpssppPath = lowerPath.contains("ppsspp") || fullLower.any { it == "psp" }
         when {
             // Each SAVEDATA child is one save slot named <GameID><slot>; slots of
             // one game are grouped so it can be backed up and restored alone.
-            isPpssppPath && lowerParts.getOrNull(lowerParts.size - 2) == "savedata" -> {
+            // Check fullLower so scanning .../PSP/SAVEDATA directly still works.
+            isPpssppPath && relativeParts.isNotEmpty() && fullLower.getOrNull(fullLower.size - 2) == "savedata" -> {
                 val folder = relativeParts.last()
                 val gameId = pspGameIdPattern.find(folder.uppercase())?.value ?: folder
                 if (found.none { it.kind == "ppsspp" && it.relativePath == relative }) {

@@ -214,7 +214,7 @@ internal object CloudPull {
         val upper = id.uppercase(Locale.ROOT)
         return when (family) {
             SaveRootFamily.YUZU_SWITCH, SaveRootFamily.RYUJINX_SWITCH -> "switch:$upper"
-            SaveRootFamily.PPSSPP -> "path:ppsspp::PPSSPP:SAVEDATA/$upper"
+            SaveRootFamily.PPSSPP -> "ppsspp:$upper"
         }
     }
 

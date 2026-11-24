@@ -463,7 +463,11 @@ func (e *Engine) WatchWithLocations(gameID, savePath string, extra map[string]st
 		closeWatcher(fsw, fsw.Close, watchStopTimeout)
 		return ErrStopped
 	}
-	if existing, ok := e.games[gameID]; ok {
+	for {
+		existing, ok := e.games[gameID]
+		if !ok {
+			break
+		}
 		delete(e.games, gameID)
 		e.mu.Unlock()
 		existing.stop() // may wait on the old run goroutine — not under the lock

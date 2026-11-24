@@ -3,20 +3,35 @@
   import { confirmRequest, answerConfirm } from '../lib/stores.js';
   import { backdropClose } from '../lib/backdrop.js';
 
+  let cancelBtn;
   let confirmBtn;
 
-  // Focus the primary action as soon as the dialog appears so Enter/Escape
-  // work immediately, like a native dialog would.
-  $: if ($confirmRequest && confirmBtn) confirmBtn.focus();
+  // Focus Cancel on destructive prompts so an accidental Enter never wipes data;
+  // focus Confirm on routine prompts.
+  $: if ($confirmRequest) {
+    if ($confirmRequest.danger && cancelBtn) cancelBtn.focus();
+    else if (confirmBtn) confirmBtn.focus();
+  }
 
   function onKeydown(e) {
     if (!$confirmRequest) return;
-    if (e.key === 'Escape') answerConfirm(false);
-    if (e.key === 'Enter') answerConfirm(true);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      answerConfirm(false);
+      return;
+    }
+    if (e.key === 'Enter') {
+      // Let focused buttons/controls handle Enter natively instead of forcing Confirm.
+      if (document.activeElement?.closest('button, a, input, select, textarea')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      answerConfirm(!$confirmRequest.danger);
+    }
   }
 </script>
 
-<svelte:window on:keydown={onKeydown} />
+<svelte:window on:keydown|capture={onKeydown} />
 
 {#if $confirmRequest}
   <div class="backdrop" use:backdropClose={() => answerConfirm(false)} role="presentation" out:dialogOut|global>
@@ -24,7 +39,7 @@
       <h3>{$confirmRequest.title}</h3>
       <p class="message">{$confirmRequest.message}</p>
       <div class="actions">
-        <button class="btn" on:click={() => answerConfirm(false)}>{$confirmRequest.cancelText}</button>
+        <button class="btn" bind:this={cancelBtn} on:click={() => answerConfirm(false)}>{$confirmRequest.cancelText}</button>
         <button
           class="btn primary"
           class:danger={$confirmRequest.danger}

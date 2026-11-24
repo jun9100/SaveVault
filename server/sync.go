@@ -298,15 +298,30 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	destination := s.objectPath(id)
+	s.mu.Lock()
 	if _, err := os.Stat(destination); err == nil {
-		// Refresh the timestamp so a concurrent garbage collection treats it as freshly uploaded.
+		// Refresh the timestamp under s.mu so concurrent blob GC cannot delete
+		// the blob between Stat and Chtimes.
 		now := time.Now()
-		_ = os.Chtimes(destination, now, now)
-		w.WriteHeader(http.StatusNoContent)
-		return
+		chtimesErr := os.Chtimes(destination, now, now)
+		s.mu.Unlock()
+		if chtimesErr == nil || !errors.Is(chtimesErr, os.ErrNotExist) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
+		s.mu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot inspect blob")
 		return
+	} else {
+		s.mu.Unlock()
+	}
+
+	readLimit := s.maxObjectBytes
+	quotaCapped := false
+	if s.quotaBytes > 0 && s.quotaBytes < readLimit {
+		readLimit = s.quotaBytes
+		quotaCapped = true
 	}
 
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
@@ -323,7 +338,7 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = os.Remove(temporaryPath) }()
 
 	hash := sha256.New()
-	bytesWritten, copyErr := io.Copy(io.MultiWriter(temporary, hash), http.MaxBytesReader(w, r.Body, s.maxObjectBytes+1))
+	bytesWritten, copyErr := io.Copy(io.MultiWriter(temporary, hash), http.MaxBytesReader(w, r.Body, readLimit+1))
 	if copyErr == nil {
 		copyErr = temporary.Sync()
 	}
@@ -332,27 +347,37 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	if copyErr != nil {
 		var maxBytesError *http.MaxBytesError
-		if errors.As(copyErr, &maxBytesError) || bytesWritten > s.maxObjectBytes {
-			writeError(w, http.StatusRequestEntityTooLarge, "blob exceeds configured size limit")
+		if errors.As(copyErr, &maxBytesError) || bytesWritten > readLimit {
+			if quotaCapped && bytesWritten <= s.maxObjectBytes {
+				writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+			} else {
+				writeError(w, http.StatusRequestEntityTooLarge, "blob exceeds configured size limit")
+			}
 		} else {
 			writeError(w, http.StatusBadRequest, "cannot read blob")
 		}
 		return
 	}
-	if bytesWritten > s.maxObjectBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "blob exceeds configured size limit")
+	if bytesWritten > readLimit {
+		if quotaCapped && bytesWritten <= s.maxObjectBytes {
+			writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		} else {
+			writeError(w, http.StatusRequestEntityTooLarge, "blob exceeds configured size limit")
+		}
 		return
 	}
 	if hex.EncodeToString(hash.Sum(nil)) != id {
 		writeError(w, http.StatusUnprocessableEntity, "blob hash does not match id")
 		return
 	}
+	s.quotaMu.Lock()
 	if !s.checkQuota(bytesWritten) {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 		return
 	}
-
 	if err := os.Rename(temporaryPath, destination); err != nil {
+		s.quotaMu.Unlock()
 		if _, statErr := os.Stat(destination); statErr == nil {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -360,6 +385,7 @@ func (s *server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "cannot publish blob")
 		return
 	}
+	s.quotaMu.Unlock()
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -751,12 +777,28 @@ func (s *server) handlePutScopeMetadata(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if _, existed := s.dashboard.Scopes[scopeID]; !existed {
+		if _, hasScope := s.state.Scopes[scopeID]; !hasScope && len(s.dashboard.Scopes) >= 2048 {
+			writeError(w, http.StatusConflict, "scope metadata limit reached")
+			return
+		}
+	}
+	deltaBytes := int64(len(updated.Title)+len(updated.LogoData)+len(updated.UserName)+len(updated.Descriptor)) -
+		int64(len(current.Title)+len(current.LogoData)+len(current.UserName)+len(current.Descriptor))
+	s.quotaMu.Lock()
+	if deltaBytes > 0 && !s.checkQuota(deltaBytes) {
+		s.quotaMu.Unlock()
+		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
 	next := s.dashboard.clone()
 	next.Scopes[scopeID] = updated
 	if err := s.persistDashboard(next); err != nil {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInternalServerError, "cannot persist metadata")
 		return
 	}
+	s.quotaMu.Unlock()
 	s.dashboard = next
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -322,14 +322,19 @@ func (e *Engine) overwriteLocalWithRemote(ctx context.Context, gameID string, pe
 	// path through them a given conflict resolution happens to take.
 	defer delta.InvalidateRoot(game.SavePath)
 
-	localManifest, err := delta.BuildManifest(game.SavePath)
+	rawLocal, err := delta.BuildManifest(game.SavePath)
 	if err != nil {
 		return err
 	}
+	rules := e.rulesFor(gameID)
+	localManifest := filterManifest(rawLocal, rules)
+	filteredRemote := filterManifest(remoteData.Manifest, rules)
+	filteredResp := remoteData
+	filteredResp.Manifest = filteredRemote
 
-	// Local-only files are deleted (remote is the source of truth here).
+	// Local-only files (excluding SyncIgnore files) are deleted (remote is truth).
 	for relPath := range localManifest.Files {
-		if _, onRemote := remoteData.Manifest.Files[relPath]; onRemote {
+		if _, onRemote := filteredRemote.Files[relPath]; onRemote {
 			continue
 		}
 		if !delta.IsSafePath(game.SavePath, relPath) {
@@ -340,9 +345,9 @@ func (e *Engine) overwriteLocalWithRemote(ctx context.Context, gameID string, pe
 		_ = os.Remove(full)
 	}
 
-	// Pull everything that's new or different.
+	// Pull everything that's new or different (excluding SyncIgnore files).
 	var filesToPull []string
-	for relPath, remoteFile := range remoteData.Manifest.Files {
+	for relPath, remoteFile := range filteredRemote.Files {
 		if localFile, ok := localManifest.Files[relPath]; ok && localFile.Hash == remoteFile.Hash {
 			continue
 		}
@@ -350,7 +355,7 @@ func (e *Engine) overwriteLocalWithRemote(ctx context.Context, gameID string, pe
 	}
 
 	if len(filesToPull) > 0 {
-		if err := e.pullFiles(ctx, peer, gameID, game, primaryRootOf(game), localManifest, remoteData, filesToPull); err != nil {
+		if err := e.pullFiles(ctx, peer, gameID, game, primaryRootOf(game), localManifest, filteredResp, filesToPull); err != nil {
 			return err
 		}
 	} else if remoteData.LatestSnapshot != nil {

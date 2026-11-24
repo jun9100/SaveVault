@@ -384,7 +384,10 @@ internal fun GameLibraryContent(
             conflicts = restorePlan.conflicts.size,
         )
     }
-    val cloudReady = state.gameSaveEnabled && state.gameSaveUrl.isNotBlank() && state.gameSaveSyncKey.isNotBlank()
+    val cloudReady = state.gameSaveEnabled &&
+        state.gameSaveUrl.isNotBlank() &&
+        state.gameSaveSyncKey.isNotBlank() &&
+        !state.gameSaveAuth.blocked
     val batchEntries = batchCommands(
         busy = state.busy,
         batchRunning = state.batch != null,
@@ -410,7 +413,8 @@ internal fun GameLibraryContent(
     }
     val syncBanner = SyncInbox.bannerText(syncItems)
     // Steam names resolved for rows are shared with the detail pane and its backup.
-    val presentations = remember { mutableStateMapOf<String, GamePresentation>() }
+    // Keyed on nameRevision so manual renames and async learned Switch titles immediately take effect.
+    val presentations = remember(state.nameRevision) { mutableStateMapOf<String, GamePresentation>() }
     val presented: (SourceGameEntry) -> SourceGameEntry = { entry ->
         presentations[entry.libraryKey]?.let { entry.copy(game = entry.game.copy(presentation = it)) } ?: entry
     }
@@ -911,8 +915,13 @@ private fun GameList(
                 val group = rowGroups[index]
                 val key = entry.libraryKey
                 if (metadataRepository != null) {
-                    LaunchedEffect(key) {
-                        if (key !in presentations) presentations[key] = metadataRepository.enrich(entry.game.presentation)
+                    LaunchedEffect(key, state.nameRevision, entry.game.presentation) {
+                        if (key !in presentations) {
+                            val enriched = metadataRepository.enrich(entry.game.presentation)
+                            if (enriched != entry.game.presentation) {
+                                presentations[key] = enriched
+                            }
+                        }
                     }
                 }
                 val requester = remember(key) { FocusRequester() }

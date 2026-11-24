@@ -51,10 +51,19 @@ func NewPatchWriter(filePath string, remoteEntry FileEntry) (*PatchWriter, error
 	if blockSize <= 0 {
 		blockSize = defaultBlockSize
 	}
+	if blockSize < minPeerBlockSize || blockSize > maxPeerBlockSize {
+		return nil, fmt.Errorf("invalid remote block size %d", blockSize)
+	}
 
 	var size int64
 	for _, b := range remoteEntry.Blocks {
+		if b.Index < 0 || b.Length < 0 || int64(b.Length) > blockSize {
+			return nil, fmt.Errorf("invalid remote block descriptor (index=%d length=%d)", b.Index, b.Length)
+		}
 		size += int64(b.Length)
+		if size > maxPatchFileBytes {
+			return nil, fmt.Errorf("remote file exceeds maximum patch size")
+		}
 	}
 
 	tmpPath := filePath + TmpSuffix

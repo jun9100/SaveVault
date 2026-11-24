@@ -510,4 +510,20 @@ class SaveSourceDetectorTest {
         )
         assertEquals(2, report.detected.count { it.kind == "epsxe" })
     }
+
+    @Test
+    fun directPpssppSavedataRootDetectsPerGameSaves() {
+        val root = "/storage/emulated/0/PSP/SAVEDATA"
+        val report = SaveSourceDetector.scanDirectories(
+            rootPath = root,
+            directoryPaths = listOf(
+                root,
+                "$root/ULUS100410000",
+                "$root/NPJH50465DATA00",
+            ),
+            selectedRootName = "SAVEDATA",
+        )
+        val keys = report.detected.filterNot { it.candidate }.map { it.gameKey }.toSet()
+        assertEquals(setOf("ppsspp:ULUS10041", "ppsspp:NPJH50465"), keys)
+    }
 }

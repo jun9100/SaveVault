@@ -232,22 +232,53 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 	}
 	defer r.Close()
 
-	// Every location is emptied before its files go back — the primary one
-	// included, which the single-root path gets from UnzipTo and this one has
-	// to do for itself. Restoring means "make this folder look like it did",
-	// and leaving behind files that were not in the snapshot silently merges
-	// two states: the thing someone restoring a save is trying to undo.
+	if len(r.File) > maxArchiveEntries {
+		return nil, fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
+	}
+
 	primaryIsFile := false
 	if info, statErr := os.Stat(primary); statErr == nil {
 		primaryIsFile = !info.IsDir()
+	} else {
+		primaryIsFile = len(filepath.Ext(primary)) > 1
 	}
-	if primaryIsFile {
-		_ = os.Chmod(primary, 0o666)
-		if err := os.Remove(primary); err != nil {
-			return nil, fmt.Errorf("remove old save file: %w", err)
+
+	// Pre-validate archive structure before removing or clearing live saves.
+	primaryFileCount := 0
+	for _, f := range r.File {
+		if f.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("zip entry %q is a symlink, which is not permitted", f.Name)
 		}
+		prefix, name, isRoot := splitRootEntry(f.Name)
+		if !isRoot {
+			if primaryIsFile {
+				if f.FileInfo().IsDir() {
+					return nil, fmt.Errorf("single-file save archive contains unexpected directory %q", f.Name)
+				}
+				primaryFileCount++
+				if primaryFileCount > 1 {
+					return nil, fmt.Errorf("single-file save archive contains %d primary entries, want at most 1", primaryFileCount)
+				}
+			} else if !delta.IsSafePath(primary, f.Name) {
+				return nil, fmt.Errorf("zip entry %q escapes primary save directory", f.Name)
+			}
+		} else if path, ok := extra[name]; ok && strings.TrimSpace(path) != "" {
+			entry := strings.TrimPrefix(f.Name, prefix+name+"/")
+			if entry != "" && !delta.IsSafePath(path, entry) {
+				return nil, fmt.Errorf("zip entry %q escapes extra save directory %q", f.Name, name)
+			}
+		}
+	}
+
+	if primaryIsFile {
 		if err := os.MkdirAll(filepath.Dir(primary), 0o777); err != nil {
 			return nil, err
+		}
+		if _, statErr := os.Stat(primary); statErr == nil {
+			_ = os.Chmod(primary, 0o666)
+			if err := os.Remove(primary); err != nil {
+				return nil, fmt.Errorf("remove old save file: %w", err)
+			}
 		}
 	} else {
 		if err := os.MkdirAll(primary, 0o777); err != nil {
@@ -258,11 +289,9 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 		}
 	}
 
-	if len(r.File) > maxArchiveEntries {
-		return nil, fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
-	}
 	budget := &extractBudget{remaining: maxArchiveExtractBytes}
 	cleared := map[string]bool{}
+	extraIsFile := map[string]bool{}
 	missing := map[string]bool{}
 	for _, f := range r.File {
 		prefix, name, isRoot := splitRootEntry(f.Name)
@@ -282,21 +311,48 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 			}
 			target = path
 			if !cleared[name] {
-				if err := os.MkdirAll(target, 0o777); err != nil {
-					return nil, err
+				isFile := false
+				if info, statErr := os.Stat(target); statErr == nil {
+					isFile = !info.IsDir()
+				} else {
+					isFile = len(filepath.Ext(target)) > 1
 				}
-				if err := clearSavePathGuarded(target); err != nil {
-					return nil, fmt.Errorf("clear %s: %w", target, err)
+				extraIsFile[name] = isFile
+				if isFile {
+					if err := os.MkdirAll(filepath.Dir(target), 0o777); err != nil {
+						return nil, err
+					}
+					if _, statErr := os.Stat(target); statErr == nil {
+						_ = os.Chmod(target, 0o666)
+						if err := os.Remove(target); err != nil {
+							return nil, fmt.Errorf("remove old extra save file %s: %w", target, err)
+						}
+					}
+				} else {
+					if err := os.MkdirAll(target, 0o777); err != nil {
+						return nil, err
+					}
+					if err := clearSavePathGuarded(target); err != nil {
+						return nil, fmt.Errorf("clear %s: %w", target, err)
+					}
 				}
 				cleared[name] = true
 			}
 			entry = strings.TrimPrefix(f.Name, prefix+name+"/")
 			if entry == "" {
-				// The location's own folder marker.
-				if err := os.MkdirAll(target, 0o777); err != nil {
-					return nil, err
+				if !extraIsFile[name] {
+					if err := os.MkdirAll(target, 0o777); err != nil {
+						return nil, err
+					}
 				}
 				continue
+			}
+			if extraIsFile[name] {
+				if f.FileInfo().IsDir() {
+					return nil, fmt.Errorf("single-file extra location %q contains unexpected directory %q", name, f.Name)
+				}
+				target = filepath.Dir(path)
+				entry = filepath.Base(path)
 			}
 		}
 		if err := extractEntryAsLimited(f, target, entry, budget); err != nil {

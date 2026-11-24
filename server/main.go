@@ -101,13 +101,24 @@ func runRebuildHeads(arguments []string) int {
 		fmt.Fprintf(os.Stderr, "vault %q not found under %s: %v\n", *vault, *root, err)
 		return 1
 	}
-	if err := migrateLegacySaveVaultData(dataDir); err != nil {
-		fmt.Fprintln(os.Stderr, "migrate legacy OpenSave data:", err)
-		return 1
+	if !*dryRun {
+		if err := migrateLegacySaveVaultData(dataDir); err != nil {
+			fmt.Fprintln(os.Stderr, "migrate legacy OpenSave data:", err)
+			return 1
+		}
 	}
-	s := &server{dataDir: dataDir, maxObjectBytes: 1 << 40, now: time.Now}
+	s := &server{
+		dataDir:         dataDir,
+		maxObjectBytes:  1 << 40,
+		now:             time.Now,
+		saveVaultManage: defaultSaveVaultManageState(),
+	}
 	if err := s.loadSaveVaultState(); err != nil {
 		fmt.Fprintln(os.Stderr, "load SaveVault state:", err)
+		return 1
+	}
+	if err := s.loadSaveVaultManage(); err != nil {
+		fmt.Fprintln(os.Stderr, "load SaveVault manage state:", err)
 		return 1
 	}
 	report, err := s.rebuildSaveVaultHeadsFromArchives(*dryRun)

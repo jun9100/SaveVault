@@ -1362,6 +1362,7 @@ class SourceViewModel(
     }
 
     fun importSource() {
+        if (state.value.busy) return
         val source = requiredSource() ?: return
         runSourceOperation("正在复制存档到私有工作区") {
             importSelection(source)
@@ -1737,6 +1738,7 @@ class SourceViewModel(
     }
 
     fun backupNow() {
+        if (state.value.busy) return
         val source = requiredSource() ?: return
         viewModelScope.launch {
             state.value = state.value.started(SaveVaultPage.SETTINGS, "正在检查并创建快照")
@@ -2031,6 +2033,7 @@ class SourceViewModel(
         if (captured.uploadedReused) "；已补传云端" else ""
 
     fun listCloud() {
+        if (state.value.busy) return
         val config = savedGameSaveConfig()
         if (config.serviceUrl.isBlank() || config.syncKey.isBlank()) {
             updateState { copy(messages = messages.withError(SaveVaultPage.SETTINGS, "请先填写并保存 SaveVault 云端地址和同步密钥")) }
@@ -2083,13 +2086,19 @@ class SourceViewModel(
                             displayName = game.name,
                         )
                     }
-                    val roots = cloudPullRoots()
-                    // Eden 的真实布局是 `nand/user/save/<profile>/<user>/<TITLE_ID>`，
-                    // 而 CloudPull 的默认目标是 `<profile>/<TITLE_ID>`——存到那里 Eden
-                    // 根本读不到（真机上表现为"下发了但游戏里没有存档"）。
-                    // 先用本机已有的 user 目录校准目标。
-                    val switchUsers = roots.filter { it.family == SaveRootFamily.YUZU_SWITCH }
+                    val allRoots = cloudPullRoots()
+                    // Eden/Yuzu 的真实布局是 `nand/user/save/<profile>/<32位用户ID>/<TITLE_ID>`；
+                    // 若尚未建立 32 位用户目录，或为使用 ExtraData0 的 Ryujinx 根目录，跳过自动下发，
+                    // 避免写入模拟器无法读取的无效目录。
+                    val switchUsers = allRoots.filter { it.family == SaveRootFamily.YUZU_SWITCH }
                         .associate { root -> root.path to switchUserFolder(root.path) }
+                    val roots = allRoots.filter { root ->
+                        when (root.family) {
+                            SaveRootFamily.YUZU_SWITCH -> switchUsers[root.path] != null
+                            SaveRootFamily.RYUJINX_SWITCH -> false
+                            SaveRootFamily.PPSSPP -> true
+                        }
+                    }
                     fun userAdjusted(root: LocalSaveRoot, relative: String): String {
                         val user = switchUsers[root.path] ?: return relative
                         val prefix = "nand/user/save/$SWITCH_SAVE_USER/"
@@ -2162,7 +2171,7 @@ class SourceViewModel(
                             .onFailure { failures += "${candidate.game.displayName}：${it.message}" }
                             .getOrNull() ?: return@forEachIndexed
                         StorageOperationLock.withLock {
-                            operations.restoreCloudPullLocked(candidate, archive)
+                            operations.restoreCloudPullLocked(candidate, archive, config, head)
                         }
                             .onSuccess { restored += 1 }
                             .onFailure { failures += "${candidate.game.displayName}：${it.message}" }
@@ -2373,7 +2382,10 @@ class SourceViewModel(
                     ?.let { "${root.trimEnd('/')}/$it" }
             }
         }.distinct()
-        if (directories.isEmpty()) return
+        if (directories.isEmpty()) {
+            runCatching { SaveWatchService.stop(app) }
+            return
+        }
         runCatching { SaveWatchService.start(app, directories) }
     }
 
@@ -2827,6 +2839,7 @@ class SourceViewModel(
 
     /** Restores only the locations the user mapped; the cloud and sync state stay untouched. */
     fun confirmOtherDeviceRestore() {
+        if (state.value.busy) return
         val request = state.value.pendingOtherDeviceRestore ?: return
         // The grant may have changed while the dialog was open; recheck before
         // the safety snapshot and the write.
@@ -2890,6 +2903,7 @@ class SourceViewModel(
     }
 
     fun confirmRestore() {
+        if (state.value.busy) return
         val request = state.value.pendingRestore ?: return
         val page = request.page
         // A whole-source restore replaces the source directory, so it may only
@@ -2997,7 +3011,7 @@ class SourceViewModel(
             )
         }
 
-        val timestamp = System.currentTimeMillis()
+        val timestamp = nextWholeSourceTimestamp()
         val remoteName = SnapshotNaming.remoteName(sourceId, timestamp)
         val archive = File(app.filesDir, "$SNAPSHOT_DIRECTORY/$remoteName")
         val build = snapshotEngine.createSnapshot(storage.workspaceDirectory(), archive).getOrThrow()
@@ -3033,7 +3047,7 @@ class SourceViewModel(
     }
 
     private suspend fun restoreSelection(source: SourceSelection): Result<CopyReport> = when (source) {
-        is SourceSelection.Saf -> storage.restoreWorkspace(source.uri)
+        is SourceSelection.Saf -> storage.replaceTreeFromWorkspace(source.uri)
         is SourceSelection.Root -> rootStorage.restoreWorkspace(source.path)
     }
 
@@ -3060,9 +3074,12 @@ class SourceViewModel(
         return restoreSelection(source).getOrThrow()
     }
 
+    private fun nextWholeSourceTimestamp(): Long =
+        maxOf(System.currentTimeMillis(), (snapshotRepository.list().maxOfOrNull { it.createdAtMillis } ?: 0L) + 1L)
+
     /** Saves [contents] as a local whole-source snapshot before something overwrites it. */
     private fun addSafetySnapshot(sourceId: String, contents: File, comment: String) {
-        val timestamp = System.currentTimeMillis()
+        val timestamp = nextWholeSourceTimestamp()
         val safetyName = SnapshotNaming.remoteName(sourceId, timestamp)
         val safetyArchive = File(app.filesDir, "$SNAPSHOT_DIRECTORY/$safetyName")
         val safetyBuild = snapshotEngine.createSnapshot(contents, safetyArchive).getOrThrow()

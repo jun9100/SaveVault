@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Artwork lookup for games Steam's own CDN has nothing for.
@@ -381,6 +383,9 @@ func (s *Server) steamGridGameID(name, appID string) (int, error) {
 		return 0, nil
 	}
 	want := normalizeTitle(name)
+	if want == "" {
+		return 0, nil
+	}
 	for _, g := range payload.Data {
 		if normalizeTitle(g.Name) == want {
 			return g.ID, nil
@@ -424,19 +429,17 @@ func (s *Server) steamGridGet(endpoint string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("steamgriddb: %d", resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
 }
 
 // normalizeTitle reduces a title to letters and digits so punctuation and
-// trademark marks cannot make one game look like two.
-//
-// Deliberately strict about nothing else: this is the check that stops a
-// search's nearest guess being accepted as the game asked for.
+// trademark marks cannot make one game look like two. Preserves Unicode
+// letters/digits so CJK, Cyrillic, and other non-ASCII game titles do not
+// collapse to "".
 func normalizeTitle(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		}
 	}

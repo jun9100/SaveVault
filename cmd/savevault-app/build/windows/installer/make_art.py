@@ -55,9 +55,9 @@ def glow(img, centre, radius, colour, strength=0.5):
 
 
 def wordmark(draw, centre_x, y, size):
-    """"Open" in the text colour, "Save" in the accent - as the app writes it."""
+    """"Save" in the text colour, "Vault" in the accent - as the app writes it."""
     f = font(size, bold=True)
-    a, b = "Open", "Save"
+    a, b = "Save", "Vault"
     wa = draw.textlength(a, font=f)
     wb = draw.textlength(b, font=f)
     x = centre_x - (wa + wb) / 2

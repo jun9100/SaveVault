@@ -255,7 +255,7 @@ func (a *App) installViaInstaller() {
 		a.daemon.Log.Log("info", "update installer launched; quitting so it can replace the app")
 	}
 	a.updateEvent("restarting", 100, "")
-	a.reallyQuit = true
+	a.reallyQuit.Store(true)
 	wailsruntime.Quit(a.ctx)
 }
 
@@ -311,7 +311,7 @@ func (a *App) applyUpdate(newExePath string) error {
 		a.daemon.Log.Log("info", "update installed; restarting")
 	}
 	a.updateEvent("restarting", 100, "")
-	a.reallyQuit = true
+	a.reallyQuit.Store(true)
 	wailsruntime.Quit(a.ctx)
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -175,8 +176,21 @@ func (s *Server) Start() (string, error) {
 	return ln.Addr().String(), nil
 }
 
-// Stop shuts the relay down.
+// Stop shuts the relay down and actively closes all hijacked WebSocket clients.
 func (s *Server) Stop() {
+	s.mu.Lock()
+	var active []*client
+	for _, rm := range s.rooms {
+		for c := range rm {
+			active = append(active, c)
+		}
+	}
+	s.mu.Unlock()
+	for _, c := range active {
+		if c.conn != nil {
+			_ = c.conn.Close(websocket.StatusGoingAway, "relay shutting down")
+		}
+	}
 	if s.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -428,6 +442,25 @@ func (s *Server) handleOAuthProxy(w http.ResponseWriter, r *http.Request) {
 			"error": fmt.Sprintf("Provider %q is not supported by this proxy.", payload.Provider),
 		})
 		return
+	}
+	if strings.TrimSpace(payload.ClientID) == "" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "client_id is required"})
+		return
+	}
+	if payload.GrantType != "authorization_code" && payload.GrantType != "refresh_token" {
+		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "unsupported grant_type"})
+		return
+	}
+	if payload.GrantType == "authorization_code" {
+		u, err := url.Parse(payload.RedirectURI)
+		host := ""
+		if u != nil {
+			host = strings.ToLower(u.Hostname())
+		}
+		if err != nil || u.Scheme != "http" || (host != "127.0.0.1" && host != "localhost" && host != "::1") {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "redirect_uri must be a loopback HTTP URL"})
+			return
+		}
 	}
 	if s.cfg.GoogleClientSecret == "" {
 		writeJSONStatus(w, http.StatusInternalServerError, map[string]string{

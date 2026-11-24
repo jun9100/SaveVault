@@ -13,7 +13,7 @@ platform: linux
 version: ${VERSION}
 section: games
 priority: optional
-maintainer: Siva Prakash <syncsavedev@gmail.com>
+maintainer: SaveVault contributors <jun9100@gmail.com>
 # Kept plain ASCII: package metadata is rendered by a lot of tools with a lot
 # of encoding assumptions, and a mangled dash in `apt show` looks broken.
 description: |

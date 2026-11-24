@@ -39,7 +39,8 @@
   let scanResults = null;
   let scanFilter = '';
   let scanType = 'all';
-	let saveType = 'pc';
+  let saveType = 'emulator-generic';
+  let saveTypePicked = false;
   let selected = new Set();
   let selectedCount = 0; // reactive mirror of selected.size
   let showTracked = false; // include saves already being tracked
@@ -190,12 +191,23 @@
   // the daemon refuses one that sits inside the save folder, because two
   // locations over the same files fight over them — so those are collected and
   // reported rather than swallowed.
+  function inferredSaveType(item) {
+    if (item?.type !== 'emulator') return 'pc';
+    if (saveTypePicked && saveType && saveType !== 'pc') return saveType;
+    const text = `${item.id ?? ''} ${item.name ?? ''} ${item.savePath ?? ''}`.toLowerCase();
+    if (text.includes('eden')) return 'emulator-eden';
+    if (text.includes('yuzu') || text.includes('suyu') || text.includes('sudachi') || text.includes('citron')) return 'emulator-yuzu';
+    if (text.includes('ryujinx')) return 'emulator-ryujinx';
+    if (text.includes('switch') || /0100[0-9a-f]{12}/.test(text)) return 'switch';
+    return saveType && saveType !== 'pc' ? saveType : 'emulator-generic';
+  }
+
   async function trackAsOneGame(primary, extras) {
     const created = await api.post('/api/games', {
       name: primary.name,
       savePath: primary.savePath,
       appId: primary.appId ?? '',
-      saveType: primary.type === 'emulator' ? saveType : 'pc'
+      saveType: inferredSaveType(primary)
     });
     const gameId = created?.id;
     const failed = [];
@@ -253,19 +265,22 @@
     let games = 0;
     let locations = 0;
     const problems = [];
+    const succeededIds = new Set();
     for (const { primary, extras } of plannedGames(items)) {
       try {
         const { failed } = await trackAsOneGame(primary, extras);
         games++;
         locations += extras.length - failed.length;
         problems.push(...failed);
+        succeededIds.add(primary.id);
+        for (const e of extras) succeededIds.add(e.id);
       } catch (e) {
         problems.push(`${primary.name}: ${trError(e.message)}`);
       }
     }
 
-    consumeRows(new Set(items.map((i) => i.id)));
-    clearSelection();
+    if (succeededIds.size > 0) consumeRows(succeededIds);
+    if (problems.length === 0) clearSelection();
     toast(
       locations > 0 ? $t('home.scan.trackedGamesWithExtras', { n: games, m: locations }) : $t('home.scan.trackedGames', { n: games }),
       problems.length > 0 ? 'error' : 'success'
@@ -323,7 +338,7 @@
         {#if scanType === 'emulator'}
           <label class="save-type">
             <span>{$t('home.scan.type.emulator')}</span>
-            <select bind:value={saveType}>
+            <select bind:value={saveType} on:change={() => (saveTypePicked = true)}>
               <option value="switch">Switch</option>
               <option value="emulator-eden">Eden</option>
               <option value="emulator-yuzu">Yuzu / Suyu</option>

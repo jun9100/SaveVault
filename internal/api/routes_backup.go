@@ -117,10 +117,15 @@ func (s *Server) handleRestoreFile(w http.ResponseWriter, r *http.Request) {
 		s.Daemon.Log.Log("warn", "safety snapshot before file restore failed: "+err.Error())
 	}
 
+	if s.Daemon.P2P != nil && s.Daemon.P2P.Sync != nil {
+		endWrite := s.Daemon.P2P.Sync.Writing(gameID)
+		defer endWrite()
+	}
 	if err := extractSingleFile(archive, body.RelPath, snapshot.ArchiveEntryRelPath(body.RelPath), target); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	delta.InvalidateRoot(target)
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
@@ -175,20 +180,34 @@ func extractSingleFile(zipPath, entryName, destRel, savePath string) error {
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o777); err != nil {
 			return err
 		}
-		_ = os.Chmod(destPath, 0o666)
-		dst, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o666)
+		tmp, err := os.CreateTemp(filepath.Dir(destPath), ".savevault-restore-*")
 		if err != nil {
 			return err
 		}
-		defer dst.Close()
+		tmpPath := tmp.Name()
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tmp.Close()
+				_ = os.Remove(tmpPath)
+			}
+		}()
 		const maxSingleFileRestoreBytes = 4 << 30
-		n, err := io.Copy(dst, io.LimitReader(src, maxSingleFileRestoreBytes+1))
+		n, err := io.Copy(tmp, io.LimitReader(src, maxSingleFileRestoreBytes+1))
 		if err != nil {
 			return err
 		}
 		if n > maxSingleFileRestoreBytes {
 			return fmt.Errorf("file %q exceeds maximum restore size", entryName)
 		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		_ = os.Chmod(destPath, 0o666)
+		if err := os.Rename(tmpPath, destPath); err != nil {
+			return err
+		}
+		committed = true
 		return nil
 	}
 	return fmt.Errorf("file %q not found in snapshot", entryName)
@@ -367,12 +386,17 @@ func (s *Server) exportSelectedSaves(outPath string, games []backupManifestGame)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create export file: %w", err)
 	}
-	defer out.Close()
-
 	bw := brotli.NewWriterLevel(out, 9)
-	defer bw.Close()
 	zw := zip.NewWriter(bw)
-	defer zw.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = zw.Close()
+			_ = bw.Close()
+			_ = out.Close()
+			_ = os.Remove(outPath)
+		}
+	}()
 
 	for i, g := range games {
 		s.Hub.Broadcast("backup-progress", map[string]any{
@@ -446,6 +470,16 @@ func (s *Server) exportSelectedSaves(outPath string, games []backupManifestGame)
 	if _, err := mEntry.Write(raw); err != nil {
 		return exported, skipped, fromSnapshot, err
 	}
+	if err := zw.Close(); err != nil {
+		return exported, skipped, fromSnapshot, fmt.Errorf("close export zip: %w", err)
+	}
+	if err := bw.Close(); err != nil {
+		return exported, skipped, fromSnapshot, fmt.Errorf("close export brotli: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		return exported, skipped, fromSnapshot, fmt.Errorf("close export file: %w", err)
+	}
+	closed = true
 	return exported, skipped, fromSnapshot, nil
 }
 
@@ -457,12 +491,17 @@ func (s *Server) exportAllSnapshots(outPath string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("create export file: %w", err)
 	}
-	defer out.Close()
-
 	bw := brotli.NewWriterLevel(out, 9)
-	defer bw.Close()
 	zw := zip.NewWriter(bw)
-	defer zw.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = zw.Close()
+			_ = bw.Close()
+			_ = out.Close()
+			_ = os.Remove(outPath)
+		}
+	}()
 
 	games, err := s.Daemon.Store.ListGames()
 	if err != nil {
@@ -506,6 +545,16 @@ func (s *Server) exportAllSnapshots(outPath string) (int, error) {
 			}
 		}
 	}
+	if err := zw.Close(); err != nil {
+		return count, fmt.Errorf("close export zip: %w", err)
+	}
+	if err := bw.Close(); err != nil {
+		return count, fmt.Errorf("close export brotli: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		return count, fmt.Errorf("close export file: %w", err)
+	}
+	closed = true
 	return count, nil
 }
 

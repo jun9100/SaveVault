@@ -766,7 +766,7 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	var handedOver string
 	if decision.HasPush() {
 		if m, err := e.ReadManifest(ctx, gameID, game.SavePath); err == nil {
-			handedOver = m.ManifestHash()
+			handedOver = filterManifest(m, e.rulesFor(gameID)).ManifestHash()
 		}
 		e.Log("info", fmt.Sprintf("local has newer content; triggering %q to pull", peer.Name))
 		e.Transport.TriggerPeerPull(peer, gameID)
@@ -1138,10 +1138,11 @@ func (e *Engine) ConfirmInSync(ctx context.Context, gameID string, peer Peer, cl
 	}
 	// What is recorded here is what both devices hold, so it is read from a
 	// save no sync is writing (settle.go).
-	local, err := e.ReadManifest(ctx, gameID, game.SavePath)
+	rawLocal, err := e.ReadManifest(ctx, gameID, game.SavePath)
 	if err != nil {
 		return
 	}
+	local := filterManifest(rawLocal, e.rulesFor(gameID))
 	// The claim covers the main save folder only: the peer sends it before it
 	// compares the other locations. A game that has others takes the long way,
 	// which looks at them too, rather than being stamped as synced on the
@@ -1177,27 +1178,16 @@ func (e *Engine) RefreshLineage(ctx context.Context, gameID string, peer Peer) {
 	}
 	// The lineage is what both sides hold, so neither side may be mid-write:
 	// theirs is seen to by the manifest they served, ours by this (settle.go).
-	local, err := e.ReadManifest(ctx, gameID, game.SavePath)
+	rawLocal, err := e.ReadManifest(ctx, gameID, game.SavePath)
 	if err != nil {
 		return
 	}
-	e.persistLineage(gameID, peer.ID, local, remoteData.Manifest)
+	rules := e.rulesFor(gameID)
+	local := filterManifest(rawLocal, rules)
+	remote := filterManifest(remoteData.Manifest, rules)
+	e.persistLineage(gameID, peer.ID, local, remote)
 	rootsAgree := e.refreshRootLineage(ctx, gameID, remoteData, peer)
-	// Peer finished pulling: if both sides now hash identically, that's a
-	// verified convergence — ratchet the merge-base. It is also the moment
-	// the sync this side started actually finished, on both sides, checked
-	// here against our own files and clock — the same footing ConfirmInSync
-	// stamps on. The push itself was stamped when it was handed over; this
-	// moves the time to when the peer really held it.
-	//
-	// Stamped only if the game's other locations agree as well. The time says
-	// the game was confirmed the same on both devices, and it is what a
-	// location with no merge base yet is judged against: stamping it while
-	// that location differs moved the clock past edits nobody had compared,
-	// and a change made on both devices then read as neither having changed.
-	// One side's edit was overwritten with no conflict raised. It took a
-	// report arriving late — after both edits — which under load it does.
-	if local.ManifestHash() == remoteData.Manifest.ManifestHash() {
+	if local.ManifestHash() == remote.ManifestHash() {
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
 		if rootsAgree {
 			e.recordSynced(gameID, peer.ID)
@@ -1213,29 +1203,19 @@ func (e *Engine) notifySyncConfirmed(gameID string) {
 }
 
 // refreshRootLineage does the same for a game's extra save locations.
-//
-// Without it those locations only ever get lineage on the side that STARTED a
-// sync. The receiving side stays blank, and a blank lineage cannot tell "the
-// other device deleted this file" from "the other device has never had it" —
-// so it reads a deletion as a file it ought to push, and sends it straight
-// back. The deletion undoes itself, on the very device that made it.
-//
-// That went unnoticed until extra locations became watched: before that,
-// nothing ever prompted the receiving side to start a sync of one, so its
-// empty lineage was never consulted.
-//
-// It reports whether every shared location holds the same on both sides; one
-// that could not be read does not count as agreeing.
 func (e *Engine) refreshRootLineage(ctx context.Context, gameID string, remoteData ManifestResponse, peer Peer) bool {
 	agree := true
+	rules := e.rulesFor(gameID)
 	for _, sr := range e.sharedRoots(gameID, remoteData) {
-		local, err := e.ReadManifest(ctx, gameID, sr.root.Path)
+		rawLocal, err := e.ReadManifest(ctx, gameID, sr.root.Path)
 		if err != nil {
 			agree = false
 			continue
 		}
-		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, sr.remote)
-		if local.RootHash(delta.PrimaryRoot) == sr.remote.RootHash(delta.PrimaryRoot) {
+		local := filterManifest(rawLocal, rules)
+		remote := filterManifest(sr.remote, rules)
+		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, remote)
+		if local.RootHash(delta.PrimaryRoot) == remote.RootHash(delta.PrimaryRoot) {
 			_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name,
 				local.RootHash(delta.PrimaryRoot))
 		} else {

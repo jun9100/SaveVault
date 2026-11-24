@@ -362,7 +362,7 @@ func (s *Service) upload(filePath, fileName string, logged bool) error {
 		return err
 	}
 	size := info.Size()
-	if logged {
+	if logged && s.Log != nil {
 		s.Log("info", fmt.Sprintf("cloud: uploading %s (%.1f MB) via %s", fileName, float64(size)/(1<<20), ProviderLabel(cfg.Provider)))
 	}
 
@@ -378,7 +378,7 @@ func (s *Service) upload(filePath, fileName string, logged bool) error {
 	// or replaced, and the snapshot's own housekeeping may do either next.
 	f.Close()
 
-	if logged {
+	if logged && s.Log != nil {
 		s.Log("success", fmt.Sprintf("cloud: uploaded %q to %s", fileName, ProviderLabel(cfg.Provider)))
 	}
 	return nil
@@ -483,12 +483,14 @@ func (s *Service) PruneGameBranch(match func(CloudFile) bool, keep int) (int, er
 	pruned := 0
 	for _, f := range matches[keep:] {
 		if err := s.Delete(f); err != nil {
-			s.Log("warn", fmt.Sprintf("cloud: prune of %s failed: %v", f.Name, err))
+			if s.Log != nil {
+				s.Log("warn", fmt.Sprintf("cloud: prune of %s failed: %v", f.Name, err))
+			}
 			continue
 		}
 		pruned++
 	}
-	if pruned > 0 {
+	if pruned > 0 && s.Log != nil {
 		s.Log("info", fmt.Sprintf("cloud: pruned %d old snapshot(s) beyond retention of %d", pruned, keep))
 	}
 	return pruned, nil
@@ -502,11 +504,15 @@ func sortByCreatedDesc(files []CloudFile) {
 	}
 }
 
+var defaultCloudHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
+const maxCloudControlBodyBytes = 32 << 20
+
 func (s *Service) httpClient() *http.Client {
 	if s.HTTP != nil {
 		return s.HTTP
 	}
-	return http.DefaultClient
+	return defaultCloudHTTPClient
 }
 
 func (s *Service) doOK(req *http.Request) error {
@@ -532,7 +538,7 @@ func (s *Service) doJSON(req *http.Request, out any) error {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("HTTP %d - %s", resp.StatusCode, raw)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, maxCloudControlBodyBytes)).Decode(out)
 }
 
 func (s *Service) fetchBytes(req *http.Request) ([]byte, error) {
@@ -545,7 +551,14 @@ func (s *Service) fetchBytes(req *http.Request) ([]byte, error) {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("HTTP %d - %s", resp.StatusCode, raw)
 	}
-	return io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCloudControlBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxCloudControlBodyBytes {
+		return nil, fmt.Errorf("cloud response exceeded size limit")
+	}
+	return raw, nil
 }
 
 func joinURL(base, name string) string {

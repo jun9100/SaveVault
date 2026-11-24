@@ -100,14 +100,14 @@ func (m *Manager) PreviewRestore(gameID, snapshotID string) (RestorePreview, err
 	inSnapshot := map[string]map[string]archived{"": {}}
 	unplaced := map[string]bool{}
 	for _, f := range entries {
-		location, isRoot := rootOfEntry(f.Name)
+		prefix, location, isRoot := splitRootEntry(f.Name)
 		rel := f.Name
 		if isRoot {
 			if path, ok := roots[location]; !ok || strings.TrimSpace(path) == "" {
 				unplaced[location] = true
 				continue
 			}
-			rel = strings.TrimPrefix(f.Name, RootPrefix+location+"/")
+			rel = strings.TrimPrefix(f.Name, prefix+location+"/")
 			if inSnapshot[location] == nil {
 				inSnapshot[location] = map[string]archived{}
 			}

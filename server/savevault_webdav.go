@@ -134,7 +134,7 @@ func saveVaultResourceName(requestPath, escapedPath string) (string, error) {
 }
 
 func validSaveVaultFileName(name string) bool {
-	if name == "" || len(name) > 240 || name == "." || name == ".." {
+	if name == "" || len(name) > 240 || name == "." || name == ".." || strings.HasPrefix(name, ".upload-") {
 		return false
 	}
 	for _, character := range name {

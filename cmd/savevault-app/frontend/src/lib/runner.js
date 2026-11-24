@@ -6,13 +6,14 @@
 // nobody means to do. `busy` disables the buttons; `run` does the rest.
 import { writable } from 'svelte/store';
 import { toast } from './stores.js';
+import { trError } from './i18n.js';
 
 export function createRunner(notify = toast) {
   const busy = writable(false);
   let running = false;
 
   /** Runs fn unless something else is running. A label is announced on
-   *  success; a failure is announced with the daemon's own message. */
+   *  success; a failure is announced with the translated daemon message. */
   async function run(label, fn) {
     if (running) return;
     running = true;
@@ -21,7 +22,7 @@ export function createRunner(notify = toast) {
       await fn();
       if (label) notify(label, 'success');
     } catch (e) {
-      notify(e.message, 'error');
+      notify(trError(e?.message ?? String(e)), 'error');
     } finally {
       running = false;
       busy.set(false);

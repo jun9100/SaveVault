@@ -5,7 +5,14 @@
   import { t } from '../lib/i18n.js';
 </script>
 
-<div class="titlebar" role="banner" style="--wails-draggable: drag" on:dblclick={() => native.toggleMaximise()}>
+<div
+  class="titlebar"
+  role="banner"
+  style="--wails-draggable: drag"
+  on:dblclick={(e) => {
+    if (!e.target?.closest?.('button, a, input, [role="button"], .panel')) native.toggleMaximise();
+  }}
+>
   <div class="brand">
     <img class="logo" src={logoUrl} alt="" draggable="false" />
     <span class="title">SaveVault</span>

@@ -104,7 +104,7 @@ class CloudPullTest {
         assertEquals(psp.path, candidate.root.path)
         assertEquals("SAVEDATA/ULUS10041", candidate.relativePath)
         assertEquals("ppsspp", candidate.kind)
-        assertEquals("path:ppsspp::PPSSPP:SAVEDATA/ULUS10041", candidate.gameKey)
+        assertEquals("ppsspp:ULUS10041", candidate.gameKey)
     }
 
     @Test

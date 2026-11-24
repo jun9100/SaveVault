@@ -991,6 +991,9 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 	var targetArchive string
 	var targetDone func()
 	if len(targetSnaps) > 0 {
+		if verifyErr := VerifyArchive(targetSnaps[0].ZipPath); verifyErr != nil {
+			return fmt.Errorf("cannot verify target branch %q snapshot before switching: %w", targetBranch, verifyErr)
+		}
 		archive, done, openErr := OpenArchive(targetSnaps[0].ZipPath)
 		if openErr != nil {
 			return fmt.Errorf("cannot open target branch %q snapshot before switching: %w", targetBranch, openErr)
@@ -1012,10 +1015,6 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 		}
 	}
 
-	if err := m.Store.SwitchActiveBranch(gameID, targetBranch); err != nil {
-		return err
-	}
-
 	// A branch with no snapshots is one deliberately started empty (see
 	// CreateBranch): there is nothing to restore, and the cleared folder is
 	// the point.
@@ -1035,6 +1034,10 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 				}
 			}
 		}
+	}
+
+	if err := m.Store.SwitchActiveBranch(gameID, targetBranch); err != nil {
+		return err
 	}
 	return nil
 }

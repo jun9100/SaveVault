@@ -45,10 +45,12 @@ func steamInstallRoots() []string {
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		// Linux and the Steam Deck.
+		// macOS, Linux, Flatpak, and the Steam Deck.
 		out = append(out,
+			filepath.Join(home, "Library", "Application Support", "Steam"),
 			filepath.Join(home, ".steam", "steam"),
-			filepath.Join(home, ".local", "share", "Steam"))
+			filepath.Join(home, ".local", "share", "Steam"),
+			filepath.Join(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam"))
 	}
 	return out
 }

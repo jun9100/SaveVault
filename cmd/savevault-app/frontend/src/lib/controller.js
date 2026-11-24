@@ -109,10 +109,14 @@ export function startController({ isOn, actions, win = globalThis.window, doc = 
     }
   }
   function poll(now) {
-    frame = win.requestAnimationFrame(poll);
     const pads = win.navigator.getGamepads?.() ?? [];
     const pad = [...pads].find((p) => p && p.connected);
-    if (!pad) return;
+    if (!pad) {
+      frame = 0;
+      held.clear();
+      return;
+    }
+    frame = win.requestAnimationFrame(poll);
     const down = new Set();
     const stick = stickDir(pad);
     for (const dir of ['up', 'down', 'left', 'right']) {
@@ -171,13 +175,24 @@ export function startController({ isOn, actions, win = globalThis.window, doc = 
   const connect = () => {
     if (!frame) frame = win.requestAnimationFrame(poll);
   };
+  const disconnect = () => {
+    const pads = win.navigator.getGamepads?.() ?? [];
+    if (![...pads].some((p) => p && p.connected) && frame) {
+      win.cancelAnimationFrame(frame);
+      frame = 0;
+      held.clear();
+    }
+  };
   win.addEventListener('gamepadconnected', connect);
+  win.addEventListener('gamepaddisconnected', disconnect);
   if ([...(win.navigator.getGamepads?.() ?? [])].some(Boolean)) connect();
 
   return () => {
     win.removeEventListener('keydown', onKey);
     win.removeEventListener('pointerdown', onPointer, true);
     doc.removeEventListener('focusin', onFocusIn);
+    win.removeEventListener('gamepadconnected', connect);
+    win.removeEventListener('gamepaddisconnected', disconnect);
     win.removeEventListener('gamepadconnected', connect);
     if (frame) win.cancelAnimationFrame(frame);
   };

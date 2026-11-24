@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "2.0.0.0"
+		"file_version": "2.8.1.0"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "2.0.0",
+			"ProductVersion": "2.8.1",
 			"CompanyName": "SaveVault",
 			"FileDescription": "SaveVault — peer-to-peer game save sync",
 			"LegalCopyright": "Copyright © 2026 SaveVault",

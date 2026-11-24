@@ -1032,6 +1032,10 @@ func (d *Daemon) checkSavePathShape(abs string) error {
 		"AppData", filepath.Join("AppData", "Roaming"), filepath.Join("AppData", "Local"),
 		filepath.Join("AppData", "LocalLow"), filepath.Join("Documents", "My Games"),
 		"Saved Games",
+		".config", filepath.Join(".local", "share"),
+		"Library", filepath.Join("Library", "Preferences"), filepath.Join("Library", "Application Support"),
+		filepath.Join("Library", "Containers"), filepath.Join("Library", "Group Containers"),
+		filepath.Join("Library", "Caches"), filepath.Join("Library", "Saved Application State"),
 	} {
 		broad = append(broad, filepath.Join(home, sub))
 	}

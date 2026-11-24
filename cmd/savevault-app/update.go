@@ -95,6 +95,15 @@ func selectUpdateAssetFor(assets []releaseAsset, goos string) string {
 		case "linux":
 			if strings.HasPrefix(name, "savevault-linux") &&
 				(strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz")) {
+				// Prefer an asset explicitly matching runtime.GOARCH when
+				// multi-arch tarballs are published; skip mismatched arches.
+				otherArch := "arm64"
+				if runtime.GOARCH == "arm64" {
+					otherArch = "amd64"
+				}
+				if strings.Contains(name, otherArch) && !strings.Contains(name, runtime.GOARCH) {
+					continue
+				}
 				return a.BrowserDownloadURL
 			}
 		}

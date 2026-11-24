@@ -47,10 +47,15 @@ func ZipPathCapturing(sourcePath, outPath string) (skipped []string, captured []
 	if err != nil {
 		return nil, nil, err
 	}
-	defer out.Close()
-
 	w := newSnapshotWriter(out)
-	defer w.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = w.Close()
+			_ = out.Close()
+			_ = os.Remove(outPath)
+		}
+	}()
 
 	if !info.IsDir() {
 		name := filepath.Base(sourcePath)
@@ -58,6 +63,13 @@ func ZipPathCapturing(sourcePath, outPath string) (skipped []string, captured []
 		if addErr != nil {
 			return nil, nil, addErr
 		}
+		if closeErr := w.Close(); closeErr != nil {
+			return nil, nil, closeErr
+		}
+		if closeErr := out.Close(); closeErr != nil {
+			return nil, nil, closeErr
+		}
+		closed = true
 		return nil, []store.CapturedFile{{Path: name, Hash: hash}}, nil
 	}
 
@@ -105,6 +117,13 @@ func ZipPathCapturing(sourcePath, outPath string) (skipped []string, captured []
 	if archived == 0 && len(skipped) > 0 {
 		return skipped, captured, fmt.Errorf("no files could be read (%d unreadable)", len(skipped))
 	}
+	if closeErr := w.Close(); closeErr != nil {
+		return skipped, captured, closeErr
+	}
+	if closeErr := out.Close(); closeErr != nil {
+		return skipped, captured, closeErr
+	}
+	closed = true
 	return skipped, captured, nil
 }
 
@@ -289,6 +308,35 @@ func UnzipTo(zipPath, targetPath string) error {
 		isFile = len(filepath.Ext(targetPath)) > 1
 	}
 
+	if len(r.File) > maxArchiveEntries {
+		return fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
+	}
+	// Pre-validate archive shape before modifying or clearing live saves.
+	var singleFileEntries []*zip.File
+	if isFile {
+		for _, entry := range r.File {
+			if entry.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("zip entry %q is a symlink, which is not permitted", entry.Name)
+			}
+			if entry.FileInfo().IsDir() {
+				return fmt.Errorf("single-file save archive contains unexpected directory %q", entry.Name)
+			}
+			singleFileEntries = append(singleFileEntries, entry)
+		}
+		if len(singleFileEntries) > 1 {
+			return fmt.Errorf("single-file save archive contains %d entries, want at most 1", len(singleFileEntries))
+		}
+	} else {
+		for _, entry := range r.File {
+			if entry.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("zip entry %q is a symlink, which is not permitted", entry.Name)
+			}
+			if !delta.IsSafePath(targetPath, entry.Name) {
+				return fmt.Errorf("zip entry %q escapes target directory", entry.Name)
+			}
+		}
+	}
+
 	var destDir string
 	if isFile {
 		destDir = filepath.Dir(targetPath)
@@ -311,26 +359,10 @@ func UnzipTo(zipPath, targetPath string) error {
 		}
 	}
 
-	if len(r.File) > maxArchiveEntries {
-		return fmt.Errorf("zip archive contains too many entries (%d > %d)", len(r.File), maxArchiveEntries)
-	}
 	budget := &extractBudget{remaining: maxArchiveExtractBytes}
 	if isFile {
-		// Single-file save mode: permit at most one non-directory entry and
-		// extract it strictly to filepath.Base(targetPath) so a crafted archive
-		// can never overwrite arbitrary sibling files in destDir.
-		var fileEntries []*zip.File
-		for _, entry := range r.File {
-			if entry.FileInfo().IsDir() {
-				return fmt.Errorf("single-file save archive contains unexpected directory %q", entry.Name)
-			}
-			fileEntries = append(fileEntries, entry)
-		}
-		if len(fileEntries) > 1 {
-			return fmt.Errorf("single-file save archive contains %d entries, want at most 1", len(fileEntries))
-		}
-		if len(fileEntries) == 1 {
-			if err := extractEntryAsLimited(fileEntries[0], destDir, filepath.Base(targetPath), budget); err != nil {
+		if len(singleFileEntries) == 1 {
+			if err := extractEntryAsLimited(singleFileEntries[0], destDir, filepath.Base(targetPath), budget); err != nil {
 				return err
 			}
 		}

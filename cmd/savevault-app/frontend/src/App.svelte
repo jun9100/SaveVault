@@ -50,6 +50,7 @@
   let update = null; // {available, latest, url, assetUrl?, notes?} when a newer release exists
   let showNotes = false;
   let installStarted = false;
+  $: if (!$appUpdate || $appUpdate.state === 'error') installStarted = false;
 
   async function installRelease() {
     if (!update?.assetUrl || installStarted) return;
@@ -77,9 +78,11 @@
   let updatedTo = ''; // set when this launch is the first on a new build
   let updatedFrom = '';
   let whatsNew = []; // releases newer than the version we came from
+  let whatsNewVersion = '';
   let showWhatsNew = false;
 
   function openWhatsNew() {
+    whatsNewVersion = updatedTo || whatsNewVersion;
     showWhatsNew = true;
     updatedTo = '';
   }
@@ -247,7 +250,7 @@
   {#if showWhatsNew}
     <WhatsNewModal
       releases={whatsNew}
-      version={updatedTo || ''}
+      version={whatsNewVersion || updatedTo || ''}
       from={updatedFrom}
       onClose={() => (showWhatsNew = false)}
     />

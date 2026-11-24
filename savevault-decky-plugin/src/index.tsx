@@ -7,7 +7,7 @@ import {
   staticClasses,
 } from "@decky/ui";
 import { addEventListener, callable, definePlugin, removeEventListener, toaster } from "@decky/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaSave } from "react-icons/fa";
 
 // ── Backend bridge ─────────────────────────────────────────────────────
@@ -214,21 +214,32 @@ function Content() {
   const [autoSync, setAutoSync] = useState(autoSyncEnabled());
   const [activity, setActivity] = useState<Record<string, SyncActivity>>({});
   const [baseUrl, setBaseUrl] = useState<string>("");
+  const clearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const wasRunning = useRef<boolean>(false);
 
   const refresh = async () => {
-    const s = await getDaemonStatus();
-    setStatus(s);
-    setGames(s.running ? await getGames() : {});
+    try {
+      const s = await getDaemonStatus();
+      setStatus(s);
+      if (s.running && !wasRunning.current) {
+        daemonBaseUrl().then(setBaseUrl).catch(() => {});
+      }
+      wasRunning.current = !!s.running;
+      setGames(s.running ? await getGames() : {});
+    } catch (e) {
+      console.error("[SaveVault] refresh failed", e);
+    }
   };
 
   useEffect(() => {
     refresh();
     daemonBaseUrl().then(setBaseUrl).catch(() => {});
-    // Still poll, but slowly: this is the fallback for state that has no
-    // event (games added elsewhere, peers going offline). Progress itself
-    // arrives over the event stream below.
     const timer = setInterval(refresh, 15000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      for (const t of clearTimers.current.values()) clearTimeout(t);
+      clearTimers.current.clear();
+    };
   }, []);
 
   // Live progress, forwarded from the daemon's WebSocket by the backend.
@@ -237,19 +248,15 @@ function Content() {
       const gameId = data?.gameId;
       if (!gameId) return;
       const ev = data.data ?? {};
+      const prior = clearTimers.current.get(gameId);
+      if (prior) {
+        clearTimeout(prior);
+        clearTimers.current.delete(gameId);
+      }
       setActivity((prev) => {
         const next = { ...prev };
         if (type === "sync-complete") {
           next[gameId] = { state: "done", peerName: ev.peerName };
-          // Clear the "done" badge shortly after, and pick up the new snapshot.
-          setTimeout(() => {
-            setActivity((p) => {
-              const c = { ...p };
-              delete c[gameId];
-              return c;
-            });
-            refresh();
-          }, 4000);
         } else if (type === "sync-error") {
           next[gameId] = { state: "error", error: ev.error, peerName: ev.peerName };
         } else {
@@ -261,6 +268,21 @@ function Content() {
         }
         return next;
       });
+      if (type === "sync-complete" || type === "sync-error") {
+        const expectedState = type === "sync-complete" ? "done" : "error";
+        const delay = type === "sync-complete" ? 4000 : 12000;
+        const t = setTimeout(() => {
+          clearTimers.current.delete(gameId);
+          setActivity((p) => {
+            if (p[gameId]?.state !== expectedState) return p;
+            const c = { ...p };
+            delete c[gameId];
+            return c;
+          });
+          if (type === "sync-complete") void refresh();
+        }, delay);
+        clearTimers.current.set(gameId, t);
+      }
     };
 
     addEventListener<[string, any]>("savevault_sync", onSync);
@@ -274,6 +296,8 @@ function Content() {
       const res = await run();
       toaster.toast({ title, body: res.success ? said : res.error ?? "That didn't work" });
       await refresh();
+    } catch (e: any) {
+      toaster.toast({ title, body: e?.message ?? "That didn't work" });
     } finally {
       setBusy(false);
     }
@@ -285,10 +309,13 @@ function Content() {
       const res = await startDaemon();
       if (res.success) {
         toaster.toast({ title: "SaveVault", body: "Sync service started" });
+        daemonBaseUrl().then(setBaseUrl).catch(() => {});
       } else {
         toaster.toast({ title: "SaveVault", body: res.error ?? "Couldn't start the sync service" });
       }
       await refresh();
+    } catch (e: any) {
+      toaster.toast({ title: "SaveVault", body: e?.message ?? "Couldn't start the sync service" });
     } finally {
       setStarting(false);
     }
@@ -300,6 +327,8 @@ function Content() {
       const res = await syncAll();
       toaster.toast({ title: "SaveVault", body: res.message });
       await refresh();
+    } catch (e: any) {
+      toaster.toast({ title: "SaveVault", body: e?.message ?? "Sync failed" });
     } finally {
       setBusy(false);
     }
@@ -310,13 +339,26 @@ function Content() {
     try {
       toaster.toast({ title: game.name, body: syncSaid(await syncGame(game.id)) });
       await refresh();
+    } catch (e: any) {
+      toaster.toast({ title: game.name, body: e?.message ?? "Sync failed" });
     } finally {
       setBusy(false);
     }
   };
 
+  // Initial probe in flight: avoid flashing ONLINE + 0 games before first status reply.
+  if (status === null) {
+    return (
+      <PanelSection title="SaveVault">
+        <PanelSectionRow>
+          <div style={{ fontSize: "0.9em", opacity: 0.7 }}>Checking sync service…</div>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
   // Daemon unreachable: offer to start it rather than showing a dead label.
-  if (status && !status.running) {
+  if (!status.running) {
     return (
       <PanelSection title="SaveVault">
         <PanelSectionRow>
@@ -617,6 +659,7 @@ function Content() {
 function lifecycleSaid(res: SyncResult, when: "launch" | "exit"): string {
   if (res.success) {
     if (res.outcome === "changed") return when === "launch" ? "Brought the newest save in" : "Save synced";
+    if (res.outcome === "queued") return when === "exit" ? "Save sync queued" : "";
     if (res.outcome === "conflict") return "Changed here and on another device — open SaveVault to choose";
     return when === "exit" ? "Save synced" : "";
   }
@@ -641,11 +684,17 @@ function registerLifecycleHooks(): () => void {
     return () => {};
   }
 
-  // Guards against a game's rapid start/stop churn queueing duplicate syncs.
+  // Guards against duplicate syncs, while ensuring an exit sync arriving while
+  // a slow launch sync is still running is never silently dropped.
   const inFlight = new Set<string>();
+  const pendingExit = new Set<string>();
 
   const syncFor = async (appId: string, when: "launch" | "exit") => {
-    if (!autoSyncEnabled() || inFlight.has(appId)) return;
+    if (!autoSyncEnabled()) return;
+    if (inFlight.has(appId)) {
+      if (when === "exit") pendingExit.add(appId);
+      return;
+    }
     inFlight.add(appId);
     try {
       // Starting the daemon on demand would delay a game launch, so only act
@@ -661,6 +710,9 @@ function registerLifecycleHooks(): () => void {
       console.error("[SaveVault] lifecycle sync failed", e);
     } finally {
       inFlight.delete(appId);
+      if (pendingExit.delete(appId)) {
+        void syncFor(appId, "exit");
+      }
     }
   };
 

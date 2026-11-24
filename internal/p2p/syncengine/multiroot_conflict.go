@@ -3,9 +3,13 @@ package syncengine
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/jun9100/savevault/internal/delta"
+	"github.com/jun9100/savevault/internal/snapshot"
+	"github.com/jun9100/savevault/internal/winreg"
 )
 
 // Divergence in an extra save location.
@@ -126,17 +130,22 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 
 	comment := fmt.Sprintf("Before resolving the %q save location with %s", root, peer.Name)
 	if _, err := e.Snapshots.CreateBeforeReplacing(gameID, comment); err != nil {
+		if resolution == "keep-remote" {
+			return fmt.Errorf("safety snapshot before replacing %q failed: %w", root, err)
+		}
 		e.Log("warn", fmt.Sprintf("safety snapshot before resolving a location failed: %v", err))
 	}
 
+	rules := e.rulesFor(gameID)
 	switch resolution {
 	case "keep-local":
 		// Our copy becomes the shared state: record it as the agreed base so
 		// this exact divergence cannot re-prompt, then ask the peer to pull.
-		local, buildErr := e.ReadManifest(ctx, gameID, path)
+		rawLocal, buildErr := e.ReadManifest(ctx, gameID, path)
 		if buildErr != nil {
 			return buildErr
 		}
+		local := filterManifest(rawLocal, rules)
 		if err := e.Store.SetAgreedHashForRoot(gameID, peerID, root, local.RootHash(delta.PrimaryRoot)); err != nil {
 			return err
 		}
@@ -149,16 +158,8 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 		return nil
 
 	case "keep-remote":
-		// Adopt the peer's copy of this folder. The lineage is cleared first
-		// so the pull that follows is judged as a fresh start rather than
-		// against the base the two just disagreed about — leaving it would
-		// re-detect the same divergence and refuse to move.
-		if err := e.Store.SetAgreedHashForRoot(gameID, peerID, root, ""); err != nil {
-			return err
-		}
-		_ = e.Store.SetSyncStateForRoot(gameID, peerID, root, nil, nil)
-		e.clearRootConflict(gameID, root)
-
+		// Fetch the peer's manifest BEFORE mutating local conflict/lineage state
+		// so a network failure never discards the conflict or merge base.
 		remoteData, fetchErr := e.Transport.FetchManifest(ctx, peer, gameID, ManifestQuery{
 			Name: game.Name, SavePath: game.SavePath, AppID: game.AppID, CoverURL: game.CoverURL,
 		})
@@ -172,13 +173,63 @@ func (e *Engine) ResolveRootConflict(ctx context.Context, gameID, peerID, root, 
 		if !has {
 			return fmt.Errorf("the peer no longer has a %q save location", root)
 		}
-		sr := sharedRoot{
-			root:   syncRoot{Name: root, Path: path},
-			remote: delta.Manifest{Files: remoteRoot.Files, Dirs: remoteRoot.Dirs},
+		filteredRemote := filterManifest(delta.Manifest{Files: remoteRoot.Files, Dirs: remoteRoot.Dirs}, rules)
+		rawLocal, buildErr := e.ReadManifest(ctx, gameID, path)
+		if buildErr != nil {
+			return buildErr
 		}
+		local := filterManifest(rawLocal, rules)
+		targetRoot := syncRoot{Name: root, Path: path}
+
+		applied := e.Writing(gameID)
+		defer delta.InvalidateRoot(path)
+		for relPath := range local.Files {
+			if _, onRemote := filteredRemote.Files[relPath]; onRemote {
+				continue
+			}
+			if !delta.IsSafePath(path, relPath) {
+				continue
+			}
+			full := filepath.Join(path, filepath.FromSlash(relPath))
+			_ = os.Chmod(full, 0o666)
+			_ = os.Remove(full)
+		}
+		e.createPulledDirsIn(gameID, targetRoot, filteredRemote.Dirs)
+		var filesToPull []string
+		for relPath, rf := range filteredRemote.Files {
+			if lf, ok := local.Files[relPath]; ok && lf.Hash == rf.Hash {
+				continue
+			}
+			filesToPull = append(filesToPull, relPath)
+		}
+		if len(filesToPull) > 0 {
+			rootResp := remoteData
+			rootResp.Manifest = filteredRemote
+			if err := e.pullFiles(ctx, peer, gameID, game, targetRoot, local, rootResp, filesToPull); err != nil {
+				applied()
+				return err
+			}
+			if root == winreg.LocationName {
+				allowedKeys, _ := e.Store.GameRegistryKeys(game.ID)
+				for _, w := range snapshot.RestoreRegistryCaptureAllowed(game.Name, path, allowedKeys) {
+					e.Log("warn", w)
+				}
+			}
+		}
+		applied()
+
+		freshRaw, freshErr := e.ReadManifest(ctx, gameID, path)
+		if freshErr == nil {
+			fresh := filterManifest(freshRaw, rules)
+			e.persistRootLineage(gameID, peerID, root, fresh, filteredRemote)
+			if fresh.RootHash(delta.PrimaryRoot) == filteredRemote.RootHash(delta.PrimaryRoot) {
+				_ = e.Store.SetAgreedHashForRoot(gameID, peerID, root, fresh.RootHash(delta.PrimaryRoot))
+			}
+		}
+		e.clearRootConflict(gameID, root)
 		e.Log("info", fmt.Sprintf("the %q save location of %q resolved: adopting %s's version",
 			root, game.Name, peer.Name))
-		return e.syncOneRoot(ctx, gameID, game, peer, sr, remoteData)
+		return nil
 	}
 	return fmt.Errorf("unknown resolution %q", resolution)
 }

@@ -572,8 +572,6 @@ Section "uninstall"
     ; The app first, or its own executable cannot be deleted.
     Call un.StopRunningSaveVault
 
-    RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
-
     RMDir /r $INSTDIR
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
@@ -599,6 +597,7 @@ Section "uninstall"
     ; rather than assumed. Its own uninstaller handles the PATH entry, which
     ; is not something to edit with string operations.
     SetShellVarContext current
+    RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the user's WebView2 DataPath
     ${If} ${FileExists} "${SAVEVAULT_CLI_DIR}\savevault.exe"
         MessageBox MB_YESNO|MB_ICONQUESTION \
             "Also remove the SaveVault command-line tool?$\r$\n$\r$\n\

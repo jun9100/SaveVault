@@ -30,11 +30,6 @@ class CoverRepository(context: Context) {
     private val packageManager = context.packageManager
     private val steamSearchDirectory = File(context.filesDir, "steam-search")
     private val directory = File(context.filesDir, "covers")
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .build()
 
     suspend fun load(presentation: GamePresentation): Bitmap? = withContext(Dispatchers.IO) {
         presentation.gameKey?.let { decode(customFile(it)) }?.let { return@withContext it }
@@ -131,7 +126,7 @@ class CoverRepository(context: Context) {
             .build()
         val body = runCatching {
             client.newCall(Request.Builder().url(url).header("User-Agent", "SaveVault Android").build()).execute().use { response ->
-                if (response.isSuccessful) response.body?.string() else null
+                if (response.isSuccessful) response.peekBody(MAX_SEARCH_BYTES).string() else null
             }
         }.getOrNull() ?: return null // offline: try again next time
         val appId = GameArtworkSources.steamAppIdForExactName(body, name)
@@ -229,10 +224,19 @@ class CoverRepository(context: Context) {
             revision++
         }
 
+        private val client: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build()
+        }
+
         private const val MAX_PICKED_BYTES = 20 * 1024 * 1024
         private const val SEARCH_CACHE_MILLIS = 7L * 24L * 60L * 60L * 1000L
         private const val BUFFER_SIZE = 16 * 1024
         private const val MAX_COVER_BYTES = 4L * 1024L * 1024L
+        private const val MAX_SEARCH_BYTES = 2L * 1024L * 1024L
         private const val TIMEOUT_MS = 15L * 1000L
         private const val MAX_EDGE = 256
         private const val ICON_SIZE = 192

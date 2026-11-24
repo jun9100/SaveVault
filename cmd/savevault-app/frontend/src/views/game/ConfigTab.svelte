@@ -94,7 +94,12 @@
 <div class="card config">
   <div class="cover">
     {#if cover}
-      <img src={cover} alt="" on:error={(e) => (e.currentTarget.style.display = 'none')} />
+      <img
+        src={cover}
+        alt=""
+        on:load={(e) => (e.currentTarget.style.display = '')}
+        on:error={(e) => (e.currentTarget.style.display = 'none')}
+      />
     {:else}
       <div class="cover-fallback"><Gamepad2 size={30} strokeWidth={1.5} /></div>
     {/if}

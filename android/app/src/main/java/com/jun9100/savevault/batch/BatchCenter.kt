@@ -91,6 +91,12 @@ object BatchCenter {
         if (ended && report != null) finished.value = report
     }
 
+    /** Force-clears any pending or running reservation (e.g. when WorkManager work is cancelled). */
+    fun clearAll() {
+        handOff.clear()
+        state.value = null
+    }
+
     /** The ViewModel hands its scanned games to the worker of the same process, so it need not rescan. */
     fun putEntries(id: String, entries: List<SourceGameEntry>) {
         handOff[id] = entries

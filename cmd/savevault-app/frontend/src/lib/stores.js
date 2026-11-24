@@ -44,6 +44,7 @@ export const conflicts = writable({});
 // have several folders disagreeing at once, so this cannot be keyed by
 // game id the way whole-game conflicts are.
 export const locationConflicts = writable([]);
+export const locationConflictResolution = writable(null);
 export const logEntries = writable([]);
 export const wsConnected = writable(false);
 export const syncActivity = writable({}); // gameId -> {state, peerName, percentage, ...}
@@ -100,6 +101,8 @@ export function navigate(name, params = {}) {
 // Usage: if (await askConfirm('Unpair "Laptop"?', { danger: true })) { … }
 export const confirmRequest = writable(null); // {title, message, confirmText, cancelText, danger, resolve}
 export function askConfirm(message, opts = {}) {
+  const prior = get(confirmRequest);
+  if (prior?.resolve) prior.resolve(false);
   return new Promise((resolve) => {
     confirmRequest.set({
       title: opts.title ?? tt('stores.confirm.title'),
@@ -295,6 +298,7 @@ export function applyMessage(msg) {
           'success'
         );
       }
+      locationConflictResolution.set(data ?? null);
       break;
     }
     case 'cloud-auth':

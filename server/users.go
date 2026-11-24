@@ -156,6 +156,23 @@ func (r *vaultRegistry) CreateUser(username, password, note string, quotaBytes i
 			return userRecord{}, errors.New("username maps to an existing vault")
 		}
 	}
+	// If a previous deleted user left a vault directory behind on disk and this
+	// username only collides via sanitization (e.g. "alice!" -> "alice"),
+	// allocate a fresh isolated vault ID instead of inheriting another user's dir.
+	if _, err := os.Stat(filepath.Join(r.root, "vaults", record.VaultID)); err == nil &&
+		strings.ToLower(strings.TrimSpace(username)) != record.VaultID {
+		base := record.VaultID
+		for attempt := 0; attempt < 8; attempt++ {
+			candidate := base + "-" + randomSuffix()
+			if _, statErr := os.Stat(filepath.Join(r.root, "vaults", candidate)); errors.Is(statErr, os.ErrNotExist) {
+				record.VaultID = candidate
+				break
+			}
+		}
+		if record.VaultID == base {
+			return userRecord{}, errors.New("cannot allocate isolated vault directory")
+		}
+	}
 	previous := r.users
 	next := r.users
 	next.Version = 1
@@ -207,14 +224,14 @@ func (r *vaultRegistry) Authenticate(username, password string) (userRecord, err
 		_, _ = hashPassword(password)
 		return userRecord{}, errors.New("invalid credentials")
 	}
+	if !verifyPassword(snapshot.PasswordHash, password) {
+		return userRecord{}, errors.New("invalid credentials")
+	}
 	if snapshot.Status != userStatusActive {
 		return userRecord{}, errors.New("account disabled")
 	}
 	if !snapshot.ExpiresAt.IsZero() && time.Now().UTC().After(snapshot.ExpiresAt) {
 		return userRecord{}, errors.New("account expired")
-	}
-	if !verifyPassword(snapshot.PasswordHash, password) {
-		return userRecord{}, errors.New("invalid credentials")
 	}
 
 	r.usersMu.Lock()
@@ -281,6 +298,7 @@ func (r *vaultRegistry) DeleteUser(username string) error {
 
 	r.evictHandler(vault)
 	if vault != nil {
+		vault.revokeAllDeviceTokens()
 		vault.Close()
 	}
 	return nil

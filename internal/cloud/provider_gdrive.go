@@ -87,8 +87,12 @@ func (p googleDrive) uploadResumable(token, folderID, fileName string, f *os.Fil
 				return nil, err
 			}
 			req.ContentLength = n
-			req.Header.Set("Content-Range",
-				fmt.Sprintf("bytes %d-%d/%d", offset, offset+n-1, size))
+			if size > 0 {
+				req.Header.Set("Content-Range",
+					fmt.Sprintf("bytes %d-%d/%d", offset, offset+n-1, size))
+			} else {
+				req.Header.Set("Content-Range", "bytes */0")
+			}
 			return p.s.doTransfer(req)
 		}
 		resp, err := putChunk()
@@ -172,8 +176,9 @@ func (p googleDrive) download(fileName, localPath string) error {
 	if err != nil {
 		return err
 	}
+	escapedName := strings.ReplaceAll(strings.ReplaceAll(fileName, `\`, `\\`), "'", `\'`)
 	query := fmt.Sprintf("name = '%s' and trashed = false and '%s' in parents",
-		strings.ReplaceAll(fileName, "'", `\'`), folderID)
+		escapedName, folderID)
 	listURL := p.s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
 	req, _ := http.NewRequest(http.MethodGet, listURL, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -188,7 +193,7 @@ func (p googleDrive) download(fileName, localPath string) error {
 	if len(out.Files) == 0 {
 		return fmt.Errorf("file %q not found on Google Drive", fileName)
 	}
-	dlReq, _ := http.NewRequest(http.MethodGet, p.s.Endpoints.GoogleAPI+"/drive/v3/files/"+out.Files[0].ID+"?alt=media", nil)
+	dlReq, _ := http.NewRequest(http.MethodGet, p.s.Endpoints.GoogleAPI+"/drive/v3/files/"+url.PathEscape(out.Files[0].ID)+"?alt=media", nil)
 	dlReq.Header.Set("Authorization", "Bearer "+token)
 	if err := p.s.fetchToFile(dlReq, localPath); err != nil {
 		return googleDriveErr(err)
@@ -207,12 +212,20 @@ func (p googleDrive) remove(f CloudFile) error {
 	if id == "" {
 		return fmt.Errorf("missing Drive file id for %s", f.Name)
 	}
-	req, _ := http.NewRequest(http.MethodDelete, p.s.Endpoints.GoogleAPI+"/drive/v3/files/"+id, nil)
+	req, _ := http.NewRequest(http.MethodDelete, p.s.Endpoints.GoogleAPI+"/drive/v3/files/"+url.PathEscape(id), nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	if err := p.s.doOK(req); err != nil {
 		return googleDriveErr(err)
 	}
 	return nil
+}
+
+// ClearDriveFolderCache drops the cached Google Drive folder ID so switching
+// Google accounts resolves a folder in the new account instead of 403/404ing.
+func (s *Service) ClearDriveFolderCache() {
+	s.driveFolderMu.Lock()
+	s.driveFolderID = ""
+	s.driveFolderMu.Unlock()
 }
 
 // driveFolder returns the Drive folder snapshots live in: the user's
@@ -274,7 +287,9 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 	if err := s.doJSON(creq, &created); err != nil {
 		return "", googleDriveErr(err)
 	}
-	s.Log("info", `cloud: created "SaveVault" folder in Google Drive`)
+	if s.Log != nil {
+		s.Log("info", `cloud: created "SaveVault" folder in Google Drive`)
+	}
 	s.driveFolderID = created.ID
 	return created.ID, nil
 }

@@ -180,9 +180,19 @@
   };
 
   const upload = () =>
-    run(native ? $t('game.cloud.native.publish_success') : $t('game.cloud.upload.success'), async () => {
+    run('', async () => {
       const res = await api.post(`/api/cloud/sync-local/${game.id}`);
-      toast($t('game.cloud.upload.result', { uploaded: res.uploaded, skipped: res.skipped }), 'success');
+      if (res?.failed > 0) {
+        const reason = res.error ? trError(res.error) : $t('game.cloud.upload.result', { uploaded: res.uploaded ?? 0, skipped: res.skipped ?? 0 });
+        toast(reason, 'error');
+      } else {
+        toast(
+          native
+            ? $t('game.cloud.native.publish_success')
+            : $t('game.cloud.upload.result', { uploaded: res?.uploaded ?? 0, skipped: res?.skipped ?? 0 }),
+          'success'
+        );
+      }
       await load();
     });
 </script>

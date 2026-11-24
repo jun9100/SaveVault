@@ -8,7 +8,7 @@
   // a settings folder. Two answers only, and the screen says which folder it
   // is asking about in every sentence.
   import { dialogOut } from '../lib/motion.js';
-  import { locationConflicts, games, peers, settings, toast, view } from '../lib/stores.js';
+  import { locationConflicts, locationConflictResolution, games, peers, settings, toast, view } from '../lib/stores.js';
   import { isHandheld } from '../lib/devices.js';
   import { visited } from '../lib/later.js';
   import { api } from '../lib/api.js';
@@ -47,6 +47,16 @@
   $: peerType = current ? $peers[current.peer?.id ?? current.peer?.ID]?.deviceType : '';
   $: localIcon = isHandheld($settings?.deviceType) ? Gamepad2 : Monitor;
   $: peerIcon = isHandheld(peerType) ? Gamepad2 : Monitor;
+
+  // Clear in-flight applying marker when the daemon reports the resolution outcome
+  // (especially on error, so an unresolved folder conflict does not stay hidden).
+  $: if ($locationConflictResolution) {
+    const k = `${$locationConflictResolution.gameId}\u0000${$locationConflictResolution.root}`;
+    if (applying.has(k)) {
+      applying.delete(k);
+      applying = new Set(applying);
+    }
+  }
 
   // Announce new ones the same way a save conflict is announced: this is
   // still "something of yours needs a decision before it can sync".

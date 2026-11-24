@@ -455,3 +455,114 @@ func TestMultiTenantDeviceTokensPairingQuotaExpiryRecreateAndRateLimit(t *testin
 		t.Fatalf("disabled admin via tenant bearer token = %d, want 404", adminProbeRec.Code)
 	}
 }
+
+func TestRound3SecurityAndQuotaRegressions(t *testing.T) {
+	registry, err := newVaultRegistry(t.TempDir(), "default-token", 8<<20, serverOptions{adminToken: "admin-secret"})
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	t.Cleanup(registry.Close)
+	handler := registry.handler()
+
+	// 1. Uploads > 50% of quota must succeed (in-flight .upload-* temp file is not double-counted).
+	qUser, err := registry.CreateUser("quotauser", "s3cret-pass", "", 64, time.Time{})
+	if err != nil {
+		t.Fatalf("create quotauser: %v", err)
+	}
+	bigWithinQuota := httptest.NewRequest(http.MethodPut, "/v1/savevault/files/pc/g1__main__snap_1.zip", bytes.NewReader(bytes.Repeat([]byte("z"), 48)))
+	bigWithinQuota.Header.Set("Authorization", "Bearer "+qUser.Token)
+	bigRec := httptest.NewRecorder()
+	handler.ServeHTTP(bigRec, bigWithinQuota)
+	if bigRec.Code != http.StatusCreated {
+		t.Fatalf("48B upload into 64B quota = %d, want 201 (%s)", bigRec.Code, bigRec.Body.String())
+	}
+
+	// 2. Scope metadata endpoint enforces quotaBytes.
+	metaBody := `{"title":"` + strings.Repeat("x", 100) + `"}`
+	metaReq := httptest.NewRequest(http.MethodPut, "/v1/scopes/synth-1/metadata", strings.NewReader(metaBody))
+	metaReq.Header.Set("Authorization", "Bearer "+qUser.Token)
+	metaRec := httptest.NewRecorder()
+	handler.ServeHTTP(metaRec, metaReq)
+	if metaRec.Code != http.StatusInsufficientStorage {
+		t.Fatalf("over-quota scope metadata = %d, want 507 (%s)", metaRec.Code, metaRec.Body.String())
+	}
+
+	// 3. Pairing claim rate limit cannot be bypassed via tenant vault.
+	tenant, err := registry.CreateUser("bob", "s3cret-pass", "", 0, time.Time{})
+	if err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+	pairCreate := httptest.NewRequest(http.MethodPost, "/admin/api/pairings", strings.NewReader(`{"name":"handheld"}`))
+	pairCreate.SetBasicAuth("admin", "admin-secret")
+	pairCreate.Header.Set(csrfHeader, "1")
+	pairCreate.Header.Set("X-Game-Save-Vault", tenant.VaultID)
+	pairRec := httptest.NewRecorder()
+	handler.ServeHTTP(pairRec, pairCreate)
+	if pairRec.Code != http.StatusCreated {
+		t.Fatalf("create bob pairing = %d %s", pairRec.Code, pairRec.Body.String())
+	}
+	var createdPairing struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(pairRec.Body.Bytes(), &createdPairing); err != nil {
+		t.Fatal(err)
+	}
+	attackerIP := "198.51.100.77:5555"
+	for i := 0; i < loginFailureLimit; i++ {
+		badClaim := httptest.NewRequest(http.MethodPost, "/v1/pair/claim", strings.NewReader(`{"code":"AAAAAAAA","device_id":"probe"}`))
+		badClaim.RemoteAddr = attackerIP
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, badClaim)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("bad pair claim %d = %d, want 401", i+1, rec.Code)
+		}
+	}
+	validClaimBody, _ := json.Marshal(map[string]string{"code": createdPairing.Code, "device_id": "probe"})
+	blockedClaim := httptest.NewRequest(http.MethodPost, "/v1/pair/claim", bytes.NewReader(validClaimBody))
+	blockedClaim.RemoteAddr = attackerIP
+	blockedRec := httptest.NewRecorder()
+	handler.ServeHTTP(blockedRec, blockedClaim)
+	if blockedRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("blocked IP claiming valid tenant pairing code = %d, want 429", blockedRec.Code)
+	}
+
+	// 4. Claim from clean IP, then DeleteUser revokes the gsdt_* token permanently even if user is recreated.
+	cleanClaim := httptest.NewRequest(http.MethodPost, "/v1/pair/claim", bytes.NewReader(validClaimBody))
+	cleanClaim.RemoteAddr = "198.51.100.88:5555"
+	cleanRec := httptest.NewRecorder()
+	handler.ServeHTTP(cleanRec, cleanClaim)
+	if cleanRec.Code != http.StatusOK {
+		t.Fatalf("clean IP pair claim = %d %s", cleanRec.Code, cleanRec.Body.String())
+	}
+	var claimed struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(cleanRec.Body.Bytes(), &claimed); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.DeleteUser("bob"); err != nil {
+		t.Fatalf("delete bob: %v", err)
+	}
+	if _, err := registry.CreateUser("bob", "new-s3cret", "", 0, time.Time{}); err != nil {
+		t.Fatalf("recreate bob: %v", err)
+	}
+	oldDevReq := httptest.NewRequest(http.MethodGet, "/v1/auth/whoami", nil)
+	oldDevReq.Header.Set("Authorization", "Bearer "+claimed.Token)
+	oldDevRec := httptest.NewRecorder()
+	handler.ServeHTTP(oldDevRec, oldDevReq)
+	if oldDevRec.Code != http.StatusUnauthorized {
+		t.Fatalf("deleted tenant gsdt_* token after recreate = %d, want 401", oldDevRec.Code)
+	}
+
+	// 5. Wrong password on expired user returns "invalid credentials" (no status leak).
+	if _, err := registry.CreateUser("expuser", "s3cret-pass", "", 0, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatalf("create expuser: %v", err)
+	}
+	if _, err := registry.Authenticate("expuser", "wrong-pass"); err == nil || err.Error() != "invalid credentials" {
+		t.Fatalf("wrong password on expired user = %v, want invalid credentials", err)
+	}
+	// 6. WebDAV rejects leading-dot filenames.
+	if validSaveVaultFileName(".upload-123.part") {
+		t.Fatal("validSaveVaultFileName must reject leading-dot names")
+	}
+}

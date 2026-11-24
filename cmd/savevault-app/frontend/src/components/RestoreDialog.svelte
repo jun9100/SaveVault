@@ -19,17 +19,22 @@
   let preview = null;
   let error = '';
   let loadedFor = null;
+  let loadSeq = 0;
 
   $: req = $restoreRequest;
   $: if (req && loadedFor !== req.snap.id) load(req);
 
   async function load(r) {
+    const seq = ++loadSeq;
     loadedFor = r.snap.id;
     preview = null;
     error = '';
     try {
-      preview = summarize(await api.get(`/api/games/${r.game.id}/snapshot/${r.snap.id}/preview`));
+      const next = summarize(await api.get(`/api/games/${r.game.id}/snapshot/${r.snap.id}/preview`));
+      if (seq !== loadSeq) return;
+      preview = next;
     } catch (e) {
+      if (seq !== loadSeq) return;
       // Not knowing is no reason to refuse: the restore is still safe to do,
       // and the dialog says it could not look first.
       error = e.message;

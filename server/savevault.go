@@ -225,23 +225,37 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "cannot secure SaveVault upload")
 		return
 	}
+	readLimit := s.maxObjectBytes
+	quotaCapped := false
+	if s.quotaBytes > 0 && s.quotaBytes < readLimit {
+		readLimit = s.quotaBytes
+		quotaCapped = true
+	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(temporary, hash), http.MaxBytesReader(w, r.Body, s.maxObjectBytes+1))
+	written, copyErr := io.Copy(io.MultiWriter(temporary, hash), http.MaxBytesReader(w, r.Body, readLimit+1))
 	var syncErr error
-	if copyErr == nil && written <= s.maxObjectBytes {
+	if copyErr == nil && written <= readLimit {
 		syncErr = temporary.Sync()
 	}
 	if closeErr := temporary.Close(); closeErr != nil && copyErr == nil && syncErr == nil {
 		syncErr = closeErr
 	}
-	if written > s.maxObjectBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "SaveVault archive exceeds configured size limit")
+	if written > readLimit {
+		if quotaCapped && written <= s.maxObjectBytes {
+			writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		} else {
+			writeError(w, http.StatusRequestEntityTooLarge, "SaveVault archive exceeds configured size limit")
+		}
 		return
 	}
 	if copyErr != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(copyErr, &maxErr) {
-			writeError(w, http.StatusRequestEntityTooLarge, "SaveVault archive exceeds configured size limit")
+			if quotaCapped && written <= s.maxObjectBytes {
+				writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+			} else {
+				writeError(w, http.StatusRequestEntityTooLarge, "SaveVault archive exceeds configured size limit")
+			}
 		} else {
 			writeError(w, http.StatusBadRequest, "cannot read SaveVault upload")
 		}
@@ -262,7 +276,9 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 		}
 	}
 	digest := hex.EncodeToString(hash.Sum(nil))
+	s.quotaMu.Lock()
 	if _, statErr := os.Stat(destination); errors.Is(statErr, os.ErrNotExist) && !s.checkQuota(written) {
+		s.quotaMu.Unlock()
 		writeError(w, http.StatusInsufficientStorage, "storage quota exceeded")
 		return
 	}
@@ -271,7 +287,10 @@ func (s *server) handleSaveVaultNativePut(w http.ResponseWriter, r *http.Request
 	// destination live in the same directory, so a successful link is atomic.
 	// We deliberately fail closed on filesystems that cannot provide this
 	// guarantee instead of falling back to a truncating write.
-	if err := os.Link(temporaryPath, destination); err != nil {
+	linkErr := os.Link(temporaryPath, destination)
+	s.quotaMu.Unlock()
+	if linkErr != nil {
+		err := linkErr
 		if !errors.Is(err, os.ErrExist) {
 			writeError(w, http.StatusInternalServerError, "cannot publish SaveVault archive")
 			return

@@ -181,7 +181,35 @@ func (e *Engine) StartDiscovery() error {
 		OnPeerSeen: func(d discovery.Discovered, isNew bool) {
 			peer, err := e.Store.GetPeer(d.ID)
 			if err == nil {
+				endpointChanged := peer.Address != d.Address || peer.Port != d.Port
 				wasOffline := peer.Status != "online"
+				// Never overwrite a paired peer's persisted LAN endpoint from
+				// unauthenticated UDP alone — verify the candidate endpoint
+				// proves possession of the pinned key first.
+				if peer.PublicKey != "" && (endpointChanged || wasOffline) {
+					e.GoSync(func(ctx context.Context) {
+						if _, ok := e.pingPeerAuthenticated(ctx, peer, d.Address, d.Port); !ok {
+							return
+						}
+						cur, getErr := e.Store.GetPeer(d.ID)
+						if getErr != nil {
+							return
+						}
+						offlineNow := cur.Status != "online"
+						cur.Address = d.Address
+						cur.Port = d.Port
+						cur.DeviceType = d.DeviceType
+						cur.Status = "online"
+						cur.LastSeenMs = d.LastSeen
+						_ = e.Store.UpdatePeer(cur)
+						if offlineNow {
+							e.Log("info", fmt.Sprintf("paired peer %q appeared on LAN; auto-syncing", cur.Name))
+							e.SyncAllGames(ctx)
+							e.notifyPeerUpdate()
+						}
+					})
+					return
+				}
 				peer.Address = d.Address
 				peer.Port = d.Port
 				peer.DeviceType = d.DeviceType

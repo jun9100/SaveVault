@@ -115,13 +115,19 @@ object GameCatalog {
         "org.dolphinemu.dolphinemu" to Entry("Dolphin 模拟器", "Dolphin"),
     )
 
+    private val androidPackagePattern = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
+
     fun present(save: DetectedSave): GamePresentation {
         val rawName = save.displayName?.trim()?.takeIf { it.isNotEmpty() }
-        val packageName = save.takeIf { it.kind == "android-app" || it.kind == "android-game" }
-            ?.gameKey
-            ?.removePrefix("android:")
-            ?.takeIf { it.contains('.') }
-            ?: rawName?.takeIf { it.contains('.') }
+        val isAndroidSave = save.kind == "android-app" || save.kind == "android-game"
+        val packageName = if (isAndroidSave) {
+            save.gameKey
+                ?.removePrefix("android:")
+                ?.takeIf { androidPackagePattern.matches(it) }
+                ?: rawName?.takeIf { androidPackagePattern.matches(it) }
+        } else {
+            null
+        }
         val appId = extractAppId(save)
         val titleId = save.titleId?.uppercase()
         val entry = packageName?.let { androidEntries[it] }

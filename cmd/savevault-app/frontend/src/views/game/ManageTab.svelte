@@ -40,11 +40,12 @@
     peerGamesLoading = true;
     peerGames = [];
     try {
-      const peers = await api.get('/api/peers');
+      const resp = await api.get('/api/peers');
+      const peerList = Array.isArray(resp) ? resp : Object.values(resp?.peers ?? {});
       // Ask each device separately and keep whatever answers: one being
       // offline must not cost you the ability to link against the others.
       const results = await Promise.allSettled(
-        (peers ?? []).map(async (p) => ({
+        peerList.map(async (p) => ({
           peer: p,
           games: await api.get(`/api/peers/${p.id}/games`)
         }))

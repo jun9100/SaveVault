@@ -277,6 +277,10 @@ const (
 	lanAuthTimeHeader  = "X-SaveVault-Auth-Ms"
 	lanAuthHeader      = "X-SaveVault-Auth"
 
+	lanRespAuthHeader  = "X-SaveVault-Resp-Auth"
+	lanRespNonceHeader = "X-SaveVault-Resp-Nonce"
+	lanRespTimeHeader  = "X-SaveVault-Resp-Auth-Ms"
+
 	legacyLANAuthPeerHeader  = "X-Opensave-Peer"
 	legacyLANAuthNonceHeader = "X-Opensave-Nonce"
 	legacyLANAuthTimeHeader  = "X-Opensave-Auth-Ms"
@@ -428,4 +432,83 @@ func (e *Engine) verifyLANRequest(r *http.Request) (peerID string, body []byte, 
 		}
 	}
 	return peer.ID, body, true
+}
+
+// signLANResponse attaches proof that a LAN HTTP response came from this
+// device and is bound to the caller's request nonce and status code.
+func (e *Engine) signLANResponse(w http.ResponseWriter, peerID, reqNonce string, status int, body []byte) {
+	if peerID == "" || reqNonce == "" {
+		return
+	}
+	key, err := e.requestAuthKey(peerID)
+	if err != nil {
+		return
+	}
+	respNonce, err := e2ee.NewNonce()
+	if err != nil {
+		return
+	}
+	at := time.Now().UnixMilli()
+	mac := e2ee.ResponseMAC(key, e.localNodeID(), peerID, reqNonce, status, body, respNonce, at)
+	w.Header().Set(lanRespNonceHeader, respNonce)
+	w.Header().Set(lanRespTimeHeader, strconv.FormatInt(at, 10))
+	w.Header().Set(lanRespAuthHeader, mac)
+}
+
+// verifyLANResponse verifies the response MAC returned by a paired LAN peer
+// when this device holds a pinned key for that peer.
+func (e *Engine) verifyLANResponse(peerID, reqNonce string, resp *http.Response, body []byte) error {
+	if e == nil || peerID == "" || reqNonce == "" {
+		return nil
+	}
+	key, err := e.requestAuthKey(peerID)
+	if err != nil {
+		return nil // unpaired or legacy pairing without pinned key
+	}
+	mac := strings.TrimSpace(resp.Header.Get(lanRespAuthHeader))
+	respNonce := strings.TrimSpace(resp.Header.Get(lanRespNonceHeader))
+	atStr := strings.TrimSpace(resp.Header.Get(lanRespTimeHeader))
+	if mac == "" || respNonce == "" || atStr == "" {
+		return fmt.Errorf("LAN response from peer %s is missing authentication headers", peerID)
+	}
+	at, err := strconv.ParseInt(atStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("LAN response from peer %s has invalid auth timestamp", peerID)
+	}
+	now := time.Now().UnixMilli()
+	skew := now - at
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > e2ee.MaxAuthSkew {
+		return fmt.Errorf("LAN response from peer %s has stale auth timestamp", peerID)
+	}
+	if !e2ee.CheckResponseMAC(key, peerID, e.localNodeID(), reqNonce, resp.StatusCode, body, respNonce, at, mac) {
+		return fmt.Errorf("LAN response from peer %s failed authentication", peerID)
+	}
+	if !e.nonces().remember(respNonce, now) {
+		return fmt.Errorf("LAN response from peer %s reused a nonce (replay)", peerID)
+	}
+	return nil
+}
+
+// lanSigningWriter buffers a LAN JSON response so requirePairedPeer can attach
+// a response MAC covering the status code and full body before flushing.
+type lanSigningWriter struct {
+	w      http.ResponseWriter
+	status int
+	buf    bytes.Buffer
+}
+
+func (lw *lanSigningWriter) Header() http.Header { return lw.w.Header() }
+func (lw *lanSigningWriter) WriteHeader(code int) {
+	if lw.status == 0 {
+		lw.status = code
+	}
+}
+func (lw *lanSigningWriter) Write(p []byte) (int, error) {
+	if lw.status == 0 {
+		lw.status = http.StatusOK
+	}
+	return lw.buf.Write(p)
 }

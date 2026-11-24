@@ -47,6 +47,10 @@ class SwitchTitleNameSourcesTest {
     fun onlyPrimaryStorageTreeUrisBecomePaths() {
         assertNull(SwitchTitleNameSources.treeUriToPath("content://x/tree/1234-5678%3Aroms/document/1234-5678%3Aroms%2Fa.xci"))
         assertNull(SwitchTitleNameSources.treeUriToPath("content://x/tree/primary%3A..%2F/document/primary%3A..%2Fa.xci"))
+        assertEquals(
+            "/storage/emulated/0/switch+roms",
+            SwitchTitleNameSources.treeUriToPath("content://x/tree/primary%3Aswitch+roms/document/primary%3Aswitch+roms%2FGame.xci"),
+        )
     }
 
     @Test

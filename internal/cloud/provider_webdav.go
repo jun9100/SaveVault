@@ -87,22 +87,43 @@ func (p webDAV) list() ([]CloudFile, error) {
 		Responses []struct {
 			Href  string `xml:"href"`
 			Props []struct {
-				Length   string `xml:"prop>getcontentlength"`
-				Modified string `xml:"prop>getlastmodified"`
+				Length       string `xml:"prop>getcontentlength"`
+				Modified     string `xml:"prop>getlastmodified"`
+				ResourceType struct {
+					Collection *struct{} `xml:"collection"`
+				} `xml:"prop>resourcetype"`
 			} `xml:"propstat"`
 		} `xml:"response"`
 	}
-	raw, err := io.ReadAll(resp.Body)
+	const maxPropfindBytes = 16 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxPropfindBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(raw) > maxPropfindBytes {
+		return nil, fmt.Errorf("WebDAV multistatus response exceeded size limit")
 	}
 	if err := xml.Unmarshal(raw, &ms); err != nil {
 		return nil, fmt.Errorf("parse WebDAV multistatus: %w", err)
 	}
 
-	baseName := path.Base(strings.TrimSuffix(p.cfg.URL, "/"))
+	rawBase := strings.TrimSuffix(p.cfg.URL, "/")
+	if unescapedBase, uErr := url.PathUnescape(rawBase); uErr == nil {
+		rawBase = unescapedBase
+	}
+	baseName := path.Base(rawBase)
 	var files []CloudFile
 	for _, r := range ms.Responses {
+		isDir := false
+		for _, prop := range r.Props {
+			if prop.ResourceType.Collection != nil {
+				isDir = true
+				break
+			}
+		}
+		if isDir {
+			continue
+		}
 		href, err := url.PathUnescape(strings.TrimSpace(r.Href))
 		if err != nil {
 			href = r.Href
@@ -111,14 +132,18 @@ func (p webDAV) list() ([]CloudFile, error) {
 		if name == "" || name == baseName {
 			continue
 		}
-		f := CloudFile{Name: name, CreatedTime: time.Now().UTC().Format(time.RFC3339)}
+		f := CloudFile{Name: name}
 		for _, prop := range r.Props {
 			if prop.Length != "" {
 				f.SizeBytes, _ = strconv.ParseInt(strings.TrimSpace(prop.Length), 10, 64)
 			}
 			if prop.Modified != "" {
-				if t, err := time.Parse(time.RFC1123, strings.TrimSpace(prop.Modified)); err == nil {
-					f.CreatedTime = t.UTC().Format(time.RFC3339)
+				mod := strings.TrimSpace(prop.Modified)
+				for _, layout := range []string{time.RFC1123, time.RFC1123Z, time.RFC3339} {
+					if t, err := time.Parse(layout, mod); err == nil {
+						f.CreatedTime = t.UTC().Format(time.RFC3339)
+						break
+					}
 				}
 			}
 		}

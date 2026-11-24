@@ -18,23 +18,53 @@
   let error = '';
   let now = Date.now();
 
+  let inflight = false;
+  let queued = false;
+  let debounceTimer = null;
+
   async function load() {
+    if (inflight) {
+      queued = true;
+      return;
+    }
+    inflight = true;
     try {
       data = await api.get('/api/transfers');
       error = '';
     } catch (e) {
       error = trError(e.message);
+    } finally {
+      inflight = false;
+      now = Date.now();
+      if (queued) {
+        queued = false;
+        scheduleLoad();
+      }
     }
-    now = Date.now();
+  }
+  function scheduleLoad() {
+    if (debounceTimer) return;
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      load();
+    }, 300);
   }
   onMount(load);
-  // Any sync event means the list has changed.
-  const unsub = syncActivity.subscribe(() => load());
+  // Any sync event means the list has changed (skip initial immediate emission).
+  let firstEmit = true;
+  const unsub = syncActivity.subscribe(() => {
+    if (firstEmit) {
+      firstEmit = false;
+      return;
+    }
+    scheduleLoad();
+  });
   // And while something runs, its progress moves on its own.
   const poll = setInterval(() => data?.active?.length && load(), 2000);
   onDestroy(() => {
     unsub();
     clearInterval(poll);
+    clearTimeout(debounceTimer);
   });
 
   $: shown = withNames(data, $games);

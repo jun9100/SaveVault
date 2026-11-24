@@ -180,7 +180,7 @@ func inspectAndroidArchive(files []*zip.File, manifestFile *zip.File) (ForeignAr
 	for _, f := range files {
 		// The manifest describes the archive; it is not save data and must
 		// never be extracted into a save folder.
-		if f.Name == ForeignManifestName {
+		if f.Name == ForeignManifestName || f.Name == legacyForeignManifestName {
 			continue
 		}
 		matched := false
@@ -447,13 +447,12 @@ func foreignEntriesByLocation(files []*zip.File, format string, targets []foreig
 		wanted[target.archiveLocation] = true
 	}
 	out := make(map[string][]*zip.File, len(wanted))
-	prefixDir := strings.TrimSuffix(RootPrefix, "/")
 	for _, f := range files {
 		if format == ForeignFormatPC {
 			if !wanted[ForeignPCRoot] {
 				continue
 			}
-			if f.Name == prefixDir || strings.HasPrefix(f.Name, RootPrefix) {
+			if isExtraRootEntry(f.Name) {
 				continue
 			}
 			out[ForeignPCRoot] = append(out[ForeignPCRoot], f)

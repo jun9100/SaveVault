@@ -85,7 +85,17 @@ def _request(path: str, method: str = "GET", body=None, timeout: float = 10.0):
             reason = payload.get("reason") or ""
         except (ValueError, AttributeError):
             pass
+        finally:
+            try:
+                e.close()
+            except Exception:
+                pass
         raise DaemonRefused(message, reason, e.code) from None
+
+
+async def _request_async(path: str, method: str = "GET", body=None, timeout: float = 10.0):
+    """Run blocking urllib HTTP calls off Decky's asyncio event loop."""
+    return await asyncio.to_thread(_request, path, method, body, timeout)
 
 
 def reason_of(message: str, reason: str = "") -> str:
@@ -123,6 +133,15 @@ def game_outcome(entry) -> str:
         return "conflict"
     if any(p.get("status") in CHANGED for p in peers):
         return "changed"
+    if any(p.get("status") == "holding" for p in peers):
+        return "held"
+    if any(p.get("status") == "paused" for p in peers):
+        return "paused"
+    if any(p.get("status") == "error" for p in peers):
+        err_peer = next(p for p in peers if p.get("status") == "error")
+        return reason_of(err_peer.get("error", ""), err_peer.get("reason", ""))
+    if any(p.get("status") in ("busy", "awaiting_folder") for p in peers):
+        return "queued"
     return "in-sync"
 
 
@@ -145,12 +164,16 @@ def summarize_sync_all(results: dict) -> dict:
         message, success = "No other device is online — saves sync when one is", False
     elif not total:
         message, success = "Nothing is tracked yet", True
+    elif considered == 0:
+        message, success = f"Skipped {n(counts.get('skipped', 0), 'game', 'games')}", True
     else:
         parts = []
         if counts.get("changed"):
             parts.append(n(counts["changed"], "updated", "updated"))
         if counts.get("in-sync"):
             parts.append(n(counts["in-sync"], "already in sync", "already in sync"))
+        if counts.get("queued"):
+            parts.append(n(counts["queued"], "queued", "queued"))
         message = f"Synced {n(synced, 'game', 'games')}"
         if parts:
             message += ": " + ", ".join(parts)
@@ -200,7 +223,7 @@ class Plugin:
     async def get_daemon_status(self) -> dict:
         """Whether the daemon is reachable, plus its status payload."""
         try:
-            return {"running": True, "data": _request("/api/status", timeout=3)}
+            return {"running": True, "data": await _request_async("/api/status", timeout=3)}
         except Exception as e:
             return {"running": False, "error": str(e)}
 
@@ -210,7 +233,7 @@ class Plugin:
 
     async def get_games(self) -> dict:
         try:
-            return _request("/api/games", timeout=5) or {}
+            return await _request_async("/api/games", timeout=5) or {}
         except Exception as e:
             decky.logger.warning(f"get_games failed: {e}")
             return {}
@@ -221,7 +244,7 @@ class Plugin:
         """Sync every game, and say what happened — which used to be "Sync
         started" whatever came back, including when nothing could sync."""
         try:
-            answer = _request("/api/games/sync-all", method="POST", body={}, timeout=120) or {}
+            answer = await _request_async("/api/games/sync-all", method="POST", body={}, timeout=120) or {}
             return summarize_sync_all(answer.get("results") or {})
         except Exception as e:
             decky.logger.error(f"sync_all failed: {e}")
@@ -234,10 +257,13 @@ class Plugin:
         "offline" — so the hooks can stay quiet about a PC that is simply
         switched off instead of reporting a failure at every launch."""
         try:
-            answer = _request(f"/api/games/{game_id}/sync", method="POST", body={}, timeout=120) or {}
+            answer = await _request_async(f"/api/games/{game_id}/sync", method="POST", body={}, timeout=120) or {}
             if answer.get("queued"):
                 return {"success": True, "outcome": "queued"}
-            return {"success": True, "outcome": game_outcome(answer.get("results") or {})}
+            outcome = game_outcome(answer.get("results") or {})
+            if outcome in ("error", "paused", "held", "offline"):
+                return {"success": False, "reason": outcome, "error": f"sync {outcome}"}
+            return {"success": True, "outcome": outcome}
         except DaemonRefused as e:
             reason = reason_of(str(e), e.reason)
             if reason == "error":
@@ -253,13 +279,13 @@ class Plugin:
         """Pause syncing for a number of minutes, or until resumed (0)."""
         body = {"minutes": int(minutes)} if minutes else {"untilRestart": True}
         try:
-            return {"success": True, "status": _request("/api/sync/pause", method="POST", body=body)}
+            return {"success": True, "status": await _request_async("/api/sync/pause", method="POST", body=body)}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     async def resume_sync(self) -> dict:
         try:
-            return {"success": True, "status": _request("/api/sync/resume", method="POST", body={})}
+            return {"success": True, "status": await _request_async("/api/sync/resume", method="POST", body={})}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -273,7 +299,7 @@ class Plugin:
         if answer not in ("restore", "delete"):
             return {"success": False, "error": f"unknown answer {answer}"}
         try:
-            _request(f"/api/games/{game_id}/emptied", method="POST", body={"answer": answer}, timeout=60)
+            await _request_async(f"/api/games/{game_id}/emptied", method="POST", body={"answer": answer}, timeout=60)
             return {"success": True}
         except Exception as e:
             decky.logger.error(f"answer_emptied({game_id}, {answer}) failed: {e}")
@@ -286,7 +312,7 @@ class Plugin:
         if resolution not in ("keep-local", "keep-remote"):
             return {"success": False, "error": f"unknown resolution {resolution}"}
         try:
-            _request(
+            await _request_async(
                 f"/api/games/{game_id}/resolve-location-conflict",
                 method="POST",
                 body={"peerId": peer_id, "root": root, "resolution": resolution},
@@ -299,7 +325,7 @@ class Plugin:
 
     async def snapshot_game(self, game_id: str, comment: str = "") -> dict:
         try:
-            _request(
+            await _request_async(
                 f"/api/games/{game_id}/snapshot",
                 method="POST",
                 body={"comment": comment or "Steam Deck snapshot"},
@@ -321,7 +347,7 @@ class Plugin:
         if resolution not in ("keep-local", "keep-remote", "merge-branch"):
             return {"success": False, "error": f"unknown resolution {resolution}"}
         try:
-            _request(
+            await _request_async(
                 f"/api/games/{game_id}/resolve-conflict",
                 method="POST",
                 body={"peerId": peer_id, "resolution": resolution},
@@ -362,10 +388,16 @@ class Plugin:
 
         try:
             decky.logger.info(f"starting daemon: {' '.join(cmd)}")
-            # The daemon keeps its data under HOME. Said explicitly, so it is
-            # the Deck user's ~/.savevault whatever this process was given.
+            # The daemon keeps its data under HOME. Strip PyInstaller's
+            # LD_LIBRARY_PATH (restoring LD_LIBRARY_PATH_ORIG if present) so
+            # host binaries like /usr/bin/flatpak do not fail with symbol mismatches.
             env = dict(os.environ, HOME=decky.DECKY_USER_HOME)
-            subprocess.Popen(
+            orig_ld = env.get("LD_LIBRARY_PATH_ORIG")
+            if orig_ld:
+                env["LD_LIBRARY_PATH"] = orig_ld
+            else:
+                env.pop("LD_LIBRARY_PATH", None)
+            proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -382,7 +414,12 @@ class Plugin:
         while asyncio.get_event_loop().time() < deadline:
             await asyncio.sleep(0.5)
             if (await self.get_daemon_status()).get("running"):
+                wake = getattr(self, "_wake_events", None)
+                if wake is not None:
+                    wake.set()
                 return {"success": True, "alreadyRunning": False}
+            if proc.poll() is not None:
+                return {"success": False, "error": f"The sync service exited immediately (code {proc.returncode})."}
         return {"success": False, "error": "The daemon didn't start within 20 seconds."}
 
     def _daemon_command(self):
@@ -429,13 +466,24 @@ class Plugin:
             except Exception as e:
                 decky.logger.debug(f"sync event stream disconnected: {e}")
 
-            await asyncio.sleep(backoff)
+            wake = getattr(self, "_wake_events", None)
+            if wake is not None:
+                wake.clear()
+                try:
+                    await asyncio.wait_for(wake.wait(), timeout=backoff)
+                    backoff = 2
+                    continue
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)  # daemon may simply not be running
 
     # ── Decky lifecycle ──────────────────────────────────────────────────
 
     async def _main(self):
         self.loop = asyncio.get_event_loop()
+        self._wake_events = asyncio.Event()
         self._events_task = self.loop.create_task(self._pump_sync_events())
         decky.logger.info("SaveVault plugin loaded")
 
@@ -446,6 +494,10 @@ class Plugin:
         task = getattr(self, "_events_task", None)
         if task:
             task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         decky.logger.info("SaveVault plugin unloaded")
 
     async def _uninstall(self):

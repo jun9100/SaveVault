@@ -84,14 +84,15 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.clients[client] = struct{}{}
 	h.mu.Unlock()
 
+	ctx, cancel := context.WithCancel(r.Context())
 	defer func() {
+		cancel()
 		h.mu.Lock()
 		delete(h.clients, client)
 		h.mu.Unlock()
 		conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
-	ctx := r.Context()
 	go func() {
 		for {
 			select {

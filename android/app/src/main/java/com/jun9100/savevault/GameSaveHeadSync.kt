@@ -399,33 +399,33 @@ data class GameSaveHeadState(
 class GameSaveHeadStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    @Synchronized
-    fun load(identity: GameCloudIdentity): GameSaveHeadState? = runCatching {
-        val json = preferences.getString(key(identity), null)?.let(::JSONObject) ?: return null
-        val chain = json.optJSONArray("chain")?.let { values ->
-            buildList {
-                for (index in 0 until values.length()) {
-                    values.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+    fun load(identity: GameCloudIdentity): GameSaveHeadState? = synchronized(LOCK) {
+        runCatching {
+            val json = preferences.getString(key(identity), null)?.let(::JSONObject) ?: return@synchronized null
+            val chain = json.optJSONArray("chain")?.let { values ->
+                buildList {
+                    for (index in 0 until values.length()) {
+                        values.optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+                    }
                 }
+            }.orEmpty()
+            GameSaveHeadState(
+                snapshotId = json.getString("snapshotId"),
+                fileName = json.getString("fileName"),
+                manifestHash = json.optString("manifestHash"),
+                chain = chain,
+                savedAtMillis = json.getLong("savedAtMillis"),
+                contentModifiedAtMillis = json.optLong("contentModifiedAtMillis"),
+                nativeHead = json.optString("nativeHead").trim(),
+                publishedSnapshotId = json.optString("publishedSnapshotId"),
+                announcedAtMillis = json.optLong("announcedAtMillis"),
+            ).also { state ->
+                require(state.chain.lastOrNull() == state.snapshotId) { "本地同步链无效" }
             }
-        }.orEmpty()
-        GameSaveHeadState(
-            snapshotId = json.getString("snapshotId"),
-            fileName = json.getString("fileName"),
-            manifestHash = json.optString("manifestHash"),
-            chain = chain,
-            savedAtMillis = json.getLong("savedAtMillis"),
-            contentModifiedAtMillis = json.optLong("contentModifiedAtMillis"),
-            nativeHead = json.optString("nativeHead").trim(),
-            publishedSnapshotId = json.optString("publishedSnapshotId"),
-            announcedAtMillis = json.optLong("announcedAtMillis"),
-        ).also { state ->
-            require(state.chain.lastOrNull() == state.snapshotId) { "本地同步链无效" }
-        }
-    }.getOrNull()
+        }.getOrNull()
+    }
 
-    @Synchronized
-    fun save(identity: GameCloudIdentity, state: GameSaveHeadState) {
+    fun save(identity: GameCloudIdentity, state: GameSaveHeadState) = synchronized(LOCK) {
         require(state.snapshotId.isNotBlank() && state.fileName.isNotBlank()) { "本地同步状态无效" }
         require(state.chain.lastOrNull() == state.snapshotId) { "本地同步链无效" }
         val json = JSONObject()
@@ -446,6 +446,7 @@ class GameSaveHeadStore(context: Context) {
 
     private companion object {
         const val PREFERENCES = "savevault_game_save_heads"
+        val LOCK = Any()
     }
 }
 

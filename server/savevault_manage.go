@@ -474,6 +474,21 @@ func (s *server) rollbackSaveVaultDelete(kind, gameID, key, trashDir string, mov
 		}
 	}
 	if ok {
+		hasRemainingArchives := false
+		if entries, err := os.ReadDir(trashDir); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".zip") {
+					hasRemainingArchives = true
+					break
+				}
+			}
+		}
+		if hasRemainingArchives {
+			// Earlier attempts of a continued delete still have archives in
+			// trashDir; keep trashDir and the tombstone intact so a retry can
+			// finish without permanently destroying already-trashed archives.
+			return false
+		}
 		if err := s.manageRemoveAll(trashDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			// All moved archives are back in the live directory; a leftover
 			// trash directory is harmless and must not keep clients blocked.
@@ -525,6 +540,11 @@ func (s *server) handleDeleteSaveVaultScope(w http.ResponseWriter, r *http.Reque
 	if stored.Head != expected {
 		s.saveVaultMu.Unlock()
 		writeSaveVaultPreconditionFailed(w, stored.Head)
+		return
+	}
+	if hasTombstone && tombstone.State == saveVaultTombstoneRetired {
+		s.saveVaultMu.Unlock()
+		writeError(w, http.StatusConflict, "SaveVault scope is merged; unretire it first")
 		return
 	}
 	// Scopes merged into this one name it as their successor. Deleting it would
@@ -615,6 +635,14 @@ func (s *server) handleDeleteSaveVaultScope(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	catalogEntries := make(map[string]saveVaultFileMetadata)
+	if continuation {
+		var existingCatalog map[string]saveVaultFileMetadata
+		if err := readJSONFile(filepath.Join(trashDir, "catalog.json"), &existingCatalog); err == nil {
+			for name, metadata := range existingCatalog {
+				catalogEntries[name] = metadata
+			}
+		}
+	}
 	for _, name := range files {
 		if metadata, ok := s.saveVaultCatalog.Files[saveVaultCatalogKey(kind, name)]; ok {
 			catalogEntries[name] = metadata
@@ -1732,6 +1760,11 @@ func (s *server) runSaveVaultMaintenance(dryRun bool, now time.Time) (saveVaultM
 		}
 		kind, gameID, ok := parseSaveVaultManageScopeKey(key)
 		if !ok {
+			continue
+		}
+		if live, liveExists := s.saveVaultState.Scopes[saveVaultScopeKey(kind, gameID)]; liveExists &&
+			tombstone.Head != "" && live.Head == tombstone.Head && len(live.Snapshots) == tombstone.Snapshots {
+			slog.Warn("skipping auto-purge of interrupted SaveVault delete", "scope", key)
 			continue
 		}
 		if dryRun {

@@ -112,7 +112,7 @@ const pathMarker = "# added by savevault install"
 // leaves a line behind.
 func removeFromPath(dir string) (bool, error) {
 	line := pathLineFor(dir)
-	changed := false
+	anyChanged := false
 	for _, p := range shellProfiles() {
 		raw, err := os.ReadFile(p)
 		if err != nil {
@@ -120,6 +120,7 @@ func removeFromPath(dir string) (bool, error) {
 		}
 		lines := strings.Split(string(raw), "\n")
 		kept := make([]string, 0, len(lines))
+		fileChanged := false
 		for i := 0; i < len(lines); i++ {
 			if strings.TrimSpace(lines[i]) == line {
 				// Drop the marker comment above it too, and the blank line
@@ -130,19 +131,20 @@ func removeFromPath(dir string) (bool, error) {
 						kept = kept[:n-1]
 					}
 				}
-				changed = true
+				fileChanged = true
 				continue
 			}
 			kept = append(kept, lines[i])
 		}
-		if !changed {
+		if !fileChanged {
 			continue
 		}
+		anyChanged = true
 		if err := os.WriteFile(p, []byte(strings.Join(kept, "\n")), 0o644); err != nil {
-			return changed, fmt.Errorf("update %s: %w", p, err)
+			return anyChanged, fmt.Errorf("update %s: %w", p, err)
 		}
 	}
-	return changed, nil
+	return anyChanged, nil
 }
 
 // ensureOnPath appends a PATH line to the user's shell profiles when the

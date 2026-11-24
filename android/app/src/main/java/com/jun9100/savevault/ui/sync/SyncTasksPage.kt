@@ -95,7 +95,10 @@ internal fun SyncTasksPage(
         val moved = next?.let { itemFocus[itemKeys[it]]?.tryRequestFocus() } ?: false
         if (!moved) firstPageControl.value?.tryRequestFocus()
     }
-    val cloudReady = state.gameSaveEnabled && state.gameSaveUrl.isNotBlank() && state.gameSaveSyncKey.isNotBlank()
+    val cloudReady = state.gameSaveEnabled &&
+        state.gameSaveUrl.isNotBlank() &&
+        state.gameSaveSyncKey.isNotBlank() &&
+        !state.gameSaveAuth.blocked
     HandheldPageColumns(
         commandsTitle = "同步与任务命令",
         commands = {

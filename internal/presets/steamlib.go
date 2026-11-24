@@ -41,6 +41,7 @@ func (sc *Scanner) steamRootDirs() []string {
 	roots = append(roots,
 		`C:\Program Files (x86)\Steam`,
 		`C:\Program Files\Steam`,
+		filepath.Join(home, "Library", "Application Support", "Steam"),
 		filepath.Join(home, ".local/share/Steam"),
 		filepath.Join(home, ".steam/steam"),
 		filepath.Join(home, ".var/app/com.valvesoftware.Steam/.local/share/Steam"),

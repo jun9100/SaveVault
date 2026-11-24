@@ -23,6 +23,9 @@
   let loadedFor = '';
   let attempt = 0;
   let retryTimer = null;
+  let destroyed = false;
+  let reqSeq = 0;
+  let controller = null;
 
   // Blob URLs are held by the browser until released, and a scan grid builds
   // hundreds of these.
@@ -34,7 +37,16 @@
     clearTimeout(retryTimer);
     retryTimer = null;
   };
+  const abortPending = () => {
+    if (controller) {
+      controller.abort();
+      controller = null;
+    }
+  };
   onDestroy(() => {
+    destroyed = true;
+    reqSeq++;
+    abortPending();
     release();
     cancelRetry();
   });
@@ -46,7 +58,10 @@
   const retryDelays = [1500, 5000, 15000, 45000];
 
   async function load(url, isRetry = false) {
+    if (destroyed) return;
     if (!url) {
+      reqSeq++;
+      abortPending();
       cancelRetry();
       release();
       failed = false;
@@ -55,55 +70,37 @@
       attempt = 0;
       return;
     }
-    // Already showing this one, and not the retry timer calling: leave
-    // everything alone — including any retry still pending. This reactive
-    // statement re-runs on every render, and a render happens whenever the
-    // games store updates, which is often. Cancelling here (as the first
-    // version of this did) meant the pending retry was thrown away by the
-    // next unrelated re-render and the tile never recovered after all.
     if (loadedFor === url && !isRetry) return;
     cancelRetry();
+    abortPending();
     loadedFor = url;
+    const mySeq = ++reqSeq;
+    const ac = new AbortController();
+    controller = ac;
     try {
-      // A retry skips the browser's cache. The copy in it can be the reason
-      // the first try failed: one cached from an <img> of the same URL carries
-      // no CORS headers, and a fetch handed it fails exactly as a dropped
-      // connection does — every time, for as long as it is cached (a week).
-      // The daemon now marks covers as varying by origin, so no new copy like
-      // that is made; this heals the ones made before it did.
-      const res = await fetch(url, isRetry ? { cache: 'reload' } : undefined);
+      const res = await fetch(url, isRetry ? { cache: 'reload', signal: ac.signal } : { signal: ac.signal });
+      if (destroyed || mySeq !== reqSeq) return;
       if (!res.ok) {
-        // 404 is ordinary: this game has no cover anywhere. The tile falls
-        // back to whatever the parent draws underneath. Not retried — the
-        // daemon remembers a miss for the next hour and would only answer
-        // 404 again; a cover appearing later changes the App ID or the name,
-        // which changes the url, which starts this over anyway.
         giveUp();
         return;
       }
       explicit = res.headers.get('X-Cover-Explicit') === '1';
       const blob = await res.blob();
+      if (destroyed || mySeq !== reqSeq) return;
       release();
       objectUrl = URL.createObjectURL(blob);
       failed = false;
       attempt = 0;
     } catch {
-      // Anything that is not an answer: the daemon still starting, a dropped
-      // connection, a first fetch that had to reach the network. These pass.
-      //
-      // Retried, because without it they did not. loadedFor is set before the
-      // request, and the reactive statement below only re-runs when src
-      // changes — which for a tracked game it never does. So one unlucky
-      // moment left a game showing its initials for the rest of the session,
-      // with the daemon serving that very cover from its disk cache the whole
-      // time. Every tile fails in the same moment, so it looked like a
-      // feature nobody had built.
+      if (destroyed || mySeq !== reqSeq) return;
       release();
       failed = true;
       if (attempt < retryDelays.length) {
         const delay = retryDelays[attempt++];
         retryTimer = setTimeout(() => load(url, true), delay);
       }
+    } finally {
+      if (controller === ac) controller = null;
     }
   }
 

@@ -11,6 +11,7 @@ import (
 	goruntime "runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	savevault "github.com/jun9100/savevault"
@@ -36,7 +37,8 @@ type App struct {
 	server      *api.Server
 	addr        string
 	bootErr     string
-	reallyQuit  bool
+	reallyQuit  atomic.Bool
+	trayStop    chan struct{}
 	updatedFrom string // previous version when this run is the first on a new build
 	notifyErr   error  // why desktop notifications cannot be shown, where known (notify_other.go)
 	// ready is closed when startup has finished, however it finished. The
@@ -441,7 +443,7 @@ func (a *App) WindowClose() { runtime.Quit(a.ctx) }
 // rather than beside the tray because the second happens on every platform —
 // defined only where there is a tray, it stopped the Mac app compiling.
 func (a *App) quitFromTray() {
-	a.reallyQuit = true
+	a.reallyQuit.Store(true)
 	runtime.Quit(a.ctx)
 }
 

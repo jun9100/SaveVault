@@ -107,7 +107,7 @@
   }
 </script>
 
-<Modal title={$t('cloud.export.title')} icon={Package} onClose={close}>
+<Modal title={$t('cloud.export.title')} icon={Package} closable={!exporting} onClose={close}>
   <svelte:fragment slot="sub">
     {#if !items}
       {$t('cloud.export.looking')}
@@ -155,7 +155,7 @@
     <ModalFoot>
       <span class="quiet">{$t('cloud.export.footHint')}</span>
       <div class="actions">
-        <button class="btn" on:click={close}>{$t('common.cancel')}</button>
+        <button class="btn" disabled={exporting} on:click={close}>{$t('common.cancel')}</button>
         <button class="btn primary" disabled={exporting || count === 0} on:click={run}>
           {exporting ? $t('cloud.export.exporting') : $t('cloud.export.exportCount', { n: count })}
         </button>

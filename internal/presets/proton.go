@@ -64,41 +64,45 @@ func (sc *Scanner) scanProtonCompat(libraries []string, seen map[string]bool, ap
 			if len(userHomes) == 0 {
 				continue
 			}
-			steamUser := userHomes[0]
 
 			gameName := appNames[appID]
 			perGame := 0
-			for _, root := range protonSaveRoots {
-				rootPath := filepath.Join(steamUser, root)
-				for _, sub := range listSubdirs(rootPath) {
-					if protonVendorSkip[toLowerASCII(sub)] || looksLikeHexHash(sub) {
-						continue
-					}
-					savePath := filepath.Join(rootPath, sub)
-					abs, err := filepath.Abs(savePath)
-					if err != nil || seen[abs] || !dirNonEmpty(abs) {
-						continue
-					}
-					// The Ludusavi pass already found a precise save inside
-					// this folder — the broad parent would be junk on top.
-					if seenInside(seen, abs) {
-						continue
-					}
-					seen[abs] = true
+			for _, steamUser := range userHomes {
+				for _, root := range protonSaveRoots {
+					rootPath := filepath.Join(steamUser, root)
+					for _, sub := range listSubdirs(rootPath) {
+						if protonVendorSkip[toLowerASCII(sub)] || looksLikeHexHash(sub) {
+							continue
+						}
+						savePath := filepath.Join(rootPath, sub)
+						abs, err := filepath.Abs(savePath)
+						if err != nil || seen[abs] || !dirNonEmpty(abs) {
+							continue
+						}
+						// The Ludusavi pass already found a precise save inside
+						// this folder — the broad parent would be junk on top.
+						if seenInside(seen, abs) {
+							continue
+						}
+						seen[abs] = true
 
-					name := sub
-					if gameName != "" {
-						name = fmt.Sprintf("%s (%s)", gameName, sub)
+						name := sub
+						if gameName != "" {
+							name = fmt.Sprintf("%s (%s)", gameName, sub)
+						}
+						found = append(found, DiscoveredSave{
+							ID:       "proton-" + appID + "-" + sanitizeID(root) + "-" + sanitizeID(sub),
+							Name:     name,
+							Type:     "game",
+							SavePath: savePath,
+							AppID:    appID,
+						})
+						perGame++
+						if perGame >= 12 { // a single prefix shouldn't flood the grid
+							break
+						}
 					}
-					found = append(found, DiscoveredSave{
-						ID:       "proton-" + appID + "-" + sanitizeID(root) + "-" + sanitizeID(sub),
-						Name:     name,
-						Type:     "game",
-						SavePath: savePath,
-						AppID:    appID,
-					})
-					perGame++
-					if perGame >= 12 { // a single prefix shouldn't flood the grid
+					if perGame >= 12 {
 						break
 					}
 				}

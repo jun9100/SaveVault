@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
 import com.jun9100.savevault.ops.ready
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.Executors
 
 /**
  * Watches the save directories the library already knows about and asks for a
@@ -30,6 +31,7 @@ import java.nio.file.Files
  */
 class SaveWatchService : Service() {
     private val handler = Handler(Looper.getMainLooper())
+    private val ioExecutor = Executors.newSingleThreadExecutor()
     private val observers = mutableListOf<FileObserver>()
     private var watched = listOf<String>()
     @Volatile
@@ -57,6 +59,7 @@ class SaveWatchService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                startForegroundWithNotification()
                 val dirs = if (intent == null) {
                     SaveWatchPolicy.watchedDirectories(applicationContext)
                 } else {
@@ -64,25 +67,37 @@ class SaveWatchService : Service() {
                         SaveWatchPolicy.saveWatchedDirectories(applicationContext, it)
                     }
                 }
-                val watchTargets = resolveWatchTargets(dirs)
-                if (watchTargets.isEmpty()) {
-                    stopObservers()
-                    watched = emptyList()
-                    stopSelf()
-                    return START_NOT_STICKY
+                ioExecutor.execute {
+                    if (destroyed) return@execute
+                    val watchTargets = resolveWatchTargets(dirs)
+                    handler.post {
+                        if (destroyed) return@post
+                        if (watchTargets.isEmpty()) {
+                            stopObservers()
+                            watched = emptyList()
+                            stopSelf()
+                            return@post
+                        }
+                        if (watchTargets != watched) {
+                            stopObservers()
+                            startObservers(watchTargets)
+                        }
+                    }
                 }
-                if (watchTargets != watched) {
-                    stopObservers()
-                    startObservers(watchTargets)
-                }
-                startForegroundWithNotification()
             }
         }
         return START_STICKY
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 enforces a 6h/24h quota on dataSync foreground services;
+        // stop cleanly here so periodic AutoBackupWorker continues as fallback.
+        stopSelf()
+    }
+
     override fun onDestroy() {
         destroyed = true
+        ioExecutor.shutdownNow()
         stopObservers()
         handler.removeCallbacks(flush)
         super.onDestroy()

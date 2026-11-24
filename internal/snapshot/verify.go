@@ -45,6 +45,10 @@ func VerifyArchive(path string) error {
 		return fmt.Errorf("%w: its archive cannot be opened: %v", ErrDamaged, err)
 	}
 	defer r.Close()
+	if len(r.File) > maxArchiveEntries {
+		return fmt.Errorf("%w: archive contains too many entries (%d > %d)", ErrDamaged, len(r.File), maxArchiveEntries)
+	}
+	remaining := maxArchiveExtractBytes
 	for _, f := range r.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -53,7 +57,7 @@ func VerifyArchive(path string) error {
 		if err != nil {
 			return fmt.Errorf("%w: %s cannot be read: %v", ErrDamaged, f.Name, err)
 		}
-		_, err = io.Copy(io.Discard, rc)
+		n, err := io.Copy(io.Discard, io.LimitReader(rc, remaining+1))
 		rc.Close()
 		if err != nil {
 			if errors.Is(err, zip.ErrChecksum) {
@@ -61,6 +65,10 @@ func VerifyArchive(path string) error {
 			}
 			return fmt.Errorf("%w: %s cannot be read: %v", ErrDamaged, f.Name, err)
 		}
+		if n > remaining {
+			return fmt.Errorf("%w: archive exceeds maximum verified size", ErrDamaged)
+		}
+		remaining -= n
 	}
 	return nil
 }

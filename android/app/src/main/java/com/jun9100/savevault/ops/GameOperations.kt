@@ -22,11 +22,13 @@ import com.jun9100.savevault.GameSaveConfigStore
 import com.jun9100.savevault.GameSaveDeviceStore
 import com.jun9100.savevault.GameSaveHeadPublisher
 import com.jun9100.savevault.GameSaveHeadReader
+import com.jun9100.savevault.GameSaveNativeCandidate
 import com.jun9100.savevault.GameSaveNativeProtocol
 import com.jun9100.savevault.GameSaveNativePublishResult
 import com.jun9100.savevault.GameSaveNativeSync
 import com.jun9100.savevault.GameSaveRemoteAction
 import com.jun9100.savevault.GameSaveScopeGoneException
+import com.jun9100.savevault.GameSaveScopeSnapshot
 import com.jun9100.savevault.GameSaveScopesUnsupportedException
 import com.jun9100.savevault.GameSnapshotLocation
 import com.jun9100.savevault.GameSnapshotManifest
@@ -818,6 +820,8 @@ internal class GameOperations(
     suspend fun restoreCloudPullLocked(
         candidate: CloudPullCandidate,
         archive: File,
+        config: GameSaveConfig? = null,
+        head: GameSaveScopeSnapshot? = null,
     ): Result<Unit> = runCatching {
         require(archive.isFile) { "云端存档文件不存在" }
         val workingRoot = File(app.filesDir, ".cloud-pull-${UUID.randomUUID()}")
@@ -851,6 +855,13 @@ internal class GameOperations(
                 archivePath = "location-0000",
                 candidate = false,
             )
+            val manifest = GameSnapshotManifest(
+                gameKey = candidate.gameKey,
+                gameName = candidate.game.displayName,
+                locations = listOf(location),
+            )
+            manifest.write(File(stagedRoot, GameSnapshotManifest.FILE_NAME))
+            val restoredFingerprint = AutoBackupPolicy.fingerprint(stagedRoot)
             val rootSource = SourceSelection.Root(candidate.root.path)
             withContext(NonCancellable) {
                 rootStorage.restoreGameLocations(
@@ -859,6 +870,28 @@ internal class GameOperations(
                     stagedRoot,
                     createMissing = true,
                 ).getOrThrow()
+                if (config != null && head != null && GameSaveNativeProtocol.archiveName(head.archive) != null) {
+                    val identity = GameCloudIdentity(
+                        saveType = candidate.game.scopeType,
+                        gameId = candidate.game.scopeGameId,
+                        desktopCompatible = true,
+                    )
+                    val nativeCandidate = GameSaveNativeCandidate(
+                        remote = RemoteSnapshot(
+                            type = candidate.game.scopeType.id,
+                            name = head.archive,
+                            sizeBytes = archive.length(),
+                            modified = head.receivedAt.ifBlank { head.createdAt },
+                        ),
+                        snapshot = head,
+                    )
+                    GameSaveNativeSync(app, config).markRemoteRestore(
+                        identity = identity,
+                        candidate = nativeCandidate,
+                        manifestHash = restoredFingerprint.manifestHash,
+                        archiveFile = archive,
+                    )
+                }
             }
         } finally {
             workingRoot.deleteRecursively()

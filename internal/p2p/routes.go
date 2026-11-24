@@ -75,6 +75,24 @@ const unsignedRefusal = "Unauthorized: this request was not signed with the key 
 // (matching the JS guard's side effects).
 func (e *Engine) requirePairedPeer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveSigned := func(peerID string, req *http.Request) {
+			reqNonce := lanRequestHeader(req, lanAuthNonceHeader, legacyLANAuthNonceHeader)
+			if peerID != "" && reqNonce != "" && req.URL.Path != "/api/p2p/app-binary" {
+				lw := &lanSigningWriter{w: w}
+				next.ServeHTTP(lw, req)
+				status := lw.status
+				if status == 0 {
+					status = http.StatusOK
+				}
+				body := lw.buf.Bytes()
+				e.signLANResponse(w, peerID, reqNonce, status, body)
+				w.WriteHeader(status)
+				_, _ = w.Write(body)
+				return
+			}
+			next.ServeHTTP(w, req)
+		}
+
 		ip := clientIP(r)
 		if isLoopbackIP(ip) {
 			// The dashboard and the CLI, which do not sign — and, on one
@@ -84,10 +102,12 @@ func (e *Engine) requirePairedPeer(next http.Handler) http.Handler {
 			// (lanPeerID) can, as it could over the network. A signature that
 			// fails is not refused here, as nothing on loopback ever was; it
 			// just identifies nobody.
-			if id, _, ok := e.verifyLANRequest(r); ok && id != "" {
+			var id string
+			if proven, _, ok := e.verifyLANRequest(r); ok && proven != "" {
+				id = proven
 				r = r.WithContext(context.WithValue(r.Context(), lanPeerKey{}, id))
 			}
-			next.ServeHTTP(w, r)
+			serveSigned(id, r)
 			return
 		}
 
@@ -191,7 +211,8 @@ func (e *Engine) requirePairedPeer(next http.Handler) http.Handler {
 		// The identity this request was matched to — proven where the peer
 		// signs, address-matched where it cannot yet. Handlers that act on a
 		// peer's behalf act on this, never on an ID in the body.
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), lanPeerKey{}, matched.ID)))
+		reqCtx := context.WithValue(r.Context(), lanPeerKey{}, matched.ID)
+		serveSigned(provenID, r.WithContext(reqCtx))
 	})
 }
 
@@ -220,7 +241,7 @@ func (e *Engine) handlePing(w http.ResponseWriter, r *http.Request) {
 			e.remindUnpaired(from, clientIP(r))
 		}
 	}
-	jsonOK(w, map[string]any{
+	payload := map[string]any{
 		"status":     "ok",
 		"paired":     paired,
 		"deviceName": settings.DeviceName,
@@ -232,7 +253,18 @@ func (e *Engine) handlePing(w http.ResponseWriter, r *http.Request) {
 		// removal from relay presence.
 		"appVersion":  version.Version,
 		"buildTimeMs": version.BuildTimeMs(),
-	})
+	}
+	if provenID, _, authOK := e.verifyLANRequest(r); authOK && provenID != "" {
+		reqNonce := lanRequestHeader(r, lanAuthNonceHeader, legacyLANAuthNonceHeader)
+		if raw, err := json.Marshal(payload); err == nil {
+			w.Header().Set("Content-Type", "application/json")
+			e.signLANResponse(w, provenID, reqNonce, http.StatusOK, raw)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(raw)
+			return
+		}
+	}
+	jsonOK(w, payload)
 }
 
 func (e *Engine) handleHandshake(w http.ResponseWriter, r *http.Request) {
@@ -727,7 +759,7 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 	// field. An unreadable extra location is logged and left out rather than
 	// listed empty, which the peer would read as everything in it being
 	// deleted.
-	extra, rootsErr := e.Store.GameRootPaths(gameID)
+	extra, rootsErr := e.Store.GameRootPaths(game.ID)
 	if rootsErr != nil {
 		extra = nil
 	}
@@ -753,7 +785,7 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 		Proto:             ServedProto(),
 		DeletionConfirmed: e.Sync.DeletionConfirmed(game.ID),
 	}
-	if latest, err := e.Snapshots.LatestSnapshot(gameID, ""); err == nil {
+	if latest, err := e.Snapshots.LatestSnapshot(game.ID, ""); err == nil {
 		resp.LatestSnapshot = &syncengine.SnapshotInfo{ID: latest.ID, Timestamp: latest.Timestamp, Comment: latest.Comment}
 	}
 	jsonOK(w, resp)
@@ -791,7 +823,7 @@ func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	base, ok := e.resolveServeRoot(game.ID, game, body.Root)
 	if !ok {
 		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
 		return
@@ -835,7 +867,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	base, ok := e.resolveServeRoot(game.ID, game, body.Root)
 	if !ok {
 		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
 		return
@@ -869,7 +901,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		if peer, ok := e.peerForLANRequest(r); ok {
 			asker = peer.Name
 		}
-		e.Sync.NoteEmptiedByPeer(gameID, asker, deleting)
+		e.Sync.NoteEmptiedByPeer(game.ID, asker, deleting)
 
 		// This side just changed without running a sync, so nothing has
 		// updated its merge-base — it still describes a state that contains
@@ -879,7 +911,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		// peer never touched. Re-derive it now rather than waiting for some
 		// later sync to happen along and put it right.
 		if peer, ok := e.peerForLANRequest(r); ok {
-			e.refreshLineageAfterDeletion(gameID, peer)
+			e.refreshLineageAfterDeletion(game.ID, peer)
 		}
 	}
 	jsonOK(w, map[string]any{"success": true})

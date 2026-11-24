@@ -554,14 +554,26 @@ class GameSaveClient(
                 runCatching { authObserver?.onSharedTokenWarning() }
             }
             if (response.code == 401) {
-                val code = runCatching {
-                    JSONObject(response.peekBody(AUTH_ERROR_BODY_LIMIT).string()).optString("code").trim()
-                }.getOrDefault("")
-                val reason = code.takeIf { it == TOKEN_REVOKED || it == SHARED_TOKEN_DISABLED } ?: UNAUTHORIZED
+                val parsed = runCatching {
+                    JSONObject(response.peekBody(AUTH_ERROR_BODY_LIMIT).string())
+                }.getOrNull()
+                val code = parsed?.optString("code")?.trim().orEmpty()
+                val errText = parsed?.optString("error")?.trim().orEmpty()
+                val reason = when {
+                    code == TOKEN_REVOKED || code == SHARED_TOKEN_DISABLED -> code
+                    errText.equals("account disabled", ignoreCase = true) -> TOKEN_REVOKED
+                    errText.equals("account expired", ignoreCase = true) -> TOKEN_REVOKED
+                    else -> UNAUTHORIZED
+                }
                 // Persist/stop background work before the caller unwinds; that path must not retry.
                 if (reason != UNAUTHORIZED) runCatching { authObserver?.onAuthRejected(reason, config.syncKey) }
                 response.close()
-                throw GameSaveAuthException(reason, authMessage(reason))
+                val msg = when {
+                    errText.equals("account disabled", ignoreCase = true) -> "该账号已被管理员停用，后台同步已暂停"
+                    errText.equals("account expired", ignoreCase = true) -> "该账号已过期，后台同步已暂停"
+                    else -> authMessage(reason)
+                }
+                throw GameSaveAuthException(reason, msg)
             }
             if (response.code == 410) {
                 throw scopeGone(response.peekBody(SCOPE_GONE_BODY_LIMIT).string(), scopeType)
@@ -575,10 +587,14 @@ class GameSaveClient(
 
     private fun requireSuccess(response: Response, operation: String) {
         if (response.isSuccessful) return
+        if (response.code == 507) {
+            throw GameSaveException("云端存储空间已满（超出配额）", retryable = false, statusCode = 507)
+        }
         val body = runCatching { response.peekBody(512L).string().take(512) }.getOrDefault("")
+        val retryable = response.code in setOf(408, 429, 500, 502, 503, 504)
         throw GameSaveException(
             "${operation}失败：HTTP ${response.code}${if (body.isBlank()) "" else " - $body"}",
-            response.code >= 500 || response.code == 408 || response.code == 429,
+            retryable,
             response.code,
         )
     }
@@ -791,7 +807,16 @@ class GameSaveClient(
             }
             response.use { res ->
                 when (res.code) {
-                    401 -> error("账号或密码不正确")
+                    401 -> {
+                        val errText = runCatching {
+                            JSONObject(readBoundedString(res, MAX_AUTH_JSON_BODY_BYTES)).optString("error").trim()
+                        }.getOrDefault("")
+                        when {
+                            errText.equals("account disabled", ignoreCase = true) -> error("该账号已被管理员停用")
+                            errText.equals("account expired", ignoreCase = true) -> error("该账号已过期")
+                            else -> error("账号或密码不正确")
+                        }
+                    }
                     404 -> error("服务器版本过旧，没有账号登录接口（/v1/login）")
                     429 -> error("登录尝试过于频繁，请稍后再试")
                 }

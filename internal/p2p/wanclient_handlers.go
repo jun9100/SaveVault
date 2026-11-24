@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,6 +133,30 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 				w.engine.Log("warn", fmt.Sprintf(
 					"could not decrypt a sync update from %s: %v", msg.From, err))
 				return
+			}
+			// Verify authenticated envelope binding and replay protection when present.
+			var env struct {
+				Meta *struct {
+					GameID    string `json:"gameId"`
+					EventType string `json:"eventType"`
+					TS        int64  `json:"ts"`
+					Nonce     string `json:"nonce"`
+				} `json:"_meta"`
+			}
+			if json.Unmarshal(plain, &env) == nil && env.Meta != nil {
+				if env.Meta.GameID != msg.GameID || env.Meta.EventType != msg.EventType {
+					w.engine.Log("warn", fmt.Sprintf("discarded tampered sync-event envelope from %s", msg.From))
+					return
+				}
+				now := time.Now().UnixMilli()
+				skew := now - env.Meta.TS
+				if skew < 0 {
+					skew = -skew
+				}
+				if env.Meta.Nonce == "" || skew > e2ee.MaxAuthSkew || !w.engine.nonces().remember(env.Meta.Nonce, now) {
+					w.engine.Log("warn", fmt.Sprintf("discarded stale or replayed sync-event from %s", msg.From))
+					return
+				}
 			}
 			msg.Data = plain
 		}
@@ -646,16 +671,24 @@ func (w *WanClient) serveManifest(route string, body json.RawMessage, peerID str
 	}
 	defer readDone()
 
-	manifest, err := delta.BuildManifest(game.SavePath)
+	extra, rootsErr := w.engine.Store.GameRootPaths(game.ID)
+	if rootsErr != nil {
+		extra = nil
+	}
+	manifest, failures, err := delta.BuildMultiManifest(game.SavePath, extra)
 	if err != nil {
 		return 500, map[string]string{"error": err.Error()}
 	}
+	for name, failure := range failures {
+		w.engine.Log("warn", fmt.Sprintf("could not read the %q location of %q: %v — it is left out of this sync", name, game.Name, failure))
+	}
 	w.engine.Sync.NoteServed(game.ID, peerID, manifest) // syncengine/served.go
 	resp := map[string]any{
-		"gameId": gameID, "activeBranch": game.ActiveBranch, "manifest": manifest,
+		"gameId": game.ID, "activeBranch": game.ActiveBranch, "manifest": manifest,
+		"proto":             ServedProto(),
 		"deletionConfirmed": w.engine.Sync.DeletionConfirmed(game.ID),
 	}
-	if latest, err := w.engine.Snapshots.LatestSnapshot(gameID, ""); err == nil {
+	if latest, err := w.engine.Snapshots.LatestSnapshot(game.ID, ""); err == nil {
 		resp["latestSnapshot"] = syncengine.SnapshotInfo{ID: latest.ID, Timestamp: latest.Timestamp, Comment: latest.Comment}
 	} else {
 		resp["latestSnapshot"] = nil
@@ -667,6 +700,7 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 	gameID := route[strings.LastIndex(route, "/")+1:]
 	var body struct {
 		RelPath      string   `json:"relPath"`
+		Root         string   `json:"root"`
 		BlockIndices []int    `json:"blockIndices"`
 		BlockSize    int      `json:"blockSize"`
 		Encodings    []string `json:"encodings"`
@@ -679,7 +713,11 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 	if err != nil {
 		return 404, map[string]string{"error": "Game not found."}
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := w.engine.resolveServeRoot(game.ID, game, body.Root)
+	if !ok {
+		return 404, map[string]string{"error": "This device has no save location named " + strconv.Quote(body.Root) + " for that game."}
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		return 403, map[string]string{"error": "Access denied: path traversal attempt detected."}
 	}
 
@@ -687,9 +725,9 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 	// (composed) spelling, while the file on this disk may be stored
 	// decomposed — a macOS save. Joining the key verbatim would fail to
 	// find the very file this device just offered.
-	fullPath := delta.LocalNameFor(game.SavePath, body.RelPath)
-	if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
-		fullPath = game.SavePath
+	fullPath := delta.LocalNameFor(base, body.RelPath)
+	if isFile, _ := delta.ResolveLocalSaveFilePath(base); isFile {
+		fullPath = base
 	}
 	blocks, err := delta.ReadBlocks(fullPath, body.BlockIndices, body.BlockSize)
 	if err != nil {
@@ -712,6 +750,7 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage, fromP
 	gameID := route[strings.LastIndex(route, "/")+1:]
 	var body struct {
 		RelPath string `json:"relPath"`
+		Root    string `json:"root"`
 	}
 	if err := json.Unmarshal(rawBody, &body); err != nil || body.RelPath == "" {
 		return 400, map[string]string{"error": "relPath is required."}
@@ -720,14 +759,18 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage, fromP
 	if err != nil {
 		return 404, map[string]string{"error": "Game not found."}
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := w.engine.resolveServeRoot(game.ID, game, body.Root)
+	if !ok {
+		return 404, map[string]string{"error": "This device has no save location named " + strconv.Quote(body.Root) + " for that game."}
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		return 403, map[string]string{"error": "invalid path"}
 	}
 	// Resolved, not joined: this device's manifest advertises the agreed
 	// (composed) spelling, while the file on this disk may be stored
 	// decomposed — a macOS save. Joining the key verbatim would fail to
 	// find the very file this device just offered.
-	full := delta.LocalNameFor(game.SavePath, body.RelPath)
+	full := delta.LocalNameFor(base, body.RelPath)
 	_ = os.Chmod(full, 0o666)
 	deleting := time.Now()
 	// Remembered as on the LAN route (syncengine/peerdeleted.go).
@@ -738,22 +781,24 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage, fromP
 	}
 	if os.Remove(full) == nil {
 		if statErr == nil && (info.IsDir() || entry.Hash != "") {
-			w.engine.Sync.NotePeerDeletion(game.ID, "", body.RelPath, entry, info.IsDir())
+			w.engine.Sync.NotePeerDeletion(game.ID, body.Root, body.RelPath, entry, info.IsDir())
 		}
 		asker := "another device"
 		if peer, err := w.engine.Store.GetPeer(fromPeerID); err == nil {
 			asker = peer.Name
 		}
-		w.engine.Sync.NoteEmptiedByPeer(gameID, asker, deleting)
+		w.engine.Sync.NoteEmptiedByPeer(game.ID, asker, deleting)
 	}
 
 	if peer, pErr := w.engine.Store.GetPeer(fromPeerID); pErr == nil {
-		w.engine.refreshLineageAfterDeletion(gameID, syncengine.Peer{
+		w.engine.refreshLineageAfterDeletion(game.ID, syncengine.Peer{
 			ID: peer.ID, Name: peer.Name, Address: peer.Address, Port: peer.Port, IsWan: true,
 		})
 	}
 	return 200, map[string]any{"success": true}
 }
+
+const maxWANSnapshotDownloadBytes = 10 << 20 // 10 MiB raw (~13.3 MiB base64 < 16 MiB relay frame)
 
 func (w *WanClient) serveSnapshotDownload(route string) (int, any) {
 	parts := strings.Split(strings.Trim(route, "/"), "/")
@@ -770,8 +815,15 @@ func (w *WanClient) serveSnapshotDownload(route string) (int, any) {
 	if err != nil {
 		return 404, map[string]string{"error": "Snapshot ZIP file not found."}
 	}
+	defer done()
+	info, err := os.Stat(archive)
+	if err != nil {
+		return 404, map[string]string{"error": "Snapshot ZIP file not found."}
+	}
+	if info.Size() > maxWANSnapshotDownloadBytes {
+		return 413, map[string]string{"error": "Snapshot archive exceeds WAN relay download size limit."}
+	}
 	raw, err := os.ReadFile(archive)
-	done()
 	if err != nil {
 		return 404, map[string]string{"error": "Snapshot ZIP file not found."}
 	}

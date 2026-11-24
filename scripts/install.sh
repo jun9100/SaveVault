@@ -212,26 +212,31 @@ tmp="$(mktemp -d)"
 # shellcheck disable=SC2064  # expand tmp now, not at trap time
 trap "rm -rf '$tmp'" EXIT INT TERM
 
-say "Downloading SaveVault ($VERSION, linux/$arch)…"
+say "Downloading SaveVault ($VERSION, $platform/$arch)…"
 fetch "$BASE/$ASSET" "$tmp/$ASSET" || die "could not download $BASE/$ASSET"
 
 # Verify against the published checksums when they exist. Releases before
 # 2.2.0 predate SHA256SUMS, so a missing file is a warning, not a failure.
 if fetch "$BASE/SHA256SUMS" "$tmp/SHA256SUMS" 2>/dev/null; then
+    actual=""
     if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$tmp/$ASSET" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{print $1}')"
+    fi
+    if [ -n "$actual" ]; then
         # Tolerate both sha256sum spellings: "<hash>  file" (text mode) and
         # "<hash> *file" (binary mode).
         expected="$(awk -v want="$ASSET" '
             { name = $NF; sub(/^\*/, "", name)
               if (name == want) { print $1; exit } }' "$tmp/SHA256SUMS")"
-        actual="$(sha256sum "$tmp/$ASSET" | awk '{print $1}')"
         [ -n "$expected" ] || die "no checksum for $ASSET in SHA256SUMS"
         [ "$expected" = "$actual" ] || die "checksum mismatch — refusing to install
   expected: $expected
   actual:   $actual"
         say "Checksum verified."
     else
-        say "warning: sha256sum not found — skipping checksum verification"
+        say "warning: neither sha256sum nor shasum found — skipping checksum verification"
     fi
 else
     say "warning: this release publishes no SHA256SUMS — skipping verification"

@@ -27,6 +27,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 class AutoBackupScheduler(context: Context) {
@@ -700,14 +701,16 @@ class AutoBackupWorker(
                 repository = repository,
                 identity = identity,
             )
-            rootStorage.restoreGameLocations(rootSource.path, manifest.locations, restoreRoot).getOrThrow()
-            GameSaveHeadPublisher(applicationContext, config).markRemoteRestore(
-                identity = identity,
-                remote = candidate.archive,
-                manifestHash = restoredFingerprint.manifestHash,
-                archiveFile = remoteArchive,
-                remoteHead = candidate,
-            )
+            withContext(NonCancellable) {
+                rootStorage.restoreGameLocations(rootSource.path, manifest.locations, restoreRoot).getOrThrow()
+                GameSaveHeadPublisher(applicationContext, config).markRemoteRestore(
+                    identity = identity,
+                    remote = candidate.archive,
+                    manifestHash = restoredFingerprint.manifestHash,
+                    archiveFile = remoteArchive,
+                    remoteHead = candidate,
+                )
+            }
             return GameBackupOutcome.Restored
         } finally {
             workingRoot.deleteRecursively()

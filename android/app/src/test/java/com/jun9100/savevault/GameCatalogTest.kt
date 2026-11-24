@@ -172,4 +172,20 @@ class GameCatalogTest {
         assertEquals("dev.eden.eden_emulator", presentation.androidPackageName)
         assertEquals(GameIconKey.ANDROID, presentation.iconKey)
     }
+
+    @Test
+    fun doesNotTreatDottedPcTitlesAsAndroidPackages() {
+        val presentation = GameCatalog.present(
+            DetectedSave(
+                kind = "gamehub-pc",
+                relativePath = "S.T.A.L.K.E.R/Saved",
+                note = "test",
+                displayName = "S.T.A.L.K.E.R",
+                gameKey = "pc:s.t.a.l.k.e.r",
+            ),
+        )
+
+        assertNull(presentation.androidPackageName)
+        assertEquals(GameIconKey.PC, presentation.iconKey)
+    }
 }

@@ -11,7 +11,8 @@ mkdir -p "$APPS" "$ICONS"
 cp "$HERE/savevault.png" "$ICONS/savevault.png"
 
 # Point Exec at the binary wherever the user extracted it.
-sed "s|^Exec=.*|Exec=$HERE/savevault|" "$HERE/savevault.desktop" > "$APPS/savevault.desktop"
+ESCAPED_HERE="$(printf '%s' "$HERE" | sed 's/[&|\\]/\\&/g')"
+sed "s|^Exec=.*|Exec=\"$ESCAPED_HERE/savevault\"|" "$HERE/savevault.desktop" > "$APPS/savevault.desktop"
 chmod +x "$APPS/savevault.desktop" "$HERE/savevault" 2>/dev/null || true
 
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" || true

@@ -17,11 +17,6 @@ data class SteamNameMetadata(
 /** Resolves unknown Steam AppIDs without making the scanner depend on a network. */
 class SteamMetadataRepository(context: Context) {
     private val directory = File(context.filesDir, "steam-metadata")
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .build()
 
     suspend fun enrich(presentation: GamePresentation): GamePresentation = withContext(Dispatchers.IO) {
         val appId = presentation.steamAppId ?: return@withContext presentation
@@ -46,7 +41,7 @@ class SteamMetadataRepository(context: Context) {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@runCatching null
-            val body = response.body?.string().orEmpty()
+            val body = response.peekBody(MAX_METADATA_BYTES).string()
             parse(body, appId)
         }
     }.getOrNull()
@@ -83,6 +78,15 @@ class SteamMetadataRepository(context: Context) {
         private fun isCjk(character: Char): Boolean =
             character in '\u4E00'..'\u9FFF' || character in '\u3400'..'\u4DBF'
 
+        private val client: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build()
+        }
+
+        private const val MAX_METADATA_BYTES = 2L * 1024L * 1024L
         private const val TIMEOUT_MS = 15L * 1000L
     }
 }

@@ -449,7 +449,7 @@
       <h3 class="section-title with-icon"><Globe size={17} />{$t('settings.relay.title')}</h3>
       <div class="field">
         <label for="s-relay-url">{$t('settings.relay.url')}</label>
-        <input id="s-relay-url" class:invalid={unsaved.includes('relayUrl')} bind:value={draft.relayUrl} placeholder="wss://relay.example.com" />
+        <input id="s-relay-url" class:invalid={unsaved.includes('relayUrl')} disabled={$settings?.relayUrlLocked} bind:value={draft.relayUrl} placeholder="wss://relay.example.com" />
         <span class="hint">{#each segments($t('settings.relay.urlHint'), { internetSync: $t('settings.relay.internetSync') }, ['internetSync']) as part}{#if part.bold}<strong>{part.text}</strong>{:else}{part.text}{/if}{/each}</span>
       </div>
       <label class="check">

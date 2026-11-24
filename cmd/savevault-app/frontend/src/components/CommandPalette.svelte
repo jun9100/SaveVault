@@ -101,8 +101,12 @@
   }
 
   async function syncAll() {
-    for (const g of $visibleGames) api.post(`/api/games/${g.id}/sync`).catch(() => {});
-    toast(tt('palette.toast.syncTriggered'));
+    try {
+      await api.post('/api/games/sync-all');
+      toast(tt('palette.toast.syncTriggered'));
+    } catch (e) {
+      toast(trError(e.message), 'error');
+    }
   }
 
   function choose(entry) {

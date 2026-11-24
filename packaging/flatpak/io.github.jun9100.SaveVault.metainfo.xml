@@ -25,7 +25,7 @@
     </ul>
   </description>
   <launchable type="desktop-id">io.github.jun9100.SaveVault.desktop</launchable>
-  <url type="homepage">https://open-save.vercel.app/</url>
+  <url type="homepage">https://github.com/jun9100/SaveVault</url>
   <url type="bugtracker">https://github.com/jun9100/SaveVault/issues</url>
   <url type="vcs-browser">https://github.com/jun9100/SaveVault</url>
   <categories>

@@ -99,11 +99,17 @@ func (e *Engine) handleAppBinary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	e.Log("info", "serving app binary to paired peer "+clientIP(r))
+	buildTimeStr := strconv.FormatInt(version.BuildTimeMs(), 10)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	w.Header().Set("X-App-Version", version.Version)
-	w.Header().Set("X-Build-Time-Ms", strconv.FormatInt(version.BuildTimeMs(), 10))
+	w.Header().Set("X-Build-Time-Ms", buildTimeStr)
 	w.Header().Set("X-App-Sha256", sha)
+	if peerID := lanPeerID(r); peerID != "" {
+		reqNonce := lanRequestHeader(r, lanAuthNonceHeader, legacyLANAuthNonceHeader)
+		e.signLANResponse(w, peerID, reqNonce, http.StatusOK,
+			[]byte("app-binary:"+sha+":"+version.Version+":"+buildTimeStr))
+	}
 	_, _ = io.Copy(w, f)
 }
 
@@ -178,6 +184,7 @@ func (e *Engine) downloadPeerBinaryLAN(ctx context.Context, peerID, address stri
 		return PeerBuild{}, err
 	}
 	e.signLANRequest(req, peerID, nil)
+	reqNonce := req.Header.Get(lanAuthNonceHeader)
 	resp, err := (&http.Client{Timeout: 15 * time.Minute}).Do(req)
 	if err != nil {
 		return PeerBuild{}, err
@@ -189,8 +196,16 @@ func (e *Engine) downloadPeerBinaryLAN(ctx context.Context, peerID, address stri
 	}
 
 	build := PeerBuild{AppVersion: resp.Header.Get("X-App-Version")}
-	build.BuildTimeMs, _ = strconv.ParseInt(resp.Header.Get("X-Build-Time-Ms"), 10, 64)
-	wantSHA := resp.Header.Get("X-App-Sha256")
+	buildTimeHeader := resp.Header.Get("X-Build-Time-Ms")
+	build.BuildTimeMs, _ = strconv.ParseInt(buildTimeHeader, 10, 64)
+	wantSHA := strings.TrimSpace(resp.Header.Get("X-App-Sha256"))
+	if wantSHA == "" {
+		return PeerBuild{}, fmt.Errorf("peer omitted binary checksum header")
+	}
+	if err := e.verifyLANResponse(peerID, reqNonce, resp,
+		[]byte("app-binary:"+wantSHA+":"+build.AppVersion+":"+buildTimeHeader)); err != nil {
+		return PeerBuild{}, fmt.Errorf("peer binary header authentication failed: %w", err)
+	}
 
 	out, err := os.Create(destPath)
 	if err != nil {

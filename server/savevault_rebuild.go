@@ -95,6 +95,12 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 	defer s.saveVaultMu.Unlock()
 	next := s.saveVaultState.clone()
 	for key, item := range newest {
+		if _, blocked := s.saveVaultScopeBlockedLocked(item.kind, item.gameID); blocked {
+			continue
+		}
+		if !s.saveVaultArchiveExistsLocked(item.kind, item.archive) {
+			continue
+		}
 		stored, exists := s.saveVaultState.Scopes[key]
 		if exists && stored.Head != "" {
 			if snapshot, ok := stored.Snapshots[stored.Head]; ok && s.saveVaultArchiveExistsLocked(item.kind, snapshot.Archive) {
@@ -112,7 +118,7 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 		} else {
 			scope = stored.clone()
 		}
-		if _, present := scope.Snapshots[item.snapshot]; !present {
+		if existing, present := scope.Snapshots[item.snapshot]; !present {
 			scope.Snapshots[item.snapshot] = saveVaultScopeSnapshot{
 				saveVaultScopeCandidate: saveVaultScopeCandidate{
 					ID:            item.snapshot,
@@ -122,6 +128,10 @@ func (s *server) rebuildSaveVaultHeadsFromArchives(dryRun bool) (rebuildReport, 
 				},
 				ReceivedAt: time.Now().UTC(),
 			}
+		} else if existing.Conflict {
+			existing.Conflict = false
+			existing.ConflictOf = ""
+			scope.Snapshots[item.snapshot] = existing
 		}
 		scope.Head = item.snapshot
 		next.Scopes[key] = scope

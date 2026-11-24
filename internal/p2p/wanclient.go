@@ -276,7 +276,7 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	w.targetURL = settings.RelayURL
 	w.mu.Unlock()
 	if firstAttempt {
-		w.engine.Log("info", fmt.Sprintf("connecting to WAN relay %s (room %s)", settings.RelayURL, settings.SyncCode))
+		w.engine.Log("info", fmt.Sprintf("connecting to WAN relay %s", settings.RelayURL))
 	}
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, 15*time.Second)

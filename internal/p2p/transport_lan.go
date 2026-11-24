@@ -188,7 +188,7 @@ func (t *lanTransport) getJSON(ctx context.Context, peer syncengine.Peer, url st
 		return err
 	}
 	t.sign(req, peer, nil)
-	return doJSON(req, out)
+	return t.doJSON(req, peer.ID, out)
 }
 
 func (t *lanTransport) postJSON(ctx context.Context, peer syncengine.Peer, url string, body any, out any) error {
@@ -202,7 +202,7 @@ func (t *lanTransport) postJSON(ctx context.Context, peer syncengine.Peer, url s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	t.sign(req, peer, raw)
-	return doJSON(req, out)
+	return t.doJSON(req, peer.ID, out)
 }
 
 // sign attaches proof that this request came from the device it claims to.
@@ -223,14 +223,28 @@ func (t *lanTransport) sign(req *http.Request, peer syncengine.Peer, body []byte
 	t.engine.signLANRequest(req, peer.ID, body)
 }
 
-func doJSON(req *http.Request, out any) error {
+const maxLANResponseBodyBytes = 32 << 20 // 32 MiB
+
+func (t *lanTransport) doJSON(req *http.Request, peerID string, out any) error {
+	reqNonce := req.Header.Get(lanAuthNonceHeader)
 	resp, err := lanClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxLANResponseBodyBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(raw) > maxLANResponseBodyBytes {
+		return fmt.Errorf("peer response exceeded size limit")
+	}
+	if t.engine != nil && reqNonce != "" && resp.StatusCode < 400 {
+		if authErr := t.engine.verifyLANResponse(peerID, reqNonce, resp, raw); authErr != nil {
+			return authErr
+		}
+	}
 	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		if isPausedRefusal(resp.StatusCode, raw) {
 			return syncengine.ErrPeerPaused
 		}
@@ -239,7 +253,46 @@ func doJSON(req *http.Request, out any) error {
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.Unmarshal(raw, out)
+}
+
+// pingPeerAuthenticated probes a candidate LAN address for a paired peer using
+// a signed ping request and verifies the peer's signed response MAC so an
+// unauthenticated LAN host cannot hijack a peer's Address/Port via spoofed UDP.
+func (e *Engine) pingPeerAuthenticated(ctx context.Context, peer store.Peer, address string, port int) (pingInfo, bool) {
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	fromNodeID := e.localNodeID()
+	endpoint := fmt.Sprintf("http://%s:%d/api/p2p/ping?from=%s", address, port, url.QueryEscape(fromNodeID))
+	req, err := http.NewRequestWithContext(pingCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return pingInfo{}, false
+	}
+	e.signLANRequest(req, peer.ID, nil)
+	reqNonce := req.Header.Get(lanAuthNonceHeader)
+	resp, err := lanClient.Do(req)
+	if err != nil {
+		return pingInfo{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return pingInfo{}, false
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return pingInfo{}, false
+	}
+	if reqNonce != "" {
+		if err := e.verifyLANResponse(peer.ID, reqNonce, resp, raw); err != nil {
+			e.Log("warn", fmt.Sprintf("rejected unauthenticated LAN ping response claiming to be %q at %s:%d: %v", peer.Name, address, port, err))
+			return pingInfo{}, false
+		}
+	}
+	var info pingInfo
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return pingInfo{}, false
+	}
+	return info, true
 }
 
 // pingPeer probes a paired peer's /api/p2p/ping. Reports reachability plus
@@ -292,5 +345,5 @@ func postPeerJSON(ctx context.Context, address string, port int, route string, b
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return doJSON(req, nil)
+	return (&lanTransport{}).doJSON(req, "", nil)
 }

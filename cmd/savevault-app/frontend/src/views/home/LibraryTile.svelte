@@ -50,7 +50,10 @@
     }
     wasSyncing = status.state === 'syncing';
   }
-  onDestroy(() => clearTimeout(syncedTimer));
+  onDestroy(() => {
+    clearTimeout(syncedTimer);
+    endPress();
+  });
 
   // A custom cover wins in either style; otherwise Steam's art in the shape
   // asked for, which for tall art may still come back as the banner.
@@ -158,7 +161,7 @@
          one to hide a blur's soft edge). -->
     <div class="zoom">
       {#if backdrop}
-        <div class="backdrop" style="background-image: url('{backdrop}')"></div>
+        <div class="backdrop" style:background-image={`url(${JSON.stringify(backdrop)})`}></div>
       {/if}
       {#if src && isDaemonURL(src)}
         <CoverImage {src} {revealed} on:load={measure} />

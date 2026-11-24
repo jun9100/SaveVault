@@ -1,6 +1,6 @@
 <script>
   import { settings, wanRoom, peers, toast } from '../lib/stores.js';
-  import { api } from '../lib/api.js';
+  import { api, native } from '../lib/api.js';
   import { generateRoomCode } from '../lib/roomcode.js';
   import { t, tt, trError, segments } from '../lib/i18n.js';
   import { roomProtection } from '../lib/protection.js';
@@ -13,18 +13,12 @@
 
   let codeDraft = '';
   let relayDraft = '';
+  let hydrated = false;
   let busy = false;
   let health = null;
 
-  // Seeded once, when the fields are still blank — which includes every time
-  // this view is rebuilt after a tab switch, because the drafts are component
-  // state and do not survive that.
-  //
-  // The room code comes from the live room in preference to the saved setting.
-  // They normally agree, but the room is the thing actually joined, and it can
-  // be changed from the CLI or another window; showing the stored code instead
-  // would tell you that you are in a room you have already left.
-  $: if ($settings && codeDraft === '' && relayDraft === '') {
+  $: if ($settings && !hydrated) {
+    hydrated = true;
     codeDraft = $wanRoom?.roomCode || ($settings.syncCode ?? '');
     relayDraft = $settings.relayUrl ?? '';
   }
@@ -136,8 +130,7 @@
 <p class="lead subtle">
   {#each segments($t('internet.trust'), { link: $t('internet.ownRelay') }, ['link']) as part}{#if part.bold}<a
         href="https://github.com/jun9100/SaveVault/blob/main/docs/RELAY.md"
-        target="_blank"
-        rel="noreferrer">{part.text}</a
+        on:click|preventDefault={() => native.openExternal('https://github.com/jun9100/SaveVault/blob/main/docs/RELAY.md')}>{part.text}</a
       >{:else}{part.text}{/if}{/each}
 </p>
 

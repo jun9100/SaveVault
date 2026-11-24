@@ -536,7 +536,7 @@ async function showGameMetaDialog(gameKey, refreshedMeta = null) {
     try {
       await api(gameKeyPath(gameKey, "/cover/refetch"), { method: "POST" });
       await finish("已开始从上游重新抓取封面");
-      setTimeout(() => refresh({ quiet: true }), 1800);
+      setTimeout(() => { if (!$("#app").hidden) refresh({ quiet: true }); }, 1800);
     } catch (caught) {
       refetch.disabled = false;
       await handleError(caught);
@@ -585,7 +585,10 @@ function toast(message, error = false) {
   setTimeout(() => element.remove(), error ? 5000 : 2800);
 }
 
+let activeModalClose = null;
+
 function modal(html, { className = "", onClose = null } = {}) {
+  if (activeModalClose) activeModalClose();
   const root = $("#modal-root");
   root.innerHTML = `<div class="modal ${className}" role="dialog" aria-modal="true">${html}</div>`;
   root.hidden = false;
@@ -593,10 +596,12 @@ function modal(html, { className = "", onClose = null } = {}) {
   const close = () => {
     if (closed) return;
     closed = true;
+    if (activeModalClose === close) activeModalClose = null;
     root.hidden = true;
     root.innerHTML = "";
     if (onClose) onClose();
   };
+  activeModalClose = close;
   root.onclick = (event) => { if (event.target === root) close(); };
   return { root, close };
 }
@@ -1046,7 +1051,7 @@ function activityChart(days) {
   }).join("");
   const labelIndices = [0, 7, 14, 21, days.length - 1].filter((v, i, arr) => v >= 0 && v < days.length && arr.indexOf(v) === i);
   const axis = labelIndices.map((idx) => `<span>${esc(formatDay(days[idx].date))}</span>`).join("");
-  return `<div class="bar-chart" role="img" aria-label="近 30 天上传与冲突次数">
+  return `<div class="bar-chart" role="group" aria-label="近 30 天上传与冲突次数">
     <div class="bar-chart-plot">
       <div class="bar-chart-grid" aria-hidden="true">
         <div class="bar-chart-row"><span>${max}</span><i></i></div>
@@ -2478,6 +2483,7 @@ const activityKinds = [
 function matchesActivity(item) {
   switch (store.activityFilter) {
     case "all": return true;
+    case "rollback": return item.kind === "rollback" || item.kind === "promote";
     case "maintenance": return ["prune", "prune_scope", "verify", "settings", "savevault_meta", "opensave_meta", "delete_snapshot", "delete_scope",
       "restore_scope", "retire_scope", "unretire_scope", "tombstone_cleared", "snapshot_lock", "snapshot_unlock", "retention"].includes(item.kind);
     case "device": return item.kind.startsWith("device");
@@ -2485,9 +2491,11 @@ function matchesActivity(item) {
   }
 }
 
-async function renderActivity() {
+async function renderActivity(useCached = false) {
   if (!store.events) main.innerHTML = `<div class="skeleton"></div>`;
-  store.events = (await api("events")).events;
+  if (!useCached || !store.events) {
+    store.events = (await api("events")).events;
+  }
   if (currentRoute().name !== "activity") return;
   const groups = mergeActivity(store.events).filter((group) =>
     matchesActivity(group.kind === "upload-group" ? group.items[0] : group.item));
@@ -2504,7 +2512,13 @@ async function renderActivity() {
       `<button class="chip ${store.activityFilter === key ? "active" : ""}" data-kind="${key}">${label}</button>`).join("")}</div></div>
     <section class="card"><div class="card-body list">${body || emptyState("没有活动", "当前筛选条件下没有记录。", "activity")}</div></section>`;
   main.querySelectorAll("[data-kind]").forEach((chip) => {
-    chip.onclick = () => { store.activityFilter = chip.dataset.kind; renderActivity(); };
+    chip.onclick = () => {
+      store.activityFilter = chip.dataset.kind;
+      renderActivity(true).catch((error) => {
+        if (error instanceof UnauthorizedError) showLogin();
+        else toast(error.message || String(error), true);
+      });
+    };
   });
 }
 
@@ -3018,18 +3032,20 @@ async function refresh({ quiet = false } = {}) {
   if (refreshing) return;
   refreshing = true;
   try {
-    store.saveVaultFiles = null;
-    store.saveVaultScopes = null;
-    store.saveVaultGames = null;
-    store.saveVaultScopeDetail = null;
-    store.saveVaultRetention = null;
-    store.saveVaultTombstones = null;
-    store.saveVaultRetentionPreview = null;
     await loadOverview();
     const route = currentRoute();
-    // Avoid wiping half-typed form input during background refreshes.
+    // Avoid wiping half-typed form input or active SaveVault caches during background refreshes.
     const editing = main.contains(document.activeElement) && document.activeElement.matches("input, select, textarea");
-    if (!(quiet && editing && route.name !== "overview")) await render();
+    if (!(quiet && editing && route.name !== "overview")) {
+      store.saveVaultFiles = null;
+      store.saveVaultScopes = null;
+      store.saveVaultGames = null;
+      store.saveVaultScopeDetail = null;
+      store.saveVaultRetention = null;
+      store.saveVaultTombstones = null;
+      store.saveVaultRetentionPreview = null;
+      await render();
+    }
   } catch (error) {
     if (error instanceof UnauthorizedError) showLogin();
     else if (!quiet) toast(error.message || String(error), true);
@@ -3184,6 +3200,7 @@ async function onAction(event) {
       if (await guarded(() => api(`scopes/${encodeURIComponent(scopeID)}`, { method: "DELETE" }), "存档范围已删除")) {
         store.scopeDetail = null;
         location.hash = "#/saves";
+        await refresh();
       }
       return;
     }
@@ -3321,7 +3338,17 @@ async function onAction(event) {
       target.disabled = true;
       const report = await guarded(() => api(`maintenance/prune${dry ? "?dry_run=1" : ""}`, { method: "POST" }));
       target.disabled = false;
-      if (report) { store.pruneReport = report; if (!dry) await loadOverview(); renderMaintenance(); }
+      if (report) {
+        store.pruneReport = report;
+        if (!dry) {
+          clearSaveVaultCaches();
+          store.saveVaultFiles = null;
+          store.saveVaultRetention = null;
+          await refresh();
+        } else if (currentRoute().name === "maintenance") {
+          renderMaintenance();
+        }
+      }
       return;
     }
     case "restore-tombstone": {
@@ -3385,8 +3412,10 @@ async function onAction(event) {
       target.disabled = true;
       target.innerHTML = `${icon("shield")}校验中…`;
       const report = await guarded(() => api("maintenance/verify", { method: "POST" }));
-      if (report) { store.verifyReport = report; renderMaintenance(); }
-      else { target.disabled = false; target.innerHTML = `${icon("shield")}开始校验`; }
+      if (report) {
+        store.verifyReport = report;
+        if (currentRoute().name === "maintenance") renderMaintenance();
+      } else { target.disabled = false; target.innerHTML = `${icon("shield")}开始校验`; }
       return;
     }
   }
@@ -3416,6 +3445,7 @@ function toggleTheme() {
 // ---------- session ----------
 
 function showLogin() {
+  if (activeModalClose) activeModalClose();
   store.overview = null;
   store.overviewSaveVaultGames = null;
   store.scopeDetail = null;
@@ -3433,6 +3463,13 @@ function showLogin() {
   store.users = null;
   store.pruneReport = null;
   store.verifyReport = null;
+  store.savesQuery = "";
+  store.saveVaultQuery = "";
+  store.saveVaultType = "all";
+  store.activityFilter = "all";
+  $("#nav-saves").textContent = "";
+  $("#nav-savevault").textContent = "";
+  $("#nav-devices").textContent = "";
   main.innerHTML = "";
   const modalRoot = $("#modal-root");
   if (modalRoot) {
@@ -3479,7 +3516,7 @@ if (loginTokenToggle) {
 $("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const error = $("#login-error");
-  const button = event.target.querySelector("button");
+  const button = event.target.querySelector('button[type="submit"]');
   error.textContent = "";
   button.disabled = true;
   try {

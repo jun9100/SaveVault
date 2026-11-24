@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -662,6 +663,10 @@ func (s *server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	}
 	if target.ID == stored.Head {
 		writeError(w, http.StatusConflict, "snapshot is already current")
+		return
+	}
+	if info, err := os.Stat(s.objectPath(target.Blob)); err != nil || !info.Mode().IsRegular() {
+		writeError(w, http.StatusConflict, "snapshot object is missing")
 		return
 	}
 	now := time.Now().UTC()
