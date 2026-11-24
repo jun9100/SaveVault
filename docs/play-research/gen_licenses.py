@@ -26,25 +26,26 @@ LINE = re.compile(r"^[\s|+\\-]*([\w.\-]+):([\w.\-]+)(?::([\w.\-]+))?(?: -> ([\w.
 def parse_tree(path):
     """Resolved group:artifact -> (version, direct?) from a `gradle dependencies` dump."""
     deps = {}
-    for raw in open(path, encoding="utf-8"):
-        if not raw.startswith(("+", "\\", "|", " ")):
-            continue
-        body = raw.rstrip("\n")
-        stripped = body.lstrip(" |")
-        depth = (len(body) - len(stripped)) // 5
-        m = LINE.match(body)
-        if not m:
-            continue
-        group, artifact, version, resolved, marker = m.groups()
-        if marker in ("c", "n"):  # constraints and unresolved entries are not shipped
-            continue
-        version = resolved or version
-        if not version:
-            continue
-        key = f"{group}:{artifact}"
-        direct = depth == 0
-        old = deps.get(key)
-        deps[key] = (version, direct or (old[1] if old else False))
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            if not raw.startswith(("+", "\\", "|", " ")):
+                continue
+            body = raw.rstrip("\n")
+            stripped = body.lstrip(" |")
+            depth = (len(body) - len(stripped)) // 5
+            m = LINE.match(body)
+            if not m:
+                continue
+            group, artifact, version, resolved, marker = m.groups()
+            if marker in ("c", "n"):  # constraints and unresolved entries are not shipped
+                continue
+            version = resolved or version
+            if not version:
+                continue
+            key = f"{group}:{artifact}"
+            direct = depth == 0
+            old = deps.get(key)
+            deps[key] = (version, direct or (old[1] if old else False))
     return deps
 
 
@@ -89,11 +90,31 @@ def licenses_of(group, artifact, version, depth=0):
 def family(name, url):
     text = f"{name} {url}".lower()
     if "apache" in text:
-        return "Apache-2.0"
+        if "2.0" in text or "apache-2" in text or "apache 2" in text or "license-2.0" in text:
+            return "Apache-2.0"
+        return name or "Apache (待核查版本)"
     if "mit" in text.split() or "opensource.org/licenses/mit" in text or name.strip().upper() == "MIT":
         return "MIT"
     if "bsd" in text:
-        return "BSD"
+        if "4-clause" in text or "4 clause" in text or "original bsd" in text:
+            return "BSD-4-Clause"
+        if (
+            "3-clause" in text
+            or "3 clause" in text
+            or "new bsd" in text
+            or "revised bsd" in text
+            or "opensource.org/licenses/bsd-3-clause" in text
+        ):
+            return "BSD-3-Clause"
+        if (
+            "2-clause" in text
+            or "2 clause" in text
+            or "simplified bsd" in text
+            or "freebsd" in text
+            or "opensource.org/licenses/bsd-2-clause" in text
+        ):
+            return "BSD-2-Clause"
+        return name or "BSD (待核查条款)"
     if "lgpl" in text or "lesser general" in text:
         return "LGPL"
     if "gpl" in text or "general public" in text:
@@ -108,6 +129,9 @@ def family(name, url):
 
 
 def main():
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+        print(f"Usage: {sys.argv[0]} <gradle-dependencies.txt>", file=sys.stderr)
+        sys.exit(0 if len(sys.argv) >= 2 and sys.argv[1] in ("-h", "--help") else 2)
     deps = parse_tree(sys.argv[1])
     rows = []
     for key in sorted(deps):
