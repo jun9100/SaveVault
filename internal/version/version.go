@@ -11,7 +11,7 @@ import (
 
 // Version is the app's semantic version. Overridable via
 // -ldflags "-X github.com/jun9100/savevault/internal/version.Version=…".
-var Version = "2.8.1"
+var Version = "2.9.0"
 
 // BuildTime is the unix-seconds build timestamp, injected via
 // -ldflags "-X github.com/jun9100/savevault/internal/version.BuildTime=…".

@@ -3,6 +3,26 @@
 All notable changes to SaveVault are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] — 2026-11-25
+
+### 新增
+
+- **游玩期间暂缓云端上传 + 最小上传间隔节流（PC）**：检测到游戏正在运行时，本地仍正常保留自动快照，云端上传则在内存中自动合并、待游戏退出后再上传最终一版；「云备份 → 自动」新增「游戏运行时暂缓云端上传」开关与每游戏云端上传最小间隔（不限 / 10 / 15 / 30 / 60 分钟），手动快照始终立即上传。
+- **S3 / R2 / MinIO 云端备份与客户端零知识端到端加密（E2EE）**：桌面端支持原生 AWS SigV4 对象存储（AWS S3、Cloudflare R2、MinIO）及第三方云盘流式 AES-256-GCM 分块加密（fail-closed 防明文回退）。
+- **Windows 注册表实时监视 & macOS 完整适配**：新增 Windows 注册表 `RegNotifyChangeKeyValue` 实时变更监听；修复 macOS 含空格 `.app` 进程识别、自启动 plist 兼容及系统语言检测。
+- **Steam Deck Decky 插件完整闭环**：支持游戏模式下一键扫描跟踪、历史版本回滚、分支切换、云端更新拉取与冲突决策。
+- **Android 0.9.0**：新增多模拟器识别（3DS Citra/Azahar、PS Vita Vita3K 及二进制 `param.sfo` 标题解析、Dolphin Wii/GC、DraStic）、局域网 P2P 对端发现与 RTT 探测、云端已配对设备与配额管理、跨设备译名与排除规则双向同步，以及 Android 8–10 存储权限兼容。
+- **云端服务端 v1.10.1（GHCR 多架构镜像）**：新增普通用户自助网页门户、一键采纳最新冲突并清理其余 / 批量清理冲突副本、同设备连环冲突自动合并、多渠道 Webhook 通知、O(1) 配额账本、FastCDC 分片去重与整库导出/导入。
+
+### 修复
+
+- **全栈安全、并发与一致性修复**：加固服务端受信任代理 `X-Forwarded-For` 解析、Webhook 防重定向泄密、E2EE fail-closed 与本地 API 鉴权、Windows 监视器父键事件风暴与退出竞态、Android AOSP `JSONObject` 空值解析及 `ParamSfoParser` 整型溢出边界。
+- **Android 10 与父子目录重复识别修复**：补齐 `requestLegacyExternalStorage`，消除 Dolphin / Vita3K / Citra 泛化父目录与单游戏子目录重叠识别。
+
+### 变更
+
+- 全仓库统一品牌为 **SaveVault**（保留历史 `~/.opensave`、协议头与数据目录自动迁移兼容），服务端源码整合进主仓库 `server/`，镜像发布至 `ghcr.io/jun9100/savevault-server`。
+
 ## [2.8.0] — 2026-11-13
 
 ### 新增
