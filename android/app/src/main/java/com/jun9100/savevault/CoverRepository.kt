@@ -152,6 +152,7 @@ class CoverRepository(context: Context) {
     }
 
     private fun download(url: String, destination: File): Boolean = runCatching {
+        if (!url.startsWith("https://", ignoreCase = true)) return@runCatching false
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "SaveVault Android")
@@ -229,6 +230,7 @@ class CoverRepository(context: Context) {
                 .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .followSslRedirects(false)
                 .build()
         }
 

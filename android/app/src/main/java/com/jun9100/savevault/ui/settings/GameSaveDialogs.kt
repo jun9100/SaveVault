@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -67,6 +68,7 @@ import com.jun9100.savevault.ui.preview.OdinScreenPreviews
 internal fun GameSaveEditorDialog(
     initial: GameSaveConfig,
     busy: Boolean,
+    error: String? = null,
     onDismiss: () -> Unit,
     onLogin: (url: String, username: String, password: String) -> Unit,
     initialUsername: String = "",
@@ -75,17 +77,22 @@ internal fun GameSaveEditorDialog(
     var username by rememberSaveable { mutableStateOf(initialUsername) }
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
     val submit = whenIdle(busy) {
-        val secret = password
-        password = ""
-        onLogin(url.trim(), username.trim(), secret)
+        onLogin(url.trim(), username.trim(), password)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.consumeHandheldShortcuts(),
         title = { Text("SaveVault 云端") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .dpadScrollable(scroll)
+                    .verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 // Opened on purpose, so the address takes focus and the keyboard right away.
                 OutlinedTextField(
                     value = url,
@@ -119,6 +126,7 @@ internal fun GameSaveEditorDialog(
                         autoCorrectEnabled = false,
                         imeAction = ImeAction.Done,
                     ),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
                     trailingIcon = {
                         IconButton(onClick = { visible = !visible }, modifier = Modifier.handheldFocusRing(CircleShape)) {
                             Icon(
@@ -129,15 +137,32 @@ internal fun GameSaveEditorDialog(
                     },
                     modifier = Modifier.fillMaxWidth().dpadLeavesTextField(),
                 )
-                Text(
-                    if (busy) {
-                        "正在登录…"
-                    } else {
-                        "用账号密码登录，成功后把令牌用 Android Keystore 加密保存；密码本身不会存到本机。"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!error.isNullOrBlank() && !busy) {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (busy) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text(
+                            "正在登录并验证连接…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Text(
+                        "用账号密码登录，成功后把令牌用 Android Keystore 加密保存；密码本身不会存到本机。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {

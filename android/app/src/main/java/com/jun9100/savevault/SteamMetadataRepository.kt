@@ -83,6 +83,7 @@ class SteamMetadataRepository(context: Context) {
                 .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .callTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .followSslRedirects(false)
                 .build()
         }
 

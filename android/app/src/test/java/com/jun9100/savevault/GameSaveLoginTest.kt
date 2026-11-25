@@ -66,4 +66,13 @@ class GameSaveLoginTest {
 
         assertTrue(error?.message.orEmpty().contains("没有返回登录令牌"))
     }
+
+    @Test
+    fun `a redirect response advises using the final https address`() {
+        server.enqueue(MockResponse().setResponseCode(301).addHeader("Location", "https://nas.example/v1/login"))
+
+        val error = GameSaveClient.login(server.url("/").toString(), "alice", "s3cret-pass").exceptionOrNull()
+
+        assertTrue(error?.message.orEmpty().contains("重定向"))
+    }
 }

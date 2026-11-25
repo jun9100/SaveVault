@@ -25,8 +25,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // CI 从 tag 传入（-PversionCode / -PversionName）；本地不传时用下面的默认值。
-        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 28
-        versionName = providers.gradleProperty("versionName").orNull ?: "0.9.0"
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 29
+        versionName = providers.gradleProperty("versionName").orNull ?: "0.9.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
