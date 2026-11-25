@@ -1062,6 +1062,9 @@ class GameSaveClient(
                     404 -> error("服务器版本过旧，没有账号登录接口（/v1/login）")
                     429 -> error("登录尝试过于频繁，请稍后再试")
                 }
+                if (res.code in setOf(301, 302, 303, 307, 308)) {
+                    error("服务器返回重定向（HTTP ${res.code}），请改用 https:// 或填写最终服务地址")
+                }
                 if (!res.isSuccessful) {
                     error("登录失败（HTTP ${res.code}）")
                 }
@@ -1072,13 +1075,28 @@ class GameSaveClient(
             }
         }
 
+        private fun withDefaultScheme(raw: String): String {
+            if (raw.contains("://")) return raw
+            // Keep explicit non-HTTP schemes like "javascript:..." or "mailto:..." so URI parsing rejects them.
+            val firstSlash = raw.indexOf('/')
+            val authorityPart = if (firstSlash >= 0) raw.substring(0, firstSlash) else raw
+            if (authorityPart.startsWith("[")) return "http://$raw"
+            val colon = authorityPart.indexOf(':')
+            if (colon < 0) return "http://$raw"
+            val portPart = authorityPart.substring(colon + 1)
+            if (portPart.isNotEmpty() && portPart.all(Char::isDigit)) return "http://$raw"
+            return raw
+        }
+
         fun normalizeServiceUrl(value: String): String {
             val raw = value.trim()
             if (raw.isEmpty()) return ""
-            val uri = runCatching { URI(raw) }.getOrElse { throw IllegalArgumentException("SaveVault 云端地址无效") }
+            val withScheme = withDefaultScheme(raw)
+            val uri = runCatching { URI(withScheme) }.getOrElse { throw IllegalArgumentException("SaveVault 云端地址无效") }
             val scheme = uri.scheme.orEmpty().lowercase()
             require(scheme == "http" || scheme == "https") { "SaveVault 云端只支持 http 或 https" }
             require(!uri.host.isNullOrBlank()) { "SaveVault 云端地址缺少主机名" }
+            require(uri.port == -1 || uri.port in 1..65535) { "SaveVault 云端端口无效" }
             require(uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null) {
                 "SaveVault 云端地址不能包含账号、查询参数或片段"
             }

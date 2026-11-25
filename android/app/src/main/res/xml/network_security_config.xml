@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!--
+      SaveVault connects to user-configured self-hosted servers on LAN / NAS / Tailscale
+      (for example http://nas.local:8788 or local IPv4/IPv6 hosts).
+      Android's <domain-config> cannot express CIDR ranges, so cleartext is allowed here
+      while GameSaveClient disables redirects (preventing https->http downgrade) and
+      third-party cover/metadata clients enforce HTTPS-only requests.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

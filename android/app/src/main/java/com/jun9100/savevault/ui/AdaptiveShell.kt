@@ -211,6 +211,7 @@ internal fun SaveVaultScreen(sourceViewModel: SourceViewModel = viewModel()) {
         GameSaveEditorDialog(
             initial = initial,
             busy = state.busy,
+            error = state.gameSaveEditorError,
             onDismiss = sourceViewModel::closeGameSaveEditor,
             onLogin = sourceViewModel::loginAndSaveGameSave,
             initialUsername = state.gameSaveUsername,
@@ -221,6 +222,7 @@ internal fun SaveVaultScreen(sourceViewModel: SourceViewModel = viewModel()) {
         PairingDialog(
             draft = draft,
             busy = state.busy,
+            error = state.pairingError,
             onDismiss = sourceViewModel::closePairing,
             onSubmit = sourceViewModel::submitPairingDraft,
             onPaste = { text -> sourceViewModel.openPairingLink(text.orEmpty()) },

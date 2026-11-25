@@ -3,8 +3,10 @@ package com.jun9100.savevault.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +33,7 @@ import com.jun9100.savevault.ui.dialogs.dialogButtonFocus
 import com.jun9100.savevault.ui.input.busyDimmed
 import com.jun9100.savevault.ui.input.consumeHandheldShortcuts
 import com.jun9100.savevault.ui.input.dpadLeavesTextField
+import com.jun9100.savevault.ui.input.dpadScrollable
 import com.jun9100.savevault.ui.input.rememberInitialFocus
 import com.jun9100.savevault.ui.input.whenIdle
 import com.jun9100.savevault.ui.preview.OdinScreenPreviews
@@ -44,6 +47,7 @@ import com.jun9100.savevault.ui.preview.OdinScreenPreviews
 internal fun PairingDialog(
     draft: PairingDraft,
     busy: Boolean,
+    error: String? = null,
     onDismiss: () -> Unit,
     onSubmit: (url: String, codeOrLink: String) -> Unit,
     /** The clipboard's text, or null when it is empty/unreadable; read only when the user asks. */
@@ -51,6 +55,7 @@ internal fun PairingDialog(
 ) {
     var url by rememberSaveable { mutableStateOf(draft.serviceUrl) }
     var code by rememberSaveable { mutableStateOf(draft.code) }
+    val scroll = rememberScrollState()
     val context = LocalContext.current
     val submit = whenIdle(busy) { onSubmit(url.trim(), code.trim()) }
     AlertDialog(
@@ -58,7 +63,13 @@ internal fun PairingDialog(
         modifier = Modifier.consumeHandheldShortcuts(),
         title = { Text("用配对码连接") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .dpadScrollable(scroll)
+                    .verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 // Opened on purpose, so the address takes focus and the keyboard right away.
                 OutlinedTextField(
                     value = url,
@@ -82,6 +93,13 @@ internal fun PairingDialog(
                     keyboardActions = KeyboardActions(onDone = { submit() }),
                     modifier = Modifier.fillMaxWidth().dpadLeavesTextField(),
                 )
+                if (!error.isNullOrBlank()) {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     "在 SaveVault 云端网页生成配对码。也可以用系统相机扫描配对二维码，或粘贴 savevault://pair 链接。",
                     style = MaterialTheme.typography.bodySmall,

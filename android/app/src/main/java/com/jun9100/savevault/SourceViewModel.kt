@@ -295,12 +295,16 @@ data class SourceUiState(
     val confirmDiscardSourceDraft: Boolean = false,
     /** The game-save editor is open, starting from this config; null while closed. */
     val gameSaveEditor: GameSaveConfig? = null,
+    /** Validation or login error shown directly inside [GameSaveEditorDialog]; null while clean. */
+    val gameSaveEditorError: String? = null,
     /** "测试并保存" failed for this config; the user may still save it. */
     val gameSaveTestFailure: GameSaveTestFailure? = null,
     /** A config read from the clipboard, waiting for its confirmation. */
     val pendingConfigImport: ImportedGameSaveConfig? = null,
     /** The "用配对码连接" dialog being edited; transient, never persisted. */
     val pairingDraft: PairingDraft? = null,
+    /** Validation error shown directly inside [PairingDialog]; null while clean. */
+    val pairingError: String? = null,
     /** A parsed pairing link waiting for the user to confirm the server; transient. */
     val pendingPairing: PairingLink? = null,
     /** The cloud's verdict on the saved credential, for 设置; transient. */
@@ -1031,10 +1035,10 @@ class SourceViewModel(
 
     /** Opens the game-save editor on the saved config; the draft lives in the dialog, so a refresh never overwrites it. */
     fun openGameSaveEditor() = updateState {
-        copy(gameSaveEditor = savedGameSaveConfig(), gameSaveTestFailure = null)
+        copy(gameSaveEditor = savedGameSaveConfig(), gameSaveEditorError = null, gameSaveTestFailure = null)
     }
 
-    fun closeGameSaveEditor() = updateState { copy(gameSaveEditor = null) }
+    fun closeGameSaveEditor() = updateState { copy(gameSaveEditor = null, gameSaveEditorError = null) }
 
     /**
      * "测试并保存": the address and key are saved only when the connection test
@@ -1055,12 +1059,19 @@ class SourceViewModel(
             else -> null
         }
         if (problem != null) {
-            updateState { copy(messages = messages.withError(SaveVaultPage.SETTINGS, problem)) }
+            updateState {
+                copy(
+                    gameSaveEditorError = problem,
+                    messages = messages.withError(SaveVaultPage.SETTINGS, problem),
+                )
+            }
             return
         }
         val base = normalized.getOrThrow()
         viewModelScope.launch {
-            state.value = state.value.started(SaveVaultPage.SETTINGS, "正在登录 SaveVault 云端")
+            state.value = state.value.started(SaveVaultPage.SETTINGS, "正在登录 SaveVault 云端").copy(
+                gameSaveEditorError = null,
+            )
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
                     val token = GameSaveClient.login(base, username, password).getOrThrow()
@@ -1074,12 +1085,10 @@ class SourceViewModel(
                 storeGameSave(config, "已登录 SaveVault 云端：${username.trim()}", credentialsChanged = true)
                 updateState { copy(gameSaveUsername = username.trim()) }
             }.onFailure { error ->
+                val message = error.message ?: "登录失败"
                 state.value = state.value.finished(SaveVaultPage.SETTINGS).copy(
-                    gameSaveEditor = null,
-                    messages = state.value.messages.withError(
-                        SaveVaultPage.SETTINGS,
-                        error.message ?: "登录失败",
-                    ),
+                    gameSaveEditorError = message,
+                    messages = state.value.messages.withError(SaveVaultPage.SETTINGS, message),
                 )
             }
         }
@@ -1140,7 +1149,11 @@ class SourceViewModel(
 
     /** "返回修改": the editor again, on the draft that failed. */
     fun editFailedGameSave() = updateState {
-        copy(gameSaveEditor = gameSaveTestFailure?.config ?: savedGameSaveConfig(), gameSaveTestFailure = null)
+        copy(
+            gameSaveEditor = gameSaveTestFailure?.config ?: savedGameSaveConfig(),
+            gameSaveEditorError = null,
+            gameSaveTestFailure = null,
+        )
     }
 
     fun dismissGameSaveTestFailure() = updateState { copy(gameSaveTestFailure = null) }
@@ -1165,10 +1178,10 @@ class SourceViewModel(
 
     /** Opens "用配对码连接" on the saved address; nothing is sent until the user confirms the server. */
     fun openPairing() = updateState {
-        copy(pairingDraft = PairingDraft(savedGameSaveConfig().serviceUrl, ""), pendingPairing = null)
+        copy(pairingDraft = PairingDraft(savedGameSaveConfig().serviceUrl, ""), pairingError = null, pendingPairing = null)
     }
 
-    fun closePairing() = updateState { copy(pairingDraft = null) }
+    fun closePairing() = updateState { copy(pairingDraft = null, pairingError = null) }
 
     /**
      * "下一步": a link is parsed as is; otherwise the address and the code are
@@ -1177,9 +1190,10 @@ class SourceViewModel(
      */
     fun submitPairingDraft(serviceUrl: String, codeOrLink: String) {
         PairingInput.resolve(serviceUrl, codeOrLink)
-            .onSuccess { link -> updateState { copy(pairingDraft = null, pendingPairing = link) } }
+            .onSuccess { link -> updateState { copy(pairingDraft = null, pairingError = null, pendingPairing = link) } }
             .onFailure { error ->
-                updateState { copy(messages = messages.withError(SaveVaultPage.SETTINGS, error.message ?: "配对信息无效")) }
+                val message = error.message ?: "配对信息无效"
+                updateState { copy(pairingError = message, messages = messages.withError(SaveVaultPage.SETTINGS, message)) }
             }
     }
 
@@ -1192,17 +1206,20 @@ class SourceViewModel(
                         page = SaveVaultPage.SETTINGS,
                         previousPage = page,
                         pairingDraft = null,
+                        pairingError = null,
                         pendingPairing = link,
                         messages = messages.withError(SaveVaultPage.SETTINGS, null),
                     )
                 }
             }
             .onFailure { error ->
+                val message = "配对链接无效：${error.message ?: "格式无效"}"
                 updateState {
                     copy(
                         page = SaveVaultPage.SETTINGS,
                         previousPage = page,
-                        messages = messages.withError(SaveVaultPage.SETTINGS, "配对链接无效：${error.message ?: "格式无效"}"),
+                        pairingError = message,
+                        messages = messages.withError(SaveVaultPage.SETTINGS, message),
                     )
                 }
             }
@@ -1349,6 +1366,7 @@ class SourceViewModel(
                     gameSaveSyncKey = config.syncKey,
                     gameSaveSaved = normalizedUrl.isNotBlank() && config.syncKey.isNotBlank(),
                     gameSaveEditor = null,
+                    gameSaveEditorError = null,
                     gameSaveUsername = if (clearUsername) "" else gameSaveUsername,
                 )
                 if (accountChanged) {
@@ -1375,7 +1393,10 @@ class SourceViewModel(
             }
             if (credentialsChanged) refreshGameSaveAuth()
         }.onFailure { error ->
-            updateState { finished(SaveVaultPage.SETTINGS, error = "保存 SaveVault 云端配置失败：${error.message}") }
+            val message = "保存 SaveVault 云端配置失败：${error.message}"
+            updateState {
+                finished(SaveVaultPage.SETTINGS, error = message).copy(gameSaveEditorError = message)
+            }
         }
     }
 

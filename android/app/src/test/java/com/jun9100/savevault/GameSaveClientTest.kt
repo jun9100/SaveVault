@@ -22,8 +22,15 @@ class GameSaveClientTest {
     fun serviceRootsNormalizeWithoutExposingProtocolPaths() {
         assertEquals("https://nas.example:8788", GameSaveClient.normalizeServiceUrl("https://nas.example:8788/"))
         assertEquals("https://nas.example/game-save", GameSaveClient.normalizeServiceUrl("https://nas.example/game-save/v1/savevault/"))
+        assertEquals("http://192.0.2.10:8788", GameSaveClient.normalizeServiceUrl("192.0.2.10:8788/"))
+        assertEquals("http://192.0.2.10:8788", GameSaveClient.normalizeServiceUrl("192.0.2.10:8788"))
+        assertEquals("http://nas.local:8788/sync", GameSaveClient.normalizeServiceUrl("nas.local:8788/sync/v1/savevault/"))
+        assertEquals("http://[fd00::1]:8788", GameSaveClient.normalizeServiceUrl("[fd00::1]:8788"))
         assertTrue(runCatching { GameSaveClient.normalizeServiceUrl("https://user:pass@nas.example") }.isFailure)
         assertTrue(runCatching { GameSaveClient.normalizeServiceUrl("ftp://nas.example") }.isFailure)
+        assertTrue(runCatching { GameSaveClient.normalizeServiceUrl("javascript:alert(1)") }.isFailure)
+        assertTrue(runCatching { GameSaveClient.normalizeServiceUrl("192.0.2.10:99999") }.isFailure)
+        assertTrue(runCatching { GameSaveClient.normalizeServiceUrl(":8788") }.isFailure)
     }
 
     @Test
